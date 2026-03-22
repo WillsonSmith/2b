@@ -18,10 +18,10 @@ export class TMDBPlugin implements AgentPlugin {
   }
 
   getSystemPromptFragment(): string {
-    return `You have access to The Movie Database (TMDB) to look up information about movies and people.
+    return `You have access to The Movie Database (TMDB) to look up information about movies and film/TV industry people.
 Use search_movies to find movies by title or keywords, then get_movie_details for full info.
 Use get_movie_credits to find cast and crew, get_movie_recommendations for similar films, and get_trending_movies to see what's popular.
-Use search_person to find actors or crew members by name, then get_person_details for their biography, birthday, and full filmography.`;
+Only use search_person or get_person_details when the conversation is explicitly about someone's film or TV career (e.g. "what movies has X been in?", "who directed X?"). Do NOT use these tools when a person is mentioned in a non-entertainment context.`;
   }
 
   getTools(): ToolDefinition[] {
@@ -101,7 +101,7 @@ Use search_person to find actors or crew members by name, then get_person_detail
       {
         name: "search_person",
         description:
-          "Search The Movie Database for actors, directors, or other crew members by name. Returns a list of matching people with their known-for credits.",
+          "Search The Movie Database for actors, directors, or other crew members by name. Only use this when the user is explicitly asking about someone's film or TV career. Returns a list of matching people with their known-for credits.",
         parameters: {
           type: "object",
           properties: {
