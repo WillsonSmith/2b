@@ -25,7 +25,7 @@ Modular agent capabilities. Each plugin implements `AgentPlugin` from `../core/P
 | `AudioPlugin` | Classifies microphone speech as direct/ambient via intent detection |
 | `TimePlugin` | Injects current time into context; exposes `get_current_time` tool |
 | `TMDBPlugin` | Movie and people lookup via The Movie Database API; tools: `search_movies`, `get_movie_details`, `get_movie_credits`, `get_movie_recommendations`, `get_trending_movies`, `search_person`, `get_person_details`; requires `TMDB_API_KEY` |
-| `FileIOPlugin` | HTTPS-only file downloads; `download_file` tool writes to `downloads/` (max 100 MB) |
+| `FileIOPlugin` | Local filesystem read/write and HTTPS file downloads; tools: `download_file` (URL → `downloads/`, max 100 MB), `read_file` (text content, max 1 MB), `write_file` (create/overwrite), `list_directory` — all local paths restricted to working directory |
 | `ImageVisionPlugin` | Image analysis via a local vision model; tools: `analyze_image_url` (from web URL) and `analyze_image_file` (from local path) |
 | `YtDlpPlugin` | Download video clips from Twitch VODs, YouTube, and other yt-dlp-compatible sites; tool: `download_video_clip` (url, start_time, end_time) — requires `yt-dlp` in PATH |
 | `RSSPlugin` | Fetch and parse RSS and Atom feeds (HTTPS only); tool: `fetch_rss_feed` (url, limit) — returns feed title, description, and items with title, link, description, pubDate, author |

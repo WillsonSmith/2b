@@ -1,5 +1,6 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { join, resolve, relative, isAbsolute } from "node:path";
+import { readdir } from "node:fs/promises";
 
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024; // 100 MB
 const MAX_READ_BYTES = 1 * 1024 * 1024; // 1 MB
@@ -62,6 +63,7 @@ export class FileIOPlugin implements AgentPlugin {
 Use download_file to fetch a file from a URL and save it to the downloads/ directory (HTTPS only).
 Use read_file to read the text content of a local file.
 Use write_file to write or overwrite text content to a local file (creates parent directories as needed).
+Use list_directory to list the contents of a local directory.
 All local file operations are restricted to the current working directory.`;
   }
 
@@ -121,6 +123,21 @@ All local file operations are restricted to the current working directory.`;
           required: ["path", "content"],
         },
       },
+      {
+        name: "list_directory",
+        description:
+          "List the contents of a local directory. Use this when the user asks to browse, explore, or list files in a folder.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description: "Path to the directory, relative to the working directory. Defaults to the working directory if omitted.",
+            },
+          },
+          required: [],
+        },
+      },
     ];
   }
 
@@ -133,6 +150,9 @@ All local file operations are restricted to the current working directory.`;
     }
     if (name === "write_file") {
       return this.writeFile(args.path, args.content);
+    }
+    if (name === "list_directory") {
+      return this.listDirectory(args.path);
     }
   }
 
@@ -199,5 +219,23 @@ All local file operations are restricted to the current working directory.`;
     const resolved = validatePath(path);
     await Bun.write(resolved, content);
     return { path: resolved, size: Buffer.byteLength(content) };
+  }
+
+  private async listDirectory(
+    path?: string,
+  ): Promise<{ path: string; entries: { name: string; type: "file" | "directory"; size?: number }[] }> {
+    const resolved = validatePath(path ?? ".");
+    const entries: { name: string; type: "file" | "directory"; size?: number }[] = [];
+    const dirents = await readdir(resolved, { withFileTypes: true });
+    for (const entry of dirents) {
+      const entryPath = join(resolved, entry.name);
+      if (entry.isFile()) {
+        const size = Bun.file(entryPath).size;
+        entries.push({ name: entry.name, type: "file", size });
+      } else if (entry.isDirectory()) {
+        entries.push({ name: entry.name, type: "directory" });
+      }
+    }
+    return { path: resolved, entries };
   }
 }
