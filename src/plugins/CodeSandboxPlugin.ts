@@ -128,6 +128,11 @@ export class CodeSandboxPlugin implements AgentPlugin {
       timeout_ms?: number;
     };
 
+    if (typeof task !== "string" || task.trim().length === 0)
+      throw new Error("task must be a non-empty string");
+    if (Buffer.byteLength(task) > 4096)
+      throw new Error("task exceeds maximum size of 4096 bytes");
+
     if (input_data !== undefined && input_data !== null) {
       if (Buffer.byteLength(input_data) > MAX_INPUT_BYTES)
         throw new Error(`input_data exceeds maximum size of ${MAX_INPUT_BYTES} bytes`);
@@ -170,14 +175,16 @@ export class CodeSandboxPlugin implements AgentPlugin {
       stderr: "pipe",
     });
 
-    const timeoutRace = new Promise<"timeout">((resolve) =>
-      setTimeout(() => {
-        proc.kill();
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timeoutRace = new Promise<"timeout">((resolve) => {
+      timeoutHandle = setTimeout(() => {
+        proc.kill("SIGKILL");
         resolve("timeout");
-      }, timeout),
-    );
+      }, timeout);
+    });
 
     const result = await Promise.race([proc.exited, timeoutRace]);
+    clearTimeout(timeoutHandle);
     const timedOut = result === "timeout";
     const exitCode = timedOut ? null : (result as number);
 
@@ -203,7 +210,20 @@ export class CodeSandboxPlugin implements AgentPlugin {
 
   private buildRunArgs(input_data?: string | null): string[] {
     if (this.runtime === "apple-container") {
-      const args = ["container", "run", "--rm", "--network=none"];
+      // Apple Container uses VM-based isolation; network is disabled by not
+      // attaching to any named network (omitting --network). --no-dns prevents
+      // DNS resolution as an additional guard. Resource caps mirror Docker.
+      const args = [
+        "container", "run",
+        "--rm",
+        "--no-dns",
+        "--memory", "256M",
+        "--cpus", "0.5",
+        "--ulimit", "nproc=64:64",
+        "--uid", "65534",
+        "--read-only",
+        "--tmpfs", "/tmp",
+      ];
       if (input_data != null) args.push("-e", `INPUT_DATA=${input_data}`);
       return args;
     }
