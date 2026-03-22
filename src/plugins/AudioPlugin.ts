@@ -6,6 +6,7 @@ import { logger } from "../logger.ts";
 
 export class AudioPlugin implements AgentPlugin {
   name = "Audio";
+  private isActive = false;
 
   constructor(
     private audio: AudioSystem,
@@ -13,20 +14,13 @@ export class AudioPlugin implements AgentPlugin {
   ) {}
 
   getContext() {
-    return `
-You have a microphone and can hear your environment.
+    if (!this.isActive) return "";
+    return `You have a microphone and can hear your environment.
 Incoming audio is categorized for you:
-- [Heard "text"] : The user is speaking directly to you. You
-should respond.
-- [Overheard background conversation: "text"] : People are
-talking nearby, but not to you. Do not reply unless necessary.
-- [Ambient sound: text] or [Background noise: text] :
-Environmental noises.
-
-CRITICAL INSTRUCTION FOR YOUR OUTPUT:
-When you speak, DO NOT wrap your text in brackets. Speak
-normally. Brackets are strictly used for incoming sensory data.
-        `;
+- [Heard "text"] : The user is speaking directly to you. Respond.
+- [Overheard background conversation: "text"] : Nearby talk, not directed at you. Do not reply unless necessary.
+- [Ambient sound: text] or [Background noise: text] : Environmental noises.
+When you speak, DO NOT wrap your text in brackets — brackets are strictly for incoming sensory data.`;
   }
 
   onInit(agent: BaseAgent) {
@@ -34,6 +28,7 @@ normally. Brackets are strictly used for incoming sensory data.
     this.audio.on(
       "speech_detected",
       async (result: { text: string; noSpeechProb: number }) => {
+        this.isActive = true;
         const { text, noSpeechProb } = result;
 
         // Tier 1: Ambient Sound markers (Whisper formatting)
