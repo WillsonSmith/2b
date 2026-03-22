@@ -19,15 +19,15 @@ interface RSSFeed {
 
 function extractTag(xml: string, tag: string): string {
   const cdataMatch = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`, "i").exec(xml);
-  if (cdataMatch) return cdataMatch[1].trim();
+  if (cdataMatch) return cdataMatch[1]!.trim();
   const match = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i").exec(xml);
-  return match ? match[1].trim() : "";
+  return match ? match[1]!.trim() : "";
 }
 
 function extractAttrOrTag(xml: string, tag: string, attr: string, attrValue: string, resultAttr: string): string {
   const match = new RegExp(`<${tag}[^>]*${attr}=["']${attrValue}["'][^>]*${resultAttr}=["']([^"']+)["']`, "i").exec(xml) ||
     new RegExp(`<${tag}[^>]*${resultAttr}=["']([^"']+)["'][^>]*${attr}=["']${attrValue}["']`, "i").exec(xml);
-  return match ? match[1] : "";
+  return match ? match[1]! : "";
 }
 
 function parseRSSItems(channel: string, limit: number): RSSItem[] {
@@ -35,7 +35,7 @@ function parseRSSItems(channel: string, limit: number): RSSItem[] {
   const itemPattern = /<item>([\s\S]*?)<\/item>/gi;
   let match: RegExpExecArray | null;
   while ((match = itemPattern.exec(channel)) !== null && items.length < limit) {
-    const raw = match[1];
+    const raw = match[1]!;
     items.push({
       title: extractTag(raw, "title"),
       link: extractTag(raw, "link") || extractTag(raw, "guid"),
@@ -53,10 +53,10 @@ function parseAtomEntries(xml: string, limit: number): RSSItem[] {
   const entryPattern = /<entry>([\s\S]*?)<\/entry>/gi;
   let match: RegExpExecArray | null;
   while ((match = entryPattern.exec(xml)) !== null && items.length < limit) {
-    const raw = match[1];
+    const raw = match[1]!;
     const link = extractAttrOrTag(raw, "link", "rel", "alternate", "href") ||
       extractAttrOrTag(raw, "link", "type", "text/html", "href") ||
-      (() => { const m = /<link[^>]*href=["']([^"']+)["'][^>]*\/?>/i.exec(raw); return m ? m[1] : ""; })();
+      (() => { const m = /<link[^>]*href=["']([^"']+)["'][^>]*\/?>/i.exec(raw); return m ? m[1]! : ""; })();
     items.push({
       title: extractTag(raw, "title"),
       link,
@@ -75,14 +75,14 @@ function parseFeed(xml: string, limit: number): RSSFeed {
   if (isAtom) {
     const title = extractTag(xml, "title");
     const link = extractAttrOrTag(xml, "link", "rel", "alternate", "href") ||
-      (() => { const m = /<link[^>]*href=["']([^"']+)["']/i.exec(xml); return m ? m[1] : ""; })();
+      (() => { const m = /<link[^>]*href=["']([^"']+)["']/i.exec(xml); return m ? m[1]! : ""; })();
     const description = extractTag(xml, "subtitle");
     const items = parseAtomEntries(xml, limit);
     return { title, link, description, items };
   }
 
   const channelMatch = /<channel>([\s\S]*)<\/channel>/i.exec(xml);
-  const channel = channelMatch ? channelMatch[1] : xml;
+  const channel = channelMatch ? channelMatch[1]! : xml;
 
   return {
     title: extractTag(channel, "title"),
@@ -136,7 +136,7 @@ export class RSSPlugin implements AgentPlugin {
     const clampedLimit = Math.min(Math.max(1, limit), 50);
 
     try {
-      logger.info(`[RSSPlugin] Fetching feed: ${url}`);
+      logger.info("RSSPlugin", `Fetching feed: ${url}`);
       const response = await fetch(url, {
         headers: { Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" },
         signal: AbortSignal.timeout(15_000),
@@ -148,10 +148,10 @@ export class RSSPlugin implements AgentPlugin {
 
       const xml = await response.text();
       const feed = parseFeed(xml, clampedLimit);
-      logger.info(`[RSSPlugin] Parsed ${feed.items.length} items from "${feed.title}"`);
+      logger.info("RSSPlugin", `Parsed ${feed.items.length} items from "${feed.title}"`);
       return feed;
     } catch (err: any) {
-      logger.error(`[RSSPlugin] Failed to fetch feed: ${err?.message}`);
+      logger.error("RSSPlugin", `Failed to fetch feed: ${err?.message}`);
       return { error: err?.message ?? "Unknown error fetching feed" };
     }
   }
