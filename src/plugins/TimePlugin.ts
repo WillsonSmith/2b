@@ -9,6 +9,9 @@ export class TimePlugin implements AgentPlugin {
     logger.info("Time", "Plugin initialized.");
   }
 
+  getContext() {
+    return `The current time is ${new Date().toLocaleTimeString()}`;
+  }
 
   getTools(): ToolDefinition[] {
     return [
