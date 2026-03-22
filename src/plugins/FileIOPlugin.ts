@@ -2,7 +2,9 @@ import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { join, resolve, relative, isAbsolute } from "node:path";
 
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024; // 100 MB
+const MAX_READ_BYTES = 1 * 1024 * 1024; // 1 MB
 const DOWNLOADS_DIR = join(process.cwd(), "downloads");
+const BASE_DIR = process.cwd();
 
 function validateUrl(url: string): URL {
   let parsed: URL;
@@ -33,6 +35,15 @@ function validateUrl(url: string): URL {
   return parsed;
 }
 
+function validatePath(path: string): string {
+  const resolved = resolve(BASE_DIR, path);
+  const rel = relative(BASE_DIR, resolved);
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error("Path must be within the working directory.");
+  }
+  return resolved;
+}
+
 function validateDestination(destination: string): string {
   const resolved = resolve(destination);
   const base = resolve(DOWNLOADS_DIR);
@@ -47,9 +58,10 @@ export class FileIOPlugin implements AgentPlugin {
   name = "FileIO";
 
   getSystemPromptFragment(): string {
-    return `You can download files from the internet and write them to the local filesystem.
-Use download_file to fetch a file from a URL and save it to disk.
-Only HTTPS URLs are supported. Files are saved to the downloads/ directory.`;
+    return `You can download files from the internet and read files on the local filesystem.
+Use download_file to fetch a file from a URL and save it to the downloads/ directory (HTTPS only).
+Use read_file to read the text content of a local file.
+All local file operations are restricted to the current working directory.`;
   }
 
   getTools(): ToolDefinition[] {
@@ -74,12 +86,30 @@ Only HTTPS URLs are supported. Files are saved to the downloads/ directory.`;
           required: ["url"],
         },
       },
+      {
+        name: "read_file",
+        description:
+          "Read the text content of a local file. Use this when the user asks to read, view, or inspect a file on disk. Limited to 1 MB.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description: "Path to the file, relative to the working directory.",
+            },
+          },
+          required: ["path"],
+        },
+      },
     ];
   }
 
   async executeTool(name: string, args: any): Promise<any> {
     if (name === "download_file") {
       return this.downloadFile(args.url, args.destination);
+    }
+    if (name === "read_file") {
+      return this.readFile(args.path);
     }
   }
 
@@ -129,5 +159,16 @@ Only HTTPS URLs are supported. Files are saved to the downloads/ directory.`;
       size: buffer.byteLength,
       contentType: res.headers.get("content-type") ?? "application/octet-stream",
     };
+  }
+
+  private async readFile(path: string): Promise<{ path: string; content: string; size: number }> {
+    const resolved = validatePath(path);
+    const file = Bun.file(resolved);
+    const size = file.size;
+    if (size > MAX_READ_BYTES) {
+      throw new Error(`File exceeds the 1 MB read limit (${size} bytes).`);
+    }
+    const content = await file.text();
+    return { path: resolved, content, size };
   }
 }
