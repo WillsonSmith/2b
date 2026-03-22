@@ -12,6 +12,7 @@ import { ShellPlugin } from "../plugins/ShellPlugin.ts";
 import { ClipboardPlugin } from "../plugins/ClipboardPlugin.ts";
 import { NotesPlugin } from "../plugins/NotesPlugin.ts";
 import { WeatherPlugin } from "../plugins/WeatherPlugin.ts";
+import { YtDlpPlugin } from "../plugins/YtDlpPlugin.ts";
 
 // ── Safe arithmetic evaluator (replaces Function/eval) ────────────────────────
 
@@ -156,6 +157,7 @@ export function createAgent(): {
   agent.registerPlugin(new ClipboardPlugin());
   agent.registerPlugin(new NotesPlugin());
   agent.registerPlugin(new WeatherPlugin());
+  agent.registerPlugin(new YtDlpPlugin());
   agent.registerPlugin(new MinimalToolsPlugin());
   agent.registerPlugin(new MemoryPlugin(llm));
   agent.addInputSource(input);
