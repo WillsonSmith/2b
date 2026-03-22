@@ -7,6 +7,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
   name = "CortexMemory";
   public db: CortexMemoryDatabase;
   private currentEvents: string[] = [];
+  private savedThisTurn: Set<string> = new Set();
 
   constructor(llmProvider: any, name: string, dbPath?: string) {
     this.db = new CortexMemoryDatabase(llmProvider, name, dbPath);
@@ -44,6 +45,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
   async getContext(currentEvents?: string[]): Promise<string> {
     try {
       this.currentEvents = currentEvents ?? [];
+      this.savedThisTurn.clear();
       const query = currentEvents?.join(" ") ?? "";
       if (!query.trim()) return "";
 
@@ -150,6 +152,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       if (name === "save_memory") {
         logger.info("CortexMemory", `save_memory type=${args.type ?? "factual"}: "${String(args.content).slice(0, 100)}"`);
         const id = await this.db.addMemory(args.content, args.type ?? "factual");
+        this.savedThisTurn.add(id);
         logger.info("CortexMemory", `save_memory SUCCESS id=${id.slice(0, 8)}`);
         // Link to top 3 similar existing memories
         const similar = await this.db.search(args.content, 3, 0.5);
@@ -199,6 +202,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
 
       for (const candidate of candidates) {
+        if (this.savedThisTurn.has(candidate.id)) continue;
         const mem = await this.db.getMemoryById(candidate.id);
         if (!mem) continue;
         if (mem.timestamp >= twoHoursAgo) {
