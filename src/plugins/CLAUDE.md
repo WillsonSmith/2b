@@ -1,0 +1,69 @@
+# Plugins
+
+Modular agent capabilities. Each plugin implements `AgentPlugin` from `../core/Plugin.ts` and is injected into a `BaseAgent` via `agent.registerPlugin(plugin)`.
+
+## Plugin Lifecycle
+
+| Hook | When called | Typical use |
+|------|------------|-------------|
+| `onInit(agent)` | Once, when agent starts | Subscribe to agent events, store agent ref |
+| `getSystemPromptFragment()` | Every LLM call | Inject static instructions into system prompt |
+| `getContext(events?)` | Every LLM call | Inject dynamic context (time, memory hits, etc.) |
+| `getTools()` | Every LLM call | Expose callable tools |
+| `executeTool(name, args)` | When LLM invokes a tool | Run tool implementation |
+| `onMessage(role, content, source)` | Every message | Log, store, or react to messages |
+| `getMessages(limit?)` | History replay | Return conversation history |
+| `augmentResponse(response)` | After LLM response, before emit | Transform or reroute the response string |
+
+## Available Plugins
+
+| Plugin | Purpose |
+|--------|---------|
+| `CortexMemoryPlugin` | Long-term memory with types (factual/thought/behavior), semantic search, linking, deletion, and autonomous conflict resolution — auto-registered by `CortexAgent` |
+| `ThoughtPlugin` | Persists `<think>` blocks as thought memories; exposes `get_recent_thoughts` — auto-registered by `CortexAgent` |
+| `DocumentManagerPlugin` | Full document lifecycle: create, edit, version, link, search, and memory-driven regeneration |
+| `MemoryPlugin` | Short-term conversation history (max 15 messages, auto-summarises) |
+| `AudioPlugin` | Classifies microphone speech as direct/ambient via intent detection |
+| `TimePlugin` | Injects current time into context; exposes `get_current_time` tool |
+| `TMDBPlugin` | Movie and people lookup via The Movie Database API; tools: `search_movies`, `get_movie_details`, `get_movie_credits`, `get_movie_recommendations`, `get_trending_movies`, `search_person`, `get_person_details`; requires `TMDB_API_KEY` |
+| `FileIOPlugin` | HTTPS-only file downloads; `download_file` tool writes to `downloads/` (max 100 MB) |
+| `ImageVisionPlugin` | Image analysis via a local vision model; tools: `analyze_image_url` (from web URL) and `analyze_image_file` (from local path) |
+
+## Writing a New Plugin
+
+1. Create a class implementing `AgentPlugin`
+2. Only implement the hooks you actually need
+3. If exposing tools, define them in `getTools()` and handle in `executeTool()`
+4. Register in the relevant factory function
+
+```typescript
+import type { AgentPlugin } from "../core/Plugin.ts";
+
+export class MyPlugin implements AgentPlugin {
+  name = "MyPlugin";
+
+  getSystemPromptFragment() {
+    return "You have access to my_plugin capabilities.";
+  }
+
+  getTools() {
+    return [{
+      name: "my_tool",
+      description: "Does something useful",
+      parameters: { type: "object", properties: { input: { type: "string" } }, required: ["input"] },
+    }];
+  }
+
+  async executeTool(name: string, args: any) {
+    if (name === "my_tool") return doSomething(args.input);
+    // Return undefined (not throw) for unknown names so other plugins can handle them
+  }
+}
+```
+
+## Conventions
+- Plugin constructors must not do I/O — defer setup to `onInit`
+- Return `undefined` (not throw) from `executeTool` for unknown tool names so other plugins can handle them
+- Keep plugin responsibilities narrow — compose multiple small plugins rather than one large one
+- Use `../logger.ts` for logging — never `console.log` except for fatal errors
+- If the plugin needs SQLite, use `bun:sqlite` directly — see `CortexMemoryDatabase.ts` for reference
