@@ -6,6 +6,12 @@ import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { TMDBPlugin } from "../plugins/TMDBPlugin.ts";
 import { FileIOPlugin } from "../plugins/FileIOPlugin.ts";
 import { ImageVisionPlugin } from "../plugins/ImageVisionPlugin.ts";
+import { WebSearchPlugin } from "../plugins/WebSearchPlugin.ts";
+import { WebReaderPlugin } from "../plugins/WebReaderPlugin.ts";
+import { ShellPlugin } from "../plugins/ShellPlugin.ts";
+import { ClipboardPlugin } from "../plugins/ClipboardPlugin.ts";
+import { NotesPlugin } from "../plugins/NotesPlugin.ts";
+import { WeatherPlugin } from "../plugins/WeatherPlugin.ts";
 
 // ── Safe arithmetic evaluator (replaces Function/eval) ────────────────────────
 
@@ -144,6 +150,12 @@ export function createAgent(): {
   agent.registerPlugin(new TMDBPlugin());
   agent.registerPlugin(new FileIOPlugin());
   agent.registerPlugin(new ImageVisionPlugin());
+  agent.registerPlugin(new WebSearchPlugin());
+  agent.registerPlugin(new WebReaderPlugin());
+  agent.registerPlugin(new ShellPlugin());
+  agent.registerPlugin(new ClipboardPlugin());
+  agent.registerPlugin(new NotesPlugin());
+  agent.registerPlugin(new WeatherPlugin());
   agent.registerPlugin(new MinimalToolsPlugin());
   agent.registerPlugin(new MemoryPlugin(llm));
   agent.addInputSource(input);
