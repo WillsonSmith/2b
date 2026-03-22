@@ -3,8 +3,6 @@ import type { BaseAgent } from "../core/BaseAgent.ts";
 import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
 import { logger } from "../logger.ts";
 
-const MAX_THOUGHT_CHARS = 400;
-
 export class ThoughtPlugin implements AgentPlugin {
   name = "ThoughtPlugin";
   private memoryPlugin: CortexMemoryPlugin;
@@ -16,13 +14,9 @@ export class ThoughtPlugin implements AgentPlugin {
   onInit(agent: BaseAgent): void {
     agent.on("thought", async (thought: string) => {
       if (!thought?.trim()) return;
-      const truncated =
-        thought.length > MAX_THOUGHT_CHARS
-          ? thought.slice(0, MAX_THOUGHT_CHARS) + "…"
-          : thought;
-      logger.debug("ThoughtPlugin", `Storing thought (${truncated.length}/${thought.length} chars)`);
+      logger.debug("ThoughtPlugin", `Storing thought (${thought.length} chars)`);
       try {
-        const text = `[THOUGHT] ${new Date().toISOString()}: ${truncated}`;
+        const text = `[THOUGHT] ${new Date().toISOString()}: ${thought}`;
         await this.memoryPlugin.db.addMemory(text, "thought");
         logger.debug("ThoughtPlugin", "Thought stored successfully");
       } catch (e) {
@@ -40,17 +34,6 @@ export class ThoughtPlugin implements AgentPlugin {
     ].join("\n");
   }
 
-  async getContext(currentEvents?: string[]): Promise<string> {
-    if (!currentEvents?.length) return "";
-    try {
-      const recent = this.memoryPlugin.db.getRecentMemories(3, "thought");
-      if (recent.length === 0) return "";
-      const entries = recent.map((t) => `- ${t.text}`).join("\n");
-      return `Recent thoughts:\n${entries}`;
-    } catch {
-      return "";
-    }
-  }
 
   getTools(): ToolDefinition[] {
     return [
