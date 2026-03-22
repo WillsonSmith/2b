@@ -30,7 +30,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "Use `get_linked_memories` to follow chains of related ideas.",
     ];
 
-    const behaviors = this.db.getRecentMemories(10, "behavior");
+    const behaviors = this.db.getRecentMemories(1000, "behavior");
     if (behaviors.length > 0) {
       parts.push("\n## Learned Behaviors");
       for (const b of behaviors) {
@@ -137,8 +137,13 @@ export class CortexMemoryPlugin implements AgentPlugin {
         const results = await this.db.search(args.query, 5, 0.4, args.type);
         logger.debug("CortexMemory", `search_memory found ${results.length} results`);
         if (results.length === 0) return "No relevant memories found.";
+        const MAX_TEXT = 300;
         return results
-          .map((r) => `[${r.id.slice(0, 8)}] (score: ${r.score.toFixed(2)}) ${r.text}`)
+          .map((r) => {
+            const text =
+              r.text.length > MAX_TEXT ? r.text.slice(0, MAX_TEXT) + "…" : r.text;
+            return `[${r.id.slice(0, 8)}] (score: ${r.score.toFixed(2)}) ${text}`;
+          })
           .join("\n");
       }
 
