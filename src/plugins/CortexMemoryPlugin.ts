@@ -1,6 +1,6 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import type { BaseAgent } from "../core/BaseAgent.ts";
-import { CortexMemoryDatabase } from "./CortexMemoryDatabase.ts";
+import { CortexMemoryDatabase, type MemoryFilter } from "./CortexMemoryDatabase.ts";
 import { logger } from "../logger.ts";
 
 export class CortexMemoryPlugin implements AgentPlugin {
@@ -29,6 +29,10 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "Use `save_behavior` to record a persistent behavioral rule you want to follow on every future turn.",
       "Use `delete_memory` to remove a memory by its ID.",
       "Use `get_linked_memories` to follow chains of related ideas.",
+      "Use `query_memories` to filter memories by type, tags, date range, or full-text content.",
+      "Use `hybrid_search` to combine semantic similarity search with metadata filters.",
+      "Use `aggregate_memories` to understand the shape and distribution of your memories.",
+      "Use `get_memory_timeline` to retrieve memories in chronological order.",
     ];
 
     const behaviors = this.db.getRecentMemories(1000, "behavior");
@@ -91,6 +95,11 @@ export class CortexMemoryPlugin implements AgentPlugin {
               enum: ["factual", "thought", "behavior"],
               description: "The memory type",
             },
+            tags: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional tags to categorize this memory",
+            },
           },
           required: ["content", "type"],
         },
@@ -129,6 +138,121 @@ export class CortexMemoryPlugin implements AgentPlugin {
           required: ["id"],
         },
       },
+      {
+        name: "query_memories",
+        description:
+          "Filter memories by metadata: type, tags, date range, and/or full-text content. Returns results ordered by recency.",
+        parameters: {
+          type: "object",
+          properties: {
+            types: {
+              type: "array",
+              items: { type: "string", enum: ["factual", "thought", "behavior"] },
+              description: "Filter by memory types",
+            },
+            tags: {
+              type: "array",
+              items: { type: "string" },
+              description: "Filter by tags (all must match)",
+            },
+            after: {
+              type: "string",
+              description: "ISO date string - only memories after this date",
+            },
+            before: {
+              type: "string",
+              description: "ISO date string - only memories before this date",
+            },
+            contains: {
+              type: "string",
+              description: "Full-text search term",
+            },
+            limit: {
+              type: "number",
+              description: "Max results (default 20)",
+            },
+          },
+        },
+      },
+      {
+        name: "hybrid_search",
+        description:
+          "Combine semantic similarity search with metadata filters. More powerful than search_memory when you need to constrain by type, tag, or date.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "The semantic search query" },
+            types: {
+              type: "array",
+              items: { type: "string", enum: ["factual", "thought", "behavior"] },
+              description: "Filter by memory types",
+            },
+            tags: {
+              type: "array",
+              items: { type: "string" },
+              description: "Filter by tags",
+            },
+            after: {
+              type: "string",
+              description: "ISO date string - only memories after this date",
+            },
+            before: {
+              type: "string",
+              description: "ISO date string - only memories before this date",
+            },
+            contains: {
+              type: "string",
+              description: "Full-text search term",
+            },
+            limit: {
+              type: "number",
+              description: "Max results (default 5)",
+            },
+          },
+          required: ["query"],
+        },
+      },
+      {
+        name: "aggregate_memories",
+        description:
+          "Get counts grouped by type, tag, or date. Useful for understanding the shape of memory.",
+        parameters: {
+          type: "object",
+          properties: {
+            group_by: {
+              type: "string",
+              enum: ["type", "tag", "date"],
+              description: "The dimension to group by",
+            },
+            filter: {
+              type: "object",
+              description: "Optional filter (same shape as query_memories params)",
+            },
+          },
+          required: ["group_by"],
+        },
+      },
+      {
+        name: "get_memory_timeline",
+        description: "Retrieve memories in chronological order within an optional date range.",
+        parameters: {
+          type: "object",
+          properties: {
+            start: {
+              type: "string",
+              description: "ISO date string for range start",
+            },
+            end: {
+              type: "string",
+              description: "ISO date string for range end",
+            },
+            limit: {
+              type: "number",
+              description: "Max results (default 20)",
+            },
+          },
+        },
+      },
     ];
   }
 
@@ -151,7 +275,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
 
       if (name === "save_memory") {
         logger.info("CortexMemory", `save_memory type=${args.type ?? "factual"}: "${String(args.content).slice(0, 100)}"`);
-        const id = await this.db.addMemory(args.content, args.type ?? "factual");
+        const id = await this.db.addMemory(args.content, args.type ?? "factual", args.tags ?? []);
         this.savedThisTurn.add(id);
         logger.info("CortexMemory", `save_memory SUCCESS id=${id.slice(0, 8)}`);
         // Link to top 3 similar existing memories
@@ -181,6 +305,92 @@ export class CortexMemoryPlugin implements AgentPlugin {
         logger.debug("CortexMemory", `get_linked_memories found ${linked.length} links`);
         if (linked.length === 0) return "No linked memories found.";
         return linked.map((m) => `[${m.id.slice(0, 8)}] ${m.text}`).join("\n");
+      }
+
+      if (name === "query_memories") {
+        logger.info("CortexMemory", `query_memories: ${JSON.stringify(args)}`);
+        const filter: MemoryFilter = {
+          types: args.types,
+          tags: args.tags,
+          after: args.after,
+          before: args.before,
+          contains: args.contains,
+          limit: args.limit,
+        };
+        const results = this.db.queryMemories(filter);
+        logger.debug("CortexMemory", `query_memories found ${results.length} results`);
+        if (results.length === 0) return "No memories match the given filter.";
+        const MAX_TEXT = 300;
+        return results
+          .map((r) => {
+            const text = r.text.length > MAX_TEXT ? r.text.slice(0, MAX_TEXT) + "…" : r.text;
+            const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
+            const date = new Date(r.timestamp).toISOString().slice(0, 10);
+            return `[${r.id.slice(0, 8)}] (${r.type}, ${date}${tagsStr}) ${text}`;
+          })
+          .join("\n");
+      }
+
+      if (name === "hybrid_search") {
+        logger.info("CortexMemory", `hybrid_search: "${args.query}"`);
+        const filter: MemoryFilter = {
+          types: args.types,
+          tags: args.tags,
+          after: args.after,
+          before: args.before,
+          contains: args.contains,
+        };
+        const results = await this.db.hybridSearch(args.query, filter, args.limit ?? 5, 0.4);
+        logger.debug("CortexMemory", `hybrid_search found ${results.length} results`);
+        if (results.length === 0) return "No memories match the given query and filters.";
+        const MAX_TEXT = 300;
+        return results
+          .map((r) => {
+            const text = r.text.length > MAX_TEXT ? r.text.slice(0, MAX_TEXT) + "…" : r.text;
+            const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
+            const date = new Date(r.timestamp).toISOString().slice(0, 10);
+            return `[${r.id.slice(0, 8)}] (score: ${r.score.toFixed(2)}, ${r.type}, ${date}${tagsStr}) ${text}`;
+          })
+          .join("\n");
+      }
+
+      if (name === "aggregate_memories") {
+        logger.info("CortexMemory", `aggregate_memories group_by=${args.group_by}`);
+        const filter: MemoryFilter | undefined = args.filter
+          ? {
+              types: args.filter.types,
+              tags: args.filter.tags,
+              after: args.filter.after,
+              before: args.filter.before,
+              contains: args.filter.contains,
+              limit: args.filter.limit,
+            }
+          : undefined;
+        const results = this.db.aggregateMemories(args.group_by, filter);
+        logger.debug("CortexMemory", `aggregate_memories found ${results.length} groups`);
+        if (results.length === 0) return "No memories found.";
+        const header = `${"Group".padEnd(30)} Count`;
+        const divider = "-".repeat(36);
+        const rows = results.map((r) => `${r.group.padEnd(30)} ${r.count}`);
+        return [header, divider, ...rows].join("\n");
+      }
+
+      if (name === "get_memory_timeline") {
+        logger.info("CortexMemory", `get_memory_timeline start=${args.start} end=${args.end}`);
+        const start = args.start ? new Date(args.start).getTime() : undefined;
+        const end = args.end ? new Date(args.end).getTime() : undefined;
+        const results = this.db.getMemoryTimeline(start, end, args.limit ?? 20);
+        logger.debug("CortexMemory", `get_memory_timeline found ${results.length} memories`);
+        if (results.length === 0) return "No memories found in the given time range.";
+        const MAX_TEXT = 300;
+        return results
+          .map((r) => {
+            const text = r.text.length > MAX_TEXT ? r.text.slice(0, MAX_TEXT) + "…" : r.text;
+            const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
+            const date = new Date(r.timestamp).toISOString().replace("T", " ").slice(0, 19);
+            return `[${r.id.slice(0, 8)}] (${r.type}, ${date}${tagsStr}) ${text}`;
+          })
+          .join("\n");
       }
     } catch (e) {
       logger.error("CortexMemory", `Tool error (${name}):`, e);
