@@ -58,9 +58,10 @@ export class FileIOPlugin implements AgentPlugin {
   name = "FileIO";
 
   getSystemPromptFragment(): string {
-    return `You can download files from the internet and read files on the local filesystem.
+    return `You can download files from the internet and read/write files on the local filesystem.
 Use download_file to fetch a file from a URL and save it to the downloads/ directory (HTTPS only).
 Use read_file to read the text content of a local file.
+Use write_file to write or overwrite text content to a local file (creates parent directories as needed).
 All local file operations are restricted to the current working directory.`;
   }
 
@@ -101,6 +102,25 @@ All local file operations are restricted to the current working directory.`;
           required: ["path"],
         },
       },
+      {
+        name: "write_file",
+        description:
+          "Write text content to a local file, creating parent directories as needed. Use this when the user asks to save, create, or overwrite a file on disk.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description: "Path to the file, relative to the working directory.",
+            },
+            content: {
+              type: "string",
+              description: "Text content to write to the file.",
+            },
+          },
+          required: ["path", "content"],
+        },
+      },
     ];
   }
 
@@ -110,6 +130,9 @@ All local file operations are restricted to the current working directory.`;
     }
     if (name === "read_file") {
       return this.readFile(args.path);
+    }
+    if (name === "write_file") {
+      return this.writeFile(args.path, args.content);
     }
   }
 
@@ -170,5 +193,11 @@ All local file operations are restricted to the current working directory.`;
     }
     const content = await file.text();
     return { path: resolved, content, size };
+  }
+
+  private async writeFile(path: string, content: string): Promise<{ path: string; size: number }> {
+    const resolved = validatePath(path);
+    await Bun.write(resolved, content);
+    return { path: resolved, size: Buffer.byteLength(content) };
   }
 }
