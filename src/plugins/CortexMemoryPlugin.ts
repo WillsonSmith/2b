@@ -35,7 +35,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "Use `get_memory_timeline` to retrieve memories in chronological order.",
     ];
 
-    const behaviors = this.db.getRecentMemories(1000, "behavior");
+    const behaviors = this.db.getRecentMemories(20, "behavior");
     if (behaviors.length > 0) {
       parts.push("\n## Learned Behaviors");
       for (const b of behaviors) {
@@ -54,7 +54,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       if (!query.trim()) return "";
 
       logger.debug("CortexMemory", `getContext() searching: "${query.slice(0, 80)}…"`);
-      const results = await this.db.search(query, 3, 0.5, ["factual", "thought"]);
+      const results = await this.db.search(query, 3, 0.5, ["factual"]);
       logger.debug("CortexMemory", `getContext() found ${results.length} memories`);
       if (results.length === 0) return "";
 
