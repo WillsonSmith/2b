@@ -7,8 +7,18 @@ const MAX_TIMEOUT_MS = 60_000;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_OUTPUT_BYTES = 64 * 1024; // 64 KB
 const MAX_INPUT_BYTES = 256 * 1024; // 256 KB
-const DOCKER_IMAGE = "python:3.11-slim";
+const CONTAINER_IMAGE = "python:3.11-slim";
 const DEFAULT_CODE_MODEL = "qwen2.5-coder-7b-instruct-mlx";
+
+type ContainerRuntime = "docker" | "apple-container";
+
+async function detectRuntime(): Promise<ContainerRuntime> {
+  if (process.platform !== "darwin") return "docker";
+  const proc = Bun.spawn(["which", "container"], { stdout: "pipe", stderr: "ignore" });
+  await proc.exited;
+  const out = await new Response(proc.stdout).text();
+  return out.trim().length > 0 ? "apple-container" : "docker";
+}
 
 const CODE_GEN_SYSTEM_PROMPT = [
   "You are an expert Python 3.11 programmer.",
@@ -30,16 +40,34 @@ export class CodeSandboxPlugin implements AgentPlugin {
   name = "CodeSandbox";
   private lmClient: LMStudioClient;
   private codeModel: string;
+  private runtime: ContainerRuntime = "docker";
 
   constructor() {
     this.lmClient = new LMStudioClient();
     this.codeModel = process.env.CODE_MODEL ?? DEFAULT_CODE_MODEL;
   }
 
-  onInit(_agent: BaseAgent): void {
-    logger.info("CodeSandbox", `Pre-pulling ${DOCKER_IMAGE}...`);
-    Bun.spawn(["docker", "pull", DOCKER_IMAGE], { stdout: "ignore", stderr: "ignore" }).exited
-      .then(() => logger.info("CodeSandbox", `${DOCKER_IMAGE} ready`))
+  async onInit(_agent: BaseAgent): Promise<void> {
+    this.runtime = await detectRuntime();
+    logger.info("CodeSandbox", `Runtime: ${this.runtime}`);
+
+    if (this.runtime === "apple-container") {
+      logger.info("CodeSandbox", "Starting container system...");
+      const startProc = Bun.spawn(["container", "system", "start"], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      await startProc.exited;
+      logger.info("CodeSandbox", "Container system ready");
+    }
+
+    const pullCmd = this.runtime === "apple-container"
+      ? ["container", "pull", CONTAINER_IMAGE]
+      : ["docker", "pull", CONTAINER_IMAGE];
+
+    logger.info("CodeSandbox", `Pre-pulling ${CONTAINER_IMAGE}...`);
+    Bun.spawn(pullCmd, { stdout: "ignore", stderr: "ignore" }).exited
+      .then(() => logger.info("CodeSandbox", `${CONTAINER_IMAGE} ready`))
       .catch(() => logger.info("CodeSandbox", `Pre-pull failed — will pull on first run`));
 
     logger.info("CodeSandbox", `Code model: ${this.codeModel}`);
@@ -47,7 +75,7 @@ export class CodeSandboxPlugin implements AgentPlugin {
 
   getSystemPromptFragment(): string {
     return [
-      "You have access to a Python 3.11 code sandbox running in an isolated Docker container.",
+      "You have access to a Python 3.11 code sandbox running in an isolated container.",
       "Use execute_code to run computations, data processing, calculations, or any programmatic task.",
       "Describe what the code should do in plain language via the 'task' parameter — a dedicated coding model will write the Python for you.",
       "Pass structured data in via 'input_data' (a JSON string); the code can read it with:",
@@ -62,7 +90,7 @@ export class CodeSandboxPlugin implements AgentPlugin {
         name: "execute_code",
         description:
           "Describe a Python computation task in plain language. " +
-          "A dedicated coding model will write the Python 3.11 code and execute it in an isolated Docker container. " +
+          "A dedicated coding model will write the Python 3.11 code and execute it in an isolated container. " +
           "No network access. No host filesystem access. Standard library only. " +
           "Returns { stdout, stderr, exitCode, success, timedOut, generatedCode }.",
         parameters: {
@@ -132,29 +160,12 @@ export class CodeSandboxPlugin implements AgentPlugin {
     logger.info("CodeSandbox", `Generated ${Buffer.byteLength(code)} bytes of Python`);
     logger.debug("CodeSandbox", `Generated code:\n${code}`);
 
-    const dockerArgs = [
-      "docker", "run",
-      "--rm",
-      "--network=none",
-      "--memory=256m",
-      "--cpus=0.5",
-      "--pids-limit=64",
-      "--security-opt=no-new-privileges:true",
-      "--cap-drop=ALL",
-      "--user=65534",
-      "--read-only",
-      "--tmpfs", "/tmp:size=32m,noexec,nosuid,nodev",
-    ];
-
-    if (input_data !== undefined && input_data !== null) {
-      dockerArgs.push("-e", `INPUT_DATA=${input_data}`);
-    }
-
-    dockerArgs.push(DOCKER_IMAGE, "python", "-c", code);
+    const runArgs = this.buildRunArgs(input_data);
+    runArgs.push(CONTAINER_IMAGE, "python", "-c", code);
 
     logger.info("CodeSandbox", `Launching container (timeout: ${timeout}ms)`);
 
-    const proc = Bun.spawn(dockerArgs, {
+    const proc = Bun.spawn(runArgs, {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -188,6 +199,31 @@ export class CodeSandboxPlugin implements AgentPlugin {
       timedOut,
       generatedCode: code,
     };
+  }
+
+  private buildRunArgs(input_data?: string | null): string[] {
+    if (this.runtime === "apple-container") {
+      const args = ["container", "run", "--rm", "--network=none"];
+      if (input_data != null) args.push("-e", `INPUT_DATA=${input_data}`);
+      return args;
+    }
+
+    // Docker with full hardening
+    const args = [
+      "docker", "run",
+      "--rm",
+      "--network=none",
+      "--memory=256m",
+      "--cpus=0.5",
+      "--pids-limit=64",
+      "--security-opt=no-new-privileges:true",
+      "--cap-drop=ALL",
+      "--user=65534",
+      "--read-only",
+      "--tmpfs", "/tmp:size=32m,noexec,nosuid,nodev",
+    ];
+    if (input_data != null) args.push("-e", `INPUT_DATA=${input_data}`);
+    return args;
   }
 
   private async generateCode(prompt: string): Promise<string> {
