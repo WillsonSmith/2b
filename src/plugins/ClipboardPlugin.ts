@@ -4,10 +4,6 @@ import { logger } from "../logger.ts";
 export class ClipboardPlugin implements AgentPlugin {
   name = "Clipboard";
 
-  getSystemPromptFragment(): string {
-    return `You can read from and write to the macOS clipboard.
-Use read_clipboard to see what text is currently copied, and write_clipboard to put text on the clipboard.`;
-  }
 
   getTools(): ToolDefinition[] {
     return [
