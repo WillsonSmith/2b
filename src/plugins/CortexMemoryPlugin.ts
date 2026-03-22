@@ -20,13 +20,15 @@ export class CortexMemoryPlugin implements AgentPlugin {
   getSystemPromptFragment(): string {
     const parts = [
       "## Memory System",
-      "You have a long-term memory system with three types of memories:",
+      "You have a long-term memory system with four types of memories:",
       "- **factual**: specific details from conversations, decisions, established facts.",
       "- **thought**: your internal reasoning and reflections (written by your thought system).",
       "- **behavior**: learned preferences and behavioral rules (injected as active instructions).",
+      "- **procedure**: step-by-step instructions for accomplishing a task you have previously solved.",
       "Use `search_memory` before making assertions about past conversations.",
       "Use `save_memory` to preserve important facts or decisions.",
       "Use `save_behavior` to record a persistent behavioral rule you want to follow on every future turn.",
+      "Use `save_procedure` after successfully completing a non-trivial task to record the steps taken.",
       "Use `delete_memory` to remove a memory by its ID.",
       "Use `get_linked_memories` to follow chains of related ideas.",
       "Use `query_memories` to filter memories by type, tags, date range, or full-text content.",
@@ -54,12 +56,21 @@ export class CortexMemoryPlugin implements AgentPlugin {
       if (!query.trim()) return "";
 
       logger.debug("CortexMemory", `getContext() searching: "${query.slice(0, 80)}…"`);
-      const results = await this.db.search(query, 3, 0.5, ["factual"]);
-      logger.debug("CortexMemory", `getContext() found ${results.length} memories`);
-      if (results.length === 0) return "";
+      const [factualResults, procedureResults] = await Promise.all([
+        this.db.search(query, 3, 0.5, ["factual"]),
+        this.db.search(query, 1, 0.65, ["procedure"]),
+      ]);
+      logger.debug("CortexMemory", `getContext() found ${factualResults.length} memories, ${procedureResults.length} procedures`);
 
-      const entries = results.map((r) => `- [${r.id.slice(0, 8)}] ${r.text}`).join("\n");
-      return `Relevant memories:\n${entries}`;
+      const parts: string[] = [];
+      if (factualResults.length > 0) {
+        const entries = factualResults.map((r) => `- [${r.id.slice(0, 8)}] ${r.text}`).join("\n");
+        parts.push(`Relevant memories:\n${entries}`);
+      }
+      if (procedureResults.length > 0) {
+        parts.push(`Relevant procedure:\n${procedureResults[0]!.text}`);
+      }
+      return parts.join("\n\n");
     } catch {
       return "";
     }
@@ -76,7 +87,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
             query: { type: "string", description: "The query to search for" },
             type: {
               type: "string",
-              enum: ["factual", "thought", "behavior"],
+              enum: ["factual", "thought", "behavior", "procedure"],
               description: "Optional memory type filter",
             },
           },
@@ -92,7 +103,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
             content: { type: "string", description: "The memory content to save" },
             type: {
               type: "string",
-              enum: ["factual", "thought", "behavior"],
+              enum: ["factual", "thought", "behavior", "procedure"],
               description: "The memory type",
             },
             tags: {
@@ -114,6 +125,19 @@ export class CortexMemoryPlugin implements AgentPlugin {
             rule: { type: "string", description: "The behavioral rule to persist" },
           },
           required: ["rule"],
+        },
+      },
+      {
+        name: "save_procedure",
+        description:
+          "Save a reusable step-by-step procedure after successfully completing a non-trivial task. Include a clear goal description and numbered steps. Relevant procedures are automatically surfaced when similar tasks arise in future conversations.",
+        parameters: {
+          type: "object",
+          properties: {
+            goal: { type: "string", description: "A short description of what the procedure accomplishes, e.g. 'Clip a segment from a Twitch VOD'" },
+            steps: { type: "string", description: "Numbered step-by-step instructions describing exactly what was done" },
+          },
+          required: ["goal", "steps"],
         },
       },
       {
@@ -147,7 +171,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
           properties: {
             types: {
               type: "array",
-              items: { type: "string", enum: ["factual", "thought", "behavior"] },
+              items: { type: "string", enum: ["factual", "thought", "behavior", "procedure"] },
               description: "Filter by memory types",
             },
             tags: {
@@ -184,7 +208,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
             query: { type: "string", description: "The semantic search query" },
             types: {
               type: "array",
-              items: { type: "string", enum: ["factual", "thought", "behavior"] },
+              items: { type: "string", enum: ["factual", "thought", "behavior", "procedure"] },
               description: "Filter by memory types",
             },
             tags: {
@@ -291,6 +315,13 @@ export class CortexMemoryPlugin implements AgentPlugin {
         logger.info("CortexMemory", `save_behavior: "${String(args.rule).slice(0, 100)}"`);
         const id = await this.db.addMemory(args.rule, "behavior");
         return `Behavior rule saved (id: ${id.slice(0, 8)}).`;
+      }
+
+      if (name === "save_procedure") {
+        const text = `[PROCEDURE] ${args.goal}\n${args.steps}`;
+        logger.info("CortexMemory", `save_procedure: "${String(args.goal).slice(0, 100)}"`);
+        const id = await this.db.addMemory(text, "procedure");
+        return `Procedure saved (id: ${id.slice(0, 8)}).`;
       }
 
       if (name === "delete_memory") {
