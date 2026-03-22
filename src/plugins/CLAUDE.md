@@ -29,6 +29,12 @@ Modular agent capabilities. Each plugin implements `AgentPlugin` from `../core/P
 | `ImageVisionPlugin` | Image analysis via a local vision model; tools: `analyze_image_url` (from web URL) and `analyze_image_file` (from local path) |
 | `YtDlpPlugin` | Download video clips from Twitch VODs, YouTube, and other yt-dlp-compatible sites; tool: `download_video_clip` (url, start_time, end_time) — requires `yt-dlp` in PATH |
 | `RSSPlugin` | Fetch and parse RSS and Atom feeds (HTTPS only); tool: `fetch_rss_feed` (url, limit) — returns feed title, description, and items with title, link, description, pubDate, author |
+| `WebSearchPlugin` | DuckDuckGo instant answers for factual queries; tool: `web_search` |
+| `WebReaderPlugin` | Fetches and extracts readable article text from HTTPS web pages; tool: `read_webpage` |
+| `ShellPlugin` | Read-only shell command execution (ls, git, cat, grep, etc.); tool: `run_shell` — no shell operators, no write commands |
+| `ClipboardPlugin` | macOS clipboard read/write via pbpaste/pbcopy; tools: `read_clipboard`, `write_clipboard` |
+| `NotesPlugin` | Persistent markdown notes saved to `notes/` directory; tools: `create_note`, `list_notes`, `read_note`, `delete_note` |
+| `WeatherPlugin` | Current weather conditions via Open-Meteo (no API key required); tool: `get_weather` (location) |
 
 ## Writing a New Plugin
 
