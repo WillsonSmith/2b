@@ -103,7 +103,7 @@ export class RSSPlugin implements AgentPlugin {
     return [
       {
         name: "fetch_rss_feed",
-        description: "Fetch and parse an RSS or Atom feed, returning recent articles/entries",
+        description: "Fetch and parse an RSS or Atom feed, returning recent articles/entries. Use this when the user asks to check a news feed, blog, podcast, or any URL that is an RSS or Atom feed.",
         parameters: {
           type: "object",
           properties: {
