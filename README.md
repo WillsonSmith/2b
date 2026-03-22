@@ -63,7 +63,6 @@ Plugins implement the `AgentPlugin` interface and can contribute:
 | `CortexMemoryPlugin` | Persistent semantic memory (factual / thought / behavior types) with cosine-similarity search |
 | `ThoughtPlugin` | Auto-captures `<think>` reasoning blocks as memory |
 | `MemoryPlugin` | Short-term conversation history (max 15 messages, auto-summarize) |
-| `DocumentManagerPlugin` | Full document lifecycle: create, edit, version, link, semantic search |
 | `TMDBPlugin` | Movie and people lookup via TMDB API |
 | `FileIOPlugin` | File read/write/download tools |
 | `ImageVisionPlugin` | Image analysis via local vision model |
