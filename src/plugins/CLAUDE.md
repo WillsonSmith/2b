@@ -27,6 +27,7 @@ Modular agent capabilities. Each plugin implements `AgentPlugin` from `../core/P
 | `TMDBPlugin` | Movie and people lookup via The Movie Database API; tools: `search_movies`, `get_movie_details`, `get_movie_credits`, `get_movie_recommendations`, `get_trending_movies`, `search_person`, `get_person_details`; requires `TMDB_API_KEY` |
 | `FileIOPlugin` | HTTPS-only file downloads; `download_file` tool writes to `downloads/` (max 100 MB) |
 | `ImageVisionPlugin` | Image analysis via a local vision model; tools: `analyze_image_url` (from web URL) and `analyze_image_file` (from local path) |
+| `YtDlpPlugin` | Download video clips from Twitch VODs, YouTube, and other yt-dlp-compatible sites; tool: `download_video_clip` (url, start_time, end_time) — requires `yt-dlp` in PATH |
 
 ## Writing a New Plugin
 
