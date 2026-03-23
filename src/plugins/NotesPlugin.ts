@@ -1,9 +1,10 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { join, resolve, relative, isAbsolute } from "node:path";
-import { mkdirSync, unlinkSync } from "node:fs";
+import { unlinkSync } from "node:fs";
 import { logger } from "../logger.ts";
+import { appDataPath } from "../paths.ts";
 
-const NOTES_DIR = join(process.cwd(), "notes");
+const NOTES_DIR = appDataPath("notes");
 
 function safeNotePath(title: string): string {
   const safe = title
@@ -20,9 +21,7 @@ function safeNotePath(title: string): string {
 export class NotesPlugin implements AgentPlugin {
   name = "Notes";
 
-  constructor() {
-    mkdirSync(NOTES_DIR, { recursive: true });
-  }
+  constructor() {}
 
   getSystemPromptFragment(): string {
     return `You can save and retrieve persistent markdown notes stored in the notes/ directory.
