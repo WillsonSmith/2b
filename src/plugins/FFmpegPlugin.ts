@@ -1,7 +1,7 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { logger } from "../logger.ts";
 import { $ } from "bun";
-import { join, basename, extname } from "node:path";
+import { join, basename, extname, resolve, relative } from "node:path";
 
 const DOWNLOADS_DIR = "downloads";
 
@@ -517,6 +517,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
       const format = data.format ?? {};
 
       return {
+        success: true,
         duration_seconds: parseFloat(format.duration ?? "0"),
         size_bytes: parseInt(format.size ?? "0", 10),
         bitrate_kbps: Math.round(parseInt(format.bit_rate ?? "0", 10) / 1000),
@@ -728,7 +729,12 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
 
     logger.debug("FFmpeg", `images_to_video (pattern): ${inputPattern} -> ${output}`);
     try {
-      await $`ffmpeg -y -r ${String(framerate)} -i ${inputPattern} -c:v ${videoCodec} -pix_fmt yuv420p ${output}`;
+      const hasGlob = /[*?[\]{}]/.test(inputPattern);
+      if (hasGlob) {
+        await $`ffmpeg -y -r ${String(framerate)} -pattern_type glob -i ${inputPattern} -c:v ${videoCodec} -pix_fmt yuv420p ${output}`;
+      } else {
+        await $`ffmpeg -y -r ${String(framerate)} -i ${inputPattern} -c:v ${videoCodec} -pix_fmt yuv420p ${output}`;
+      }
       return { success: true, output_file: output };
     } catch (err: any) {
       const stderr = err?.stderr ?? err?.message ?? String(err);
