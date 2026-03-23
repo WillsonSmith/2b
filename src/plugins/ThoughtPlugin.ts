@@ -34,17 +34,6 @@ export class ThoughtPlugin implements AgentPlugin {
     ].join("\n");
   }
 
-  async getContext(): Promise<string> {
-    try {
-      const recent = this.memoryPlugin.db.getRecentMemories(3, "thought");
-      if (recent.length === 0) return "";
-      const entries = recent.map((t) => `- ${t.text}`).join("\n");
-      return `Recent thoughts:\n${entries}`;
-    } catch {
-      return "";
-    }
-  }
-
   getTools(): ToolDefinition[] {
     return [
       {

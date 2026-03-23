@@ -24,15 +24,6 @@ export class NotesPlugin implements AgentPlugin {
     mkdirSync(NOTES_DIR, { recursive: true });
   }
 
-  getSystemPromptFragment(): string {
-    return `You can create, read, list, and delete persistent notes saved to disk.
-Use create_note to save a note with a title and markdown content.
-Use list_notes to see all saved notes.
-Use read_note to retrieve a note's content by title.
-Use delete_note to remove a note.
-Notes are saved as markdown files in the notes/ directory.`;
-  }
-
   getTools(): ToolDefinition[] {
     return [
       {
