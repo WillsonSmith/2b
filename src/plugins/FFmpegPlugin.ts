@@ -7,6 +7,7 @@ const DOWNLOADS_DIR = "downloads";
 
 export class FFmpegPlugin implements AgentPlugin {
   name = "FFmpeg";
+  private dirEnsured = false;
 
   getSystemPromptFragment(): string {
     return `You can edit local video files using FFmpeg.
@@ -507,7 +508,9 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   }
 
   private async ensureDownloadsDir(): Promise<void> {
+    if (this.dirEnsured) return;
     await $`mkdir -p ${DOWNLOADS_DIR}`.quiet();
+    this.dirEnsured = true;
   }
 
   private async getInfo(inputFile: string) {
@@ -918,7 +921,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
 
     const filterMap: Record<string, string> = {
       "90": "transpose=1",
-      "180": "transpose=2,transpose=2",
+      "180": "hflip,vflip",
       "270": "transpose=2",
       "flip_horizontal": "hflip",
       "flip_vertical": "vflip",
