@@ -19,7 +19,7 @@ Modular agent capabilities. Each plugin implements `AgentPlugin` from `../core/P
 
 | Plugin | Purpose |
 |--------|---------|
-| `CortexMemoryPlugin` | Long-term memory with types (factual/thought/behavior), semantic search, linking, deletion, and autonomous conflict resolution — auto-registered by `CortexAgent` |
+| `CortexMemoryPlugin` | Long-term memory with types (factual/thought/behavior/procedure), semantic search, linking, deletion, and autonomous conflict resolution; auto-surfaces relevant memories in context each turn — auto-registered by `CortexAgent` |
 | `ThoughtPlugin` | Persists `<think>` blocks as thought memories; exposes `get_recent_thoughts` — auto-registered by `CortexAgent` |
 | `MemoryPlugin` | Short-term conversation history (max 15 messages, auto-summarises) |
 | `AudioPlugin` | Classifies microphone speech as direct/ambient via intent detection |
@@ -36,7 +36,7 @@ Modular agent capabilities. Each plugin implements `AgentPlugin` from `../core/P
 | `ClipboardPlugin` | macOS clipboard read/write via pbpaste/pbcopy; tools: `read_clipboard`, `write_clipboard` |
 | `NotesPlugin` | Persistent markdown notes saved to `notes/` directory; tools: `create_note`, `list_notes`, `read_note`, `delete_note` |
 | `WeatherPlugin` | Current weather conditions via Open-Meteo (no API key required); tool: `get_weather` (location) |
-| `CodeSandboxPlugin` | Executes Python 3.11 in an isolated Docker container (`python:3.11-slim`); tool: `execute_code` (task description in plain language, optional input_data JSON, optional timeout_ms) — a dedicated coding model (`qwen2.5-coder-7b-instruct-mlx` by default, overridable via `CODE_MODEL` env var) generates the Python from the task description before execution; no network, no host fs, memory/cpu/pids limited, stdout/stderr + generatedCode returned, 15s default timeout, 60s max; pre-pulls image on init |
+| `CodeSandboxPlugin` | Executes Python 3.11 in an isolated container (`python:3.11-slim`); auto-detects Docker or Apple Container runtime on macOS; tool: `execute_code` (task description in plain language, optional input_data JSON, optional timeout_ms) — a dedicated coding model (`qwen2.5-coder-7b-instruct-mlx` by default, overridable via `CODE_MODEL` env var) generates the Python from the task description before execution; no network, no host fs, memory/cpu/pids limited, stdout/stderr + generatedCode returned, 15s default timeout, 60s max; pre-pulls image on init |
 
 ## Writing a New Plugin
 
