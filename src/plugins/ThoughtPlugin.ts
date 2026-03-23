@@ -34,7 +34,6 @@ export class ThoughtPlugin implements AgentPlugin {
     ].join("\n");
   }
 
-
   getTools(): ToolDefinition[] {
     return [
       {

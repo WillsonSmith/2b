@@ -4,7 +4,6 @@ import { logger } from "../logger.ts";
 export class ClipboardPlugin implements AgentPlugin {
   name = "Clipboard";
 
-
   getTools(): ToolDefinition[] {
     return [
       {

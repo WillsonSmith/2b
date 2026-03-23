@@ -56,10 +56,11 @@ export class CortexMemoryPlugin implements AgentPlugin {
       if (!query.trim()) return "";
 
       logger.debug("CortexMemory", `getContext() searching: "${query.slice(0, 80)}…"`);
-      const [factualResults, procedureResults] = await Promise.all([
-        this.db.search(query, 3, 0.5, ["factual"]),
-        this.db.search(query, 1, 0.65, ["procedure"]),
-      ]);
+      const embedding = await this.db.getEmbedding(query);
+      const [factualResults, procedureResults] = [
+        this.db.searchWithEmbedding(embedding, 3, 0.5, ["factual"]),
+        this.db.searchWithEmbedding(embedding, 1, 0.65, ["procedure"]),
+      ];
       logger.debug("CortexMemory", `getContext() found ${factualResults.length} memories, ${procedureResults.length} procedures`);
 
       const parts: string[] = [];
