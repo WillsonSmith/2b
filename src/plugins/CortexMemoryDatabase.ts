@@ -1,6 +1,8 @@
 import { Database } from "bun:sqlite";
 import { randomUUID } from "crypto";
+import { join } from "node:path";
 import { logger } from "../logger.ts";
+import { appDataPath } from "../paths.ts";
 
 export interface MemoryFilter {
   types?: string[];
@@ -18,7 +20,7 @@ export class CortexMemoryDatabase {
 
   constructor(llmProvider: any, name: string, dbPath?: string) {
     this.llm = llmProvider;
-    this.db = new Database(dbPath ?? `./data/${name}.cortex.sqlite`, { create: true });
+    this.db = new Database(dbPath ?? join(appDataPath("data"), `${name}.cortex.sqlite`), { create: true });
     this.initSchema();
   }
 

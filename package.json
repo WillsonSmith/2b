@@ -1,6 +1,9 @@
 {
   "name": "2b",
   "module": "index.ts",
+  "bin": {
+    "2b": "./index.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },

@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { createAgent } from "./src/agents/AgentFactory.ts";
 
 const GRAY = "\x1b[90m", CYAN = "\x1b[36m", BOLD = "\x1b[1m", RESET = "\x1b[0m";

@@ -1,10 +1,11 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { join, resolve, relative, isAbsolute } from "node:path";
 import { readdir } from "node:fs/promises";
+import { appDataPath } from "../paths.ts";
 
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024; // 100 MB
 const MAX_READ_BYTES = 1 * 1024 * 1024; // 1 MB
-const DOWNLOADS_DIR = join(process.cwd(), "downloads");
+const DOWNLOADS_DIR = appDataPath("downloads");
 const BASE_DIR = process.cwd();
 
 function validateUrl(url: string): URL {
