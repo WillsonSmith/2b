@@ -142,6 +142,11 @@ export class CortexMemoryDatabase {
     return id;
   }
 
+  /** Compute and return an embedding vector for the given text. */
+  public async getEmbedding(text: string): Promise<number[]> {
+    return this.llm.getEmbedding(text);
+  }
+
   /** Search memories by embedding similarity. Optionally filter by type or array of types. */
   public async search(
     query: string,
@@ -151,7 +156,16 @@ export class CortexMemoryDatabase {
   ): Promise<Array<{ id: string; text: string; score: number }>> {
     logger.debug("CortexDB", `search limit=${limit} threshold=${threshold}${type ? ` type=${Array.isArray(type) ? type.join(",") : type}` : ""}: "${query.slice(0, 80)}"`);
     const queryEmbedding = await this.llm.getEmbedding(query);
+    return this.searchWithEmbedding(queryEmbedding, limit, threshold, type);
+  }
 
+  /** Search memories using a pre-computed embedding. Avoids redundant embedding calls when searching multiple types. */
+  public searchWithEmbedding(
+    queryEmbedding: number[],
+    limit: number = 5,
+    threshold: number = 0.5,
+    type?: string | string[],
+  ): Array<{ id: string; text: string; score: number }> {
     let rows: { id: string; text: string; embedding: string }[];
     if (Array.isArray(type)) {
       const placeholders = type.map(() => "?").join(", ");

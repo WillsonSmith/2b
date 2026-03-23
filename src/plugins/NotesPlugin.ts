@@ -24,7 +24,6 @@ export class NotesPlugin implements AgentPlugin {
     mkdirSync(NOTES_DIR, { recursive: true });
   }
 
-
   getTools(): ToolDefinition[] {
     return [
       {

@@ -31,7 +31,6 @@ const WMO_DESCRIPTIONS: Record<number, string> = {
 export class WeatherPlugin implements AgentPlugin {
   name = "Weather";
 
-
   getTools(): ToolDefinition[] {
     return [
       {
