@@ -210,11 +210,13 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
             },
             framerate: {
               type: "number",
-              description: "Frames per second for the output video. Defaults to 24.",
+              description:
+                "Frames per second for the output video. Defaults to 24.",
             },
             video_codec: {
               type: "string",
-              description: "Video codec, e.g. 'libx264', 'libx265'. Defaults to 'libx264'.",
+              description:
+                "Video codec, e.g. 'libx264', 'libx265'. Defaults to 'libx264'.",
             },
             output_format: {
               type: "string",
@@ -222,7 +224,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
             },
             output_filename: {
               type: "string",
-              description: "Optional output filename without extension. Defaults to 'slideshow'.",
+              description:
+                "Optional output filename without extension. Defaults to 'slideshow'.",
             },
           },
           required: [],
@@ -254,7 +257,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
             },
             output_filename: {
               type: "string",
-              description: "Optional output filename without extension. Defaults to <video>_with_audio.",
+              description:
+                "Optional output filename without extension. Defaults to <video>_with_audio.",
             },
           },
           required: ["video_file", "audio_file"],
@@ -283,7 +287,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
             },
             image_format: {
               type: "string",
-              description: "Image format: 'jpg', 'png', 'webp'. Defaults to 'jpg'.",
+              description:
+                "Image format: 'jpg', 'png', 'webp'. Defaults to 'jpg'.",
             },
           },
           required: ["input_file"],
@@ -302,15 +307,18 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
             },
             timestamp: {
               type: "string",
-              description: "Timestamp of the frame to capture, e.g. '00:01:30', '1:30', or '90'.",
+              description:
+                "Timestamp of the frame to capture, e.g. '00:01:30', '1:30', or '90'.",
             },
             image_format: {
               type: "string",
-              description: "Image format: 'jpg', 'png', 'webp'. Defaults to 'jpg'.",
+              description:
+                "Image format: 'jpg', 'png', 'webp'. Defaults to 'jpg'.",
             },
             output_filename: {
               type: "string",
-              description: "Optional output filename without extension. Defaults to <input>_screenshot.",
+              description:
+                "Optional output filename without extension. Defaults to <input>_screenshot.",
             },
           },
           required: ["input_file", "timestamp"],
@@ -345,7 +353,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
             },
             output_filename: {
               type: "string",
-              description: "Optional output filename without extension. Defaults to <input>_cropped.",
+              description:
+                "Optional output filename without extension. Defaults to <input>_cropped.",
             },
           },
           required: ["input_file", "width", "height"],
@@ -369,7 +378,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
             },
             output_filename: {
               type: "string",
-              description: "Optional output filename without extension. Defaults to <input>_speed.",
+              description:
+                "Optional output filename without extension. Defaults to <input>_speed.",
             },
           },
           required: ["input_file", "speed"],
@@ -377,8 +387,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
       },
       {
         name: "ffmpeg_rotate",
-        description:
-          "Rotate or flip a video. Output saved to downloads/.",
+        description: "Rotate or flip a video. Output saved to downloads/.",
         parameters: {
           type: "object",
           properties: {
@@ -387,14 +396,15 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
               description: "Path to the input video file.",
             },
             rotation: {
-              type: "string",
-              enum: ["90", "180", "270", "flip_horizontal", "flip_vertical"],
+              type: ["string", "integer"],
+              enum: ["90", "180", "270", 90, 180, 270, "flip_horizontal", "flip_vertical"],
               description:
                 "Rotation or flip to apply: '90' (clockwise), '180', '270' (counter-clockwise), 'flip_horizontal', 'flip_vertical'.",
             },
             output_filename: {
               type: "string",
-              description: "Optional output filename without extension. Defaults to <input>_rotated.",
+              description:
+                "Optional output filename without extension. Defaults to <input>_rotated.",
             },
           },
           required: ["input_file", "rotation"],
@@ -484,7 +494,11 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
       case "ffmpeg_speed":
         return this.speed(args.input_file, args.speed, args.output_filename);
       case "ffmpeg_rotate":
-        return this.rotate(args.input_file, args.rotation, args.output_filename);
+        return this.rotate(
+          args.input_file,
+          args.rotation,
+          args.output_filename,
+        );
     }
   }
 
@@ -725,7 +739,10 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     outputFilename?: string,
   ) {
     if (!inputPattern && (!inputFiles || inputFiles.length === 0)) {
-      return { success: false, error: "Either input_pattern or input_files must be provided." };
+      return {
+        success: false,
+        error: "Either input_pattern or input_files must be provided.",
+      };
     }
 
     if (inputFiles && inputFiles.length > 0) {
@@ -746,7 +763,10 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
         .map((f) => `file '${f.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`)
         .join("\n");
       const listFile = join(DOWNLOADS_DIR, `_images_list_${Date.now()}.txt`);
-      logger.debug("FFmpeg", `images_to_video (list): ${inputFiles.length} files -> ${output}`);
+      logger.debug(
+        "FFmpeg",
+        `images_to_video (list): ${inputFiles.length} files -> ${output}`,
+      );
       try {
         await Bun.write(listFile, listContent);
         await $`ffmpeg -y -r ${String(framerate)} -f concat -safe 0 -i ${listFile} -c:v ${videoCodec} -pix_fmt yuv420p ${output}`;
@@ -761,7 +781,10 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     }
 
     // inputPattern is guaranteed non-undefined here by the early guard above
-    logger.debug("FFmpeg", `images_to_video (pattern): ${inputPattern} -> ${output}`);
+    logger.debug(
+      "FFmpeg",
+      `images_to_video (pattern): ${inputPattern} -> ${output}`,
+    );
     try {
       const hasGlob = /[*?[\]{}]/.test(inputPattern);
       if (hasGlob) {
@@ -792,7 +815,10 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     const ext = extname(videoFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
 
-    logger.debug("FFmpeg", `add_audio: ${videoFile} + ${audioFile} -> ${output}`);
+    logger.debug(
+      "FFmpeg",
+      `add_audio: ${videoFile} + ${audioFile} -> ${output}`,
+    );
     try {
       await this.ensureDownloadsDir();
       const shortestFlag = shortest ? ["-shortest"] : [];
@@ -816,7 +842,10 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     const prefix = outputPrefix ?? `${this.stem(inputFile)}_frame`;
     const outputPattern = join(DOWNLOADS_DIR, `${prefix}_%04d.${imageFormat}`);
 
-    logger.debug("FFmpeg", `extract_frames: ${inputFile} @ ${fps}fps -> ${outputPattern}`);
+    logger.debug(
+      "FFmpeg",
+      `extract_frames: ${inputFile} @ ${fps}fps -> ${outputPattern}`,
+    );
     try {
       await this.ensureDownloadsDir();
       await $`ffmpeg -y -i ${inputFile} -vf fps=${String(fps)} ${outputPattern}`;
@@ -839,7 +868,10 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     const stem = outputFilename ?? `${this.stem(inputFile)}_screenshot`;
     const output = this.outPath(stem, imageFormat);
 
-    logger.debug("FFmpeg", `screenshot: ${inputFile} @ ${timestamp} -> ${output}`);
+    logger.debug(
+      "FFmpeg",
+      `screenshot: ${inputFile} @ ${timestamp} -> ${output}`,
+    );
     try {
       await this.ensureDownloadsDir();
       await $`ffmpeg -y -ss ${timestamp} -i ${inputFile} -frames:v 1 ${output}`;
@@ -923,11 +955,11 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
       "90": "transpose=1",
       "180": "hflip,vflip",
       "270": "transpose=2",
-      "flip_horizontal": "hflip",
-      "flip_vertical": "vflip",
+      flip_horizontal: "hflip",
+      flip_vertical: "vflip",
     };
 
-    const vf = filterMap[rotation];
+    const vf = filterMap[String(rotation)];
     if (!vf) {
       return { success: false, error: `Unknown rotation '${rotation}'.` };
     }
