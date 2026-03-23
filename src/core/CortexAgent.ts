@@ -72,6 +72,11 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
     return this;
   }
 
+  public once<K extends keyof TEvents & string>(event: K, listener: (...args: TEvents[K] & any[]) => void): this {
+    this.inner.once(event, listener);
+    return this;
+  }
+
   public off<K extends keyof TEvents & string>(event: K, listener: (...args: TEvents[K] & any[]) => void): this {
     this.inner.off(event, listener);
     return this;
