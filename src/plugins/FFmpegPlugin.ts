@@ -494,7 +494,16 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   }
 
   private outPath(filename: string, ext: string): string {
-    return join(DOWNLOADS_DIR, `${filename}.${ext}`);
+    const safe = basename(filename);
+    return join(DOWNLOADS_DIR, `${safe}.${ext}`);
+  }
+
+  private validateInputPath(filePath: string): string | null {
+    const rel = relative(process.cwd(), resolve(filePath));
+    if (rel.startsWith("..")) {
+      return `Path '${filePath}' is outside the working directory.`;
+    }
+    return null;
   }
 
   private async ensureDownloadsDir(): Promise<void> {
@@ -502,6 +511,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   }
 
   private async getInfo(inputFile: string) {
+    const pathErr = this.validateInputPath(inputFile);
+    if (pathErr) return { success: false, error: pathErr };
     logger.debug("FFmpeg", `ffprobe: ${inputFile}`);
     try {
       const result =
@@ -555,6 +566,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     endTime: string,
     outputFilename?: string,
   ) {
+    const pathErr = this.validateInputPath(inputFile);
+    if (pathErr) return { success: false, error: pathErr };
     const stem = outputFilename ?? `${this.stem(inputFile)}_trimmed`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
@@ -581,6 +594,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     audioCodec?: string,
     outputFilename?: string,
   ) {
+    const pathErr = this.validateInputPath(inputFile);
+    if (pathErr) return { success: false, error: pathErr };
     const stem = outputFilename ?? `${this.stem(inputFile)}_converted`;
     const output = this.outPath(stem, outputFormat);
 
@@ -607,6 +622,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     outputFormat: string,
     outputFilename?: string,
   ) {
+    const pathErr = this.validateInputPath(inputFile);
+    if (pathErr) return { success: false, error: pathErr };
     const stem = outputFilename ?? `${this.stem(inputFile)}_audio`;
     const output = this.outPath(stem, outputFormat);
 
@@ -628,6 +645,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     height: number,
     outputFilename?: string,
   ) {
+    const pathErr = this.validateInputPath(inputFile);
+    if (pathErr) return { success: false, error: pathErr };
     const stem = outputFilename ?? `${this.stem(inputFile)}_resized`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
@@ -658,6 +677,10 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
         success: false,
         error: "At least two input files are required for concatenation.",
       };
+    }
+    for (const f of inputFiles) {
+      const pathErr = this.validateInputPath(f);
+      if (pathErr) return { success: false, error: pathErr };
     }
 
     const ext =
@@ -698,6 +721,17 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     outputFormat: string,
     outputFilename?: string,
   ) {
+    if (!inputPattern && (!inputFiles || inputFiles.length === 0)) {
+      return { success: false, error: "Either input_pattern or input_files must be provided." };
+    }
+
+    if (inputFiles && inputFiles.length > 0) {
+      for (const f of inputFiles) {
+        const pathErr = this.validateInputPath(f);
+        if (pathErr) return { success: false, error: pathErr };
+      }
+    }
+
     const stem = outputFilename ?? "slideshow";
     const output = this.outPath(stem, outputFormat);
 
@@ -723,10 +757,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
       }
     }
 
-    if (!inputPattern) {
-      return { success: false, error: "Either input_pattern or input_files must be provided." };
-    }
-
+    // inputPattern is guaranteed non-undefined here by the early guard above
     logger.debug("FFmpeg", `images_to_video (pattern): ${inputPattern} -> ${output}`);
     try {
       const hasGlob = /[*?[\]{}]/.test(inputPattern);
@@ -750,6 +781,10 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     shortest: boolean,
     outputFilename?: string,
   ) {
+    const videoPathErr = this.validateInputPath(videoFile);
+    if (videoPathErr) return { success: false, error: videoPathErr };
+    const audioPathErr = this.validateInputPath(audioFile);
+    if (audioPathErr) return { success: false, error: audioPathErr };
     const stem = outputFilename ?? `${this.stem(videoFile)}_with_audio`;
     const ext = extname(videoFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
@@ -773,6 +808,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     outputPrefix?: string,
     imageFormat: string = "jpg",
   ) {
+    const pathErr = this.validateInputPath(inputFile);
+    if (pathErr) return { success: false, error: pathErr };
     const prefix = outputPrefix ?? `${this.stem(inputFile)}_frame`;
     const outputPattern = join(DOWNLOADS_DIR, `${prefix}_%04d.${imageFormat}`);
 
@@ -794,6 +831,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     imageFormat: string,
     outputFilename?: string,
   ) {
+    const pathErr = this.validateInputPath(inputFile);
+    if (pathErr) return { success: false, error: pathErr };
     const stem = outputFilename ?? `${this.stem(inputFile)}_screenshot`;
     const output = this.outPath(stem, imageFormat);
 
@@ -817,6 +856,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     y: number,
     outputFilename?: string,
   ) {
+    const pathErr = this.validateInputPath(inputFile);
+    if (pathErr) return { success: false, error: pathErr };
     const stem = outputFilename ?? `${this.stem(inputFile)}_cropped`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
@@ -839,10 +880,11 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     speedFactor: number,
     outputFilename?: string,
   ) {
-    if (speedFactor <= 0 || speedFactor < 0.25 || speedFactor > 4) {
+    if (speedFactor < 0.25 || speedFactor > 4) {
       return { success: false, error: "Speed must be between 0.25 and 4.0." };
     }
-
+    const pathErr = this.validateInputPath(inputFile);
+    if (pathErr) return { success: false, error: pathErr };
     const stem = outputFilename ?? `${this.stem(inputFile)}_speed`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
@@ -868,6 +910,8 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     rotation: string,
     outputFilename?: string,
   ) {
+    const pathErr = this.validateInputPath(inputFile);
+    if (pathErr) return { success: false, error: pathErr };
     const stem = outputFilename ?? `${this.stem(inputFile)}_rotated`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
