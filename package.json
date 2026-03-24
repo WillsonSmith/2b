@@ -10,6 +10,9 @@
   "peerDependencies": {
     "typescript": "^5"
   },
+  "scripts": {
+    "backup": "bun scripts/backup.ts"
+  },
   "private": true,
   "type": "module",
   "dependencies": {
