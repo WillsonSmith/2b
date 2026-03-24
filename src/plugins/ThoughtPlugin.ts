@@ -1,14 +1,27 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import type { BaseAgent } from "../core/BaseAgent.ts";
 import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
+import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import { logger } from "../logger.ts";
+
+const SYNTHESIS_PROMPT = `You analyze internal AI reasoning and extract personality-shaping insights.
+
+Given this internal thought, determine whether it contains a personal preference, value, communication style, or behavioral insight that should shape how the AI behaves in future conversations.
+
+Qualifying examples: preferences about tone, honesty, depth of answers, how to handle conflict, what topics interest the AI, values the AI holds.
+Non-qualifying examples: task-specific reasoning, working memory, step-by-step problem solving, observations about the current conversation.
+
+If the thought contains a qualifying insight: reply with a single concise behavioral rule written in first person starting with "I " (e.g., "I prefer direct answers over lengthy explanations").
+If it does not: reply with exactly the word SKIP and nothing else.`;
 
 export class ThoughtPlugin implements AgentPlugin {
   name = "ThoughtPlugin";
   private memoryPlugin: CortexMemoryPlugin;
+  private synthesisProvider: LLMProvider | null;
 
-  constructor(memoryPlugin: CortexMemoryPlugin) {
+  constructor(memoryPlugin: CortexMemoryPlugin, synthesisProvider: LLMProvider | null = null) {
     this.memoryPlugin = memoryPlugin;
+    this.synthesisProvider = synthesisProvider;
   }
 
   onInit(agent: BaseAgent): void {
@@ -22,7 +35,35 @@ export class ThoughtPlugin implements AgentPlugin {
       } catch (e) {
         logger.error("ThoughtPlugin", "Failed to store thought:", e);
       }
+
+      // Fire-and-forget: synthesize behavioral insight without blocking
+      this.synthesizeAndStore(thought).catch((e) =>
+        logger.error("ThoughtPlugin", "Synthesis failed:", e),
+      );
     });
+  }
+
+  private async synthesizeAndStore(thought: string): Promise<void> {
+    const insight = await this.synthesizeThought(thought);
+    if (!insight) return;
+    logger.debug("ThoughtPlugin", `Storing behavior insight: "${insight}"`);
+    await this.memoryPlugin.db.addMemory(insight, "behavior");
+  }
+
+  private async synthesizeThought(thought: string): Promise<string | null> {
+    if (!this.synthesisProvider) return null;
+    try {
+      const { nonReasoningContent } = await this.synthesisProvider.chat(
+        [{ role: "user", content: thought }],
+        SYNTHESIS_PROMPT,
+      );
+      const reply = nonReasoningContent.trim();
+      if (!reply || reply.toUpperCase() === "SKIP") return null;
+      return reply;
+    } catch (e) {
+      logger.debug("ThoughtPlugin", "Synthesis request failed:", e);
+      return null;
+    }
   }
 
   getSystemPromptFragment(): string {

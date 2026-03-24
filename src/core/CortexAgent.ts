@@ -10,7 +10,7 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
   private inner: BaseAgent;
   public readonly memoryPlugin: CortexMemoryPlugin;
 
-  constructor(llm: LLMProvider, config: AgentConfig) {
+  constructor(llm: LLMProvider, config: AgentConfig, synthesisProvider: LLMProvider | null = null) {
     const cortexSystemPrompt = [
       config.systemPrompt,
       "You have internal thoughts stored in thought memory. Review recent thoughts before responding.",
@@ -24,7 +24,7 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
 
     const cortexName = config.cortexName ?? config.name ?? "cortex";
     this.memoryPlugin = new CortexMemoryPlugin(llm, cortexName);
-    const thoughtPlugin = new ThoughtPlugin(this.memoryPlugin);
+    const thoughtPlugin = new ThoughtPlugin(this.memoryPlugin, synthesisProvider);
 
     this.inner.registerPlugin(this.memoryPlugin);
     this.inner.registerPlugin(thoughtPlugin);
