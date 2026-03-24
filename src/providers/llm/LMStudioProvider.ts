@@ -53,7 +53,7 @@ export class LMStudioProvider implements LLMProvider {
     _endpoint: string = "http://127.0.0.1:1234",
     options: LMStudioProviderOptions = {},
   ) {
-    this.client = new LMStudioClient();
+    this.client = new LMStudioClient({ verboseErrorMessages: false });
     this.toolCallingStrategy = options.toolCallingStrategy ?? "native";
   }
 
@@ -87,7 +87,9 @@ export class LMStudioProvider implements LLMProvider {
         chat.append({ role: "system", content: effectiveSystemPrompt });
       for (const message of messages) chat.append(message);
 
-      const modelClient = await this.client.llm.model(this.model);
+      const modelClient = await this.client.llm.model(this.model, {
+        verbose: false,
+      });
 
       if (hasTools && this.toolCallingStrategy === "native") {
         return await this.actWithTools(modelClient, chat, tools!, onToken);
@@ -105,9 +107,10 @@ export class LMStudioProvider implements LLMProvider {
       return await this.respond(modelClient, chat, schema, onToken);
     } catch (error) {
       logger.error("LMStudio", "Error communicating with local server:", error);
-      const msg = error instanceof Error
-        ? `Tool error: ${error.message}`
-        : "I'm having trouble thinking right now. Is the LMStudio server running?";
+      const msg =
+        error instanceof Error
+          ? `Tool error: ${error.message}`
+          : "I'm having trouble thinking right now. Is the LMStudio server running?";
       onToken?.(msg, false);
       return { response: msg, nonReasoningContent: msg, reasoningText: "" };
     }
@@ -185,7 +188,11 @@ export class LMStudioProvider implements LLMProvider {
       onPredictionFragment: (fragment: LLMPredictionFragmentWithRoundIndex) => {
         if (inToolCall) return;
         // Track whether any round-2+ response content was streamed
-        if (hadToolCall && fragment.roundIndex > 0 && fragment.reasoningType === "none") {
+        if (
+          hadToolCall &&
+          fragment.roundIndex > 0 &&
+          fragment.reasoningType === "none"
+        ) {
           postToolResponseStreamed = true;
         }
         processFragment(fragment, reasoningText, responseContent, onToken);
@@ -196,9 +203,14 @@ export class LMStudioProvider implements LLMProvider {
     // onPredictionFragment (e.g. the model produced content that didn't reach
     // our callback), emit the SDK-captured non-reasoning content now so the
     // user sees the response.
-    if (hadToolCall && !postToolResponseStreamed && finalRoundNonReasoningContent) {
+    if (
+      hadToolCall &&
+      !postToolResponseStreamed &&
+      finalRoundNonReasoningContent
+    ) {
       if (onToken) onToken(finalRoundNonReasoningContent, false);
-      if (!responseContent.value) responseContent.value = finalRoundNonReasoningContent;
+      if (!responseContent.value)
+        responseContent.value = finalRoundNonReasoningContent;
     }
 
     logger.debug(
@@ -235,7 +247,9 @@ export class LMStudioProvider implements LLMProvider {
   }
 
   public async getEmbedding(text: string): Promise<number[]> {
-    const model = await this.client.embedding.model("nomic-embed-text-v1.5");
+    const model = await this.client.embedding.model("nomic-embed-text-v1.5", {
+      verbose: false,
+    });
     const { embedding } = await model.embed(text);
     return embedding;
   }

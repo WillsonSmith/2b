@@ -25,7 +25,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "- **thought**: your internal reasoning and reflections (written by your thought system).",
       "- **behavior**: learned preferences and behavioral rules (injected as active instructions).",
       "- **procedure**: step-by-step instructions for accomplishing a task you have previously solved.",
-      "Use `search_memory` before making assertions about past conversations.",
+      "Relevant factual memories and procedures are automatically surfaced in your context at the start of each turn — check there before calling search_memory.",
       "Use `save_memory` to preserve important facts or decisions.",
       "Use `save_behavior` to record a persistent behavioral rule you want to follow on every future turn.",
       "Use `save_procedure` after successfully completing a non-trivial task to record the steps taken.",

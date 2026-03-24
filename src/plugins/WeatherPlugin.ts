@@ -31,6 +31,11 @@ const WMO_DESCRIPTIONS: Record<number, string> = {
 export class WeatherPlugin implements AgentPlugin {
   name = "Weather";
 
+  getSystemPromptFragment(): string {
+    return `You can look up current weather conditions for any location using Open-Meteo (no API key required).
+Use get_weather when the user asks about weather, temperature, or conditions for a city or place.`;
+  }
+
   getTools(): ToolDefinition[] {
     return [
       {

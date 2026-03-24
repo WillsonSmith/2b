@@ -215,7 +215,11 @@ export class BaseAgent extends EventEmitter {
         const pluginTools = plugin.getTools();
         for (const t of pluginTools) {
           if (!t.implementation && plugin.executeTool) {
-            t.implementation = (args) => plugin.executeTool!(t.name, args);
+            const toolName = t.name;
+            t.implementation = (args) => {
+              this.emit("tool_call", toolName, args);
+              return plugin.executeTool!(toolName, args);
+            };
           }
         }
         tools.push(...pluginTools);

@@ -1,9 +1,10 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { join, resolve, relative, isAbsolute } from "node:path";
-import { mkdirSync, unlinkSync } from "node:fs";
+import { unlinkSync } from "node:fs";
 import { logger } from "../logger.ts";
+import { appDataPath } from "../paths.ts";
 
-const NOTES_DIR = join(process.cwd(), "notes");
+const NOTES_DIR = appDataPath("notes");
 
 function safeNotePath(title: string): string {
   const safe = title
@@ -20,8 +21,12 @@ function safeNotePath(title: string): string {
 export class NotesPlugin implements AgentPlugin {
   name = "Notes";
 
-  constructor() {
-    mkdirSync(NOTES_DIR, { recursive: true });
+  constructor() {}
+
+  getSystemPromptFragment(): string {
+    return `You can save and retrieve persistent markdown notes stored in the notes/ directory.
+Use create_note to save information the user wants to keep across conversations.
+Use list_notes to see all saved notes, read_note to retrieve one, and delete_note to remove one.`;
   }
 
   getTools(): ToolDefinition[] {
@@ -29,7 +34,7 @@ export class NotesPlugin implements AgentPlugin {
       {
         name: "create_note",
         description:
-          "Create or overwrite a note with the given title and markdown content. The title becomes the filename.",
+          "Create or overwrite a persistent note with the given title and markdown content. Use this when the user wants to save, jot down, or remember something. The title becomes the filename.",
         parameters: {
           type: "object",
           properties: {
@@ -41,12 +46,12 @@ export class NotesPlugin implements AgentPlugin {
       },
       {
         name: "list_notes",
-        description: "List all saved notes, returning their titles.",
+        description: "List all saved notes by title. Use this when the user asks what notes exist or wants to browse saved notes.",
         parameters: { type: "object", properties: {} },
       },
       {
         name: "read_note",
-        description: "Read the content of a saved note by its title.",
+        description: "Read the full content of a saved note by its title. Use this when the user asks to recall or view a specific note.",
         parameters: {
           type: "object",
           properties: {
@@ -57,7 +62,7 @@ export class NotesPlugin implements AgentPlugin {
       },
       {
         name: "delete_note",
-        description: "Delete a saved note by its title.",
+        description: "Delete a saved note by its title. Use this when the user asks to remove or discard a note.",
         parameters: {
           type: "object",
           properties: {
