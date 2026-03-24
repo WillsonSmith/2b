@@ -29,6 +29,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "Use `save_memory` to preserve important facts or decisions.",
       "Use `save_behavior` to record a persistent behavioral rule you want to follow on every future turn.",
       "Use `save_procedure` after successfully completing a non-trivial task to record the steps taken.",
+      "Use `edit_memory` to update the text of an existing memory by its ID.",
       "Use `delete_memory` to remove a memory by its ID.",
       "Use `get_linked_memories` to follow chains of related ideas.",
       "Use `query_memories` to filter memories by type, tags, date range, or full-text content.",
@@ -139,6 +140,18 @@ export class CortexMemoryPlugin implements AgentPlugin {
             steps: { type: "string", description: "Numbered step-by-step instructions describing exactly what was done" },
           },
           required: ["goal", "steps"],
+        },
+      },
+      {
+        name: "edit_memory",
+        description: "Edit the text content of an existing memory by its ID. The embedding will be updated automatically.",
+        parameters: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "The memory ID to edit" },
+            content: { type: "string", description: "The new text content for the memory" },
+          },
+          required: ["id", "content"],
         },
       },
       {
@@ -323,6 +336,15 @@ export class CortexMemoryPlugin implements AgentPlugin {
         logger.info("CortexMemory", `save_procedure: "${String(args.goal).slice(0, 100)}"`);
         const id = await this.db.addMemory(text, "procedure");
         return `Procedure saved (id: ${id.slice(0, 8)}).`;
+      }
+
+      if (name === "edit_memory") {
+        logger.info("CortexMemory", `edit_memory id=${args.id.slice(0, 8)}: "${String(args.content).slice(0, 100)}"`);
+        const existing = await this.db.getMemoryById(args.id);
+        if (!existing) return `No memory found with id ${args.id.slice(0, 8)}.`;
+        await this.db.updateMemoryText(args.id, args.content);
+        logger.info("CortexMemory", `edit_memory SUCCESS id=${args.id.slice(0, 8)}`);
+        return `Memory ${args.id.slice(0, 8)} updated.`;
       }
 
       if (name === "delete_memory") {
