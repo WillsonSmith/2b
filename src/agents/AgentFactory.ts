@@ -147,21 +147,28 @@ export function createAgent(): {
     toolName: "media_agent",
     description: "Handles media tasks: downloading videos, trimming clips, converting formats, extracting audio, and analyzing images.",
     agent: createMediaAgent(llm),
+    // No timeouts — downloads and transcodes can take arbitrarily long.
   }));
   agent.registerPlugin(new SubAgentPlugin({
     toolName: "web_agent",
     description: "Handles web research: searching the web and reading web page content.",
     agent: createWebAgent(llm),
+    inactivityTimeoutMs: 30_000,
+    absoluteTimeoutMs: 60_000,
   }));
   agent.registerPlugin(new SubAgentPlugin({
     toolName: "system_agent",
     description: "Handles system operations: running shell commands, reading/writing files, clipboard access, and executing sandboxed code.",
     agent: createSystemAgent(llm),
+    inactivityTimeoutMs: 30_000,
+    absoluteTimeoutMs: 120_000,
   }));
   agent.registerPlugin(new SubAgentPlugin({
     toolName: "info_agent",
     description: "Handles information lookup: movies via TMDB, weather conditions, and personal notes management.",
     agent: createInfoAgent(llm),
+    inactivityTimeoutMs: 15_000,
+    absoluteTimeoutMs: 30_000,
   }));
   agent.registerPlugin(new MinimalToolsPlugin());
   agent.registerPlugin(new MemoryPlugin(llm));
