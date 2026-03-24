@@ -13,14 +13,7 @@ export class HeadlessAgent {
     private readonly llm: LLMProvider,
     private readonly plugins: AgentPlugin[],
     private readonly systemPromptBase: string,
-  ) {
-    // Call onInit for plugins that need setup (e.g. CodeSandboxPlugin pre-pulls Docker image).
-    // onInit expects a BaseAgent but plugins that do meaningful init work (CodeSandboxPlugin)
-    // ignore the agent argument — it is named _agent in the implementation.
-    for (const plugin of this.plugins) {
-      plugin.onInit?.(null as any);
-    }
-  }
+  ) {}
 
   async ask(task: string): Promise<string> {
     // Collect system prompt fragments

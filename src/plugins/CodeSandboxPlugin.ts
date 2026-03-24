@@ -41,13 +41,21 @@ export class CodeSandboxPlugin implements AgentPlugin {
   private lmClient: LMStudioClient;
   private codeModel: string;
   private runtime: ContainerRuntime = "docker";
+  private initPromise: Promise<void> | null = null;
 
   constructor() {
     this.lmClient = new LMStudioClient();
     this.codeModel = process.env.CODE_MODEL ?? DEFAULT_CODE_MODEL;
   }
 
-  async onInit(_agent: BaseAgent): Promise<void> {
+  private ensureInitialized(): Promise<void> {
+    if (!this.initPromise) {
+      this.initPromise = this.initialize();
+    }
+    return this.initPromise;
+  }
+
+  private async initialize(): Promise<void> {
     this.runtime = await detectRuntime();
     logger.info("CodeSandbox", `Runtime: ${this.runtime}`);
 
@@ -66,11 +74,17 @@ export class CodeSandboxPlugin implements AgentPlugin {
       : ["docker", "pull", CONTAINER_IMAGE];
 
     logger.info("CodeSandbox", `Pre-pulling ${CONTAINER_IMAGE}...`);
-    Bun.spawn(pullCmd, { stdout: "ignore", stderr: "ignore" }).exited
+    await Bun.spawn(pullCmd, { stdout: "ignore", stderr: "ignore" }).exited
       .then(() => logger.info("CodeSandbox", `${CONTAINER_IMAGE} ready`))
       .catch(() => logger.info("CodeSandbox", `Pre-pull failed — will pull on first run`));
 
     logger.info("CodeSandbox", `Code model: ${this.codeModel}`);
+  }
+
+  async onInit(_agent: BaseAgent): Promise<void> {
+    // Eagerly initialize when running under BaseAgent so the image is
+    // pre-pulled before the first user request.
+    this.ensureInitialized();
   }
 
   getSystemPromptFragment(): string {
@@ -121,6 +135,8 @@ export class CodeSandboxPlugin implements AgentPlugin {
 
   async executeTool(name: string, args: any): Promise<any> {
     if (name !== "execute_code") return undefined;
+
+    await this.ensureInitialized();
 
     const { task, input_data, timeout_ms } = args as {
       task: string;
