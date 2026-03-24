@@ -6,29 +6,39 @@ interface SubAgentPluginOptions {
   toolName: string;
   description: string;
   agent: HeadlessAgent;
+  /** Reset this timer on each sub-agent tool call. undefined = no inactivity timeout. */
+  inactivityTimeoutMs?: number;
+  /** Hard cap on the entire ask() call. undefined = no absolute timeout. */
+  absoluteTimeoutMs?: number;
 }
 
 export class SubAgentPlugin implements AgentPlugin {
   name: string;
-  private readonly toolName: string;
   private readonly description: string;
   private readonly agent: HeadlessAgent;
+  private readonly inactivityTimeoutMs?: number;
+  private readonly absoluteTimeoutMs?: number;
+  private onActivityReset?: () => void;
 
-  constructor({ toolName, description, agent }: SubAgentPluginOptions) {
+  constructor({ toolName, description, agent, inactivityTimeoutMs, absoluteTimeoutMs }: SubAgentPluginOptions) {
     this.name = toolName;
-    this.toolName = toolName;
     this.description = description;
     this.agent = agent;
+    this.inactivityTimeoutMs = inactivityTimeoutMs;
+    this.absoluteTimeoutMs = absoluteTimeoutMs;
   }
 
   onInit(agent: BaseAgent): void {
-    this.agent.setToolCallHandler((name, args) => agent.emit("tool_call", name, args));
+    this.agent.setToolCallHandler((name, args) => {
+      this.onActivityReset?.();
+      agent.emit("tool_call", name, args);
+    });
   }
 
   getTools(): ToolDefinition[] {
     return [
       {
-        name: this.toolName,
+        name: this.name,
         description: this.description,
         parameters: {
           type: "object",
@@ -45,8 +55,44 @@ export class SubAgentPlugin implements AgentPlugin {
   }
 
   async executeTool(name: string, args: any): Promise<any> {
-    if (name === this.toolName) {
+    if (name !== this.name) return undefined;
+
+    if (this.inactivityTimeoutMs === undefined && this.absoluteTimeoutMs === undefined) {
       return this.agent.ask(args.task);
+    }
+
+    let rejectTimeout!: (err: Error) => void;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      rejectTimeout = reject;
+    });
+
+    let inactivityTimer: ReturnType<typeof setTimeout> | undefined;
+    const resetInactivity = () => {
+      if (this.inactivityTimeoutMs === undefined) return;
+      clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(
+        () => rejectTimeout(new Error(`${this.name} timed out due to inactivity`)),
+        this.inactivityTimeoutMs,
+      );
+    };
+
+    let absoluteTimer: ReturnType<typeof setTimeout> | undefined;
+    if (this.absoluteTimeoutMs !== undefined) {
+      absoluteTimer = setTimeout(
+        () => rejectTimeout(new Error(`${this.name} exceeded absolute timeout of ${this.absoluteTimeoutMs}ms`)),
+        this.absoluteTimeoutMs,
+      );
+    }
+
+    this.onActivityReset = resetInactivity;
+    resetInactivity();
+
+    try {
+      return await Promise.race([this.agent.ask(args.task), timeoutPromise]);
+    } finally {
+      clearTimeout(inactivityTimer);
+      clearTimeout(absoluteTimer);
+      this.onActivityReset = undefined;
     }
   }
 }
