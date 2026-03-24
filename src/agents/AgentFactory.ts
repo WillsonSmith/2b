@@ -1,20 +1,13 @@
 import { CortexAgent } from "../core/CortexAgent.ts";
 import { LMStudioProvider } from "../providers/llm/LMStudioProvider.ts";
 import { MemoryPlugin } from "../plugins/MemoryPlugin.ts";
+import { SubAgentPlugin } from "../plugins/SubAgentPlugin.ts";
 import { CLIInputSource } from "./input-sources/CLIInputSource.ts";
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
-import { TMDBPlugin } from "../plugins/TMDBPlugin.ts";
-import { FileIOPlugin } from "../plugins/FileIOPlugin.ts";
-import { ImageVisionPlugin } from "../plugins/ImageVisionPlugin.ts";
-import { WebSearchPlugin } from "../plugins/WebSearchPlugin.ts";
-import { WebReaderPlugin } from "../plugins/WebReaderPlugin.ts";
-import { ShellPlugin } from "../plugins/ShellPlugin.ts";
-import { ClipboardPlugin } from "../plugins/ClipboardPlugin.ts";
-import { NotesPlugin } from "../plugins/NotesPlugin.ts";
-import { WeatherPlugin } from "../plugins/WeatherPlugin.ts";
-import { YtDlpPlugin } from "../plugins/YtDlpPlugin.ts";
-import { FFmpegPlugin } from "../plugins/FFmpegPlugin.ts";
-import { CodeSandboxPlugin } from "../plugins/CodeSandboxPlugin.ts";
+import { createMediaAgent } from "./sub-agents/createMediaAgent.ts";
+import { createWebAgent } from "./sub-agents/createWebAgent.ts";
+import { createSystemAgent } from "./sub-agents/createSystemAgent.ts";
+import { createInfoAgent } from "./sub-agents/createInfoAgent.ts";
 
 // ── Safe arithmetic evaluator (replaces Function/eval) ────────────────────────
 
@@ -150,18 +143,33 @@ export function createAgent(): {
 
   const input = new CLIInputSource();
 
-  agent.registerPlugin(new TMDBPlugin());
-  agent.registerPlugin(new FileIOPlugin());
-  agent.registerPlugin(new ImageVisionPlugin());
-  agent.registerPlugin(new WebSearchPlugin());
-  agent.registerPlugin(new WebReaderPlugin());
-  agent.registerPlugin(new ShellPlugin());
-  agent.registerPlugin(new ClipboardPlugin());
-  agent.registerPlugin(new NotesPlugin());
-  agent.registerPlugin(new WeatherPlugin());
-  agent.registerPlugin(new YtDlpPlugin());
-  agent.registerPlugin(new FFmpegPlugin());
-  agent.registerPlugin(new CodeSandboxPlugin());
+  agent.registerPlugin(new SubAgentPlugin({
+    toolName: "media_agent",
+    description: "Handles media tasks: downloading videos, trimming clips, converting formats, extracting audio, and analyzing images.",
+    agent: createMediaAgent(llm),
+    // No timeouts — downloads and transcodes can take arbitrarily long.
+  }));
+  agent.registerPlugin(new SubAgentPlugin({
+    toolName: "web_agent",
+    description: "Handles web research: searching the web and reading web page content.",
+    agent: createWebAgent(llm),
+    inactivityTimeoutMs: 30_000,
+    absoluteTimeoutMs: 60_000,
+  }));
+  agent.registerPlugin(new SubAgentPlugin({
+    toolName: "system_agent",
+    description: "Handles system operations: running shell commands, reading/writing files, clipboard access, and executing sandboxed code.",
+    agent: createSystemAgent(llm),
+    inactivityTimeoutMs: 30_000,
+    absoluteTimeoutMs: 120_000,
+  }));
+  agent.registerPlugin(new SubAgentPlugin({
+    toolName: "info_agent",
+    description: "Handles information lookup: movies via TMDB, weather conditions, and personal notes management.",
+    agent: createInfoAgent(llm),
+    inactivityTimeoutMs: 15_000,
+    absoluteTimeoutMs: 30_000,
+  }));
   agent.registerPlugin(new MinimalToolsPlugin());
   agent.registerPlugin(new MemoryPlugin(llm));
   agent.addInputSource(input);
