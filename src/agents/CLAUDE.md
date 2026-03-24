@@ -15,8 +15,41 @@ This directory contains agent factory functions and input sources. The core agen
 
 **CortexAgent** (`src/core/CortexAgent.ts`) wraps `BaseAgent` and automatically registers `CortexMemoryPlugin` and `ThoughtPlugin`. All new agents should use `CortexAgent`.
 
+**HeadlessAgent** (`src/core/HeadlessAgent.ts`) is a stateless, single-call agent with no tick loop or input sources. It exposes one method — `ask(task: string): Promise<string>` — and is used as the building block for sub-agents. Plugins that rely on `onMessage`, `getMessages`, or `augmentResponse` are not invoked; the agent is task-in/result-out.
+
 **Agent Factories** compose an agent with specific plugins for a use case:
-- `AgentFactory.ts` — 2b CLI chat agent with tools, memory, vision, and TMDB (CortexAgent)
+- `AgentFactory.ts` — 2b CLI chat agent; orchestrates four domain sub-agents via `SubAgentPlugin` plus `MinimalToolsPlugin` and `MemoryPlugin`
+
+## Orchestrator + Sub-agent Pattern
+
+The 2b agent uses an **orchestrator with sub-agents as tools** pattern. Rather than registering all capability plugins directly, the orchestrator registers `SubAgentPlugin` instances that each wrap a `HeadlessAgent`:
+
+```
+User → Orchestrator (CortexAgent)
+           ├── media_agent  → HeadlessAgent [YtDlp, FFmpeg, ImageVision]
+           ├── web_agent    → HeadlessAgent [WebSearch, WebReader]
+           ├── system_agent → HeadlessAgent [Shell, FileIO, Clipboard, CodeSandbox]
+           ├── info_agent   → HeadlessAgent [TMDB, Weather, Notes]
+           ├── MinimalToolsPlugin (calculate, get_current_time, echo)
+           └── MemoryPlugin
+```
+
+Sub-agent tool calls are forwarded to the orchestrator's `tool_call` event via `setToolCallHandler`, so they appear in the same `[tool]` output as primary agent calls.
+
+Sub-agent factories live in `src/agents/sub-agents/`. Each factory takes an `LLMProvider` and returns a `HeadlessAgent` configured with a focused system prompt.
+
+### Adding a new sub-agent
+
+1. Create `src/agents/sub-agents/create<Name>Agent.ts` — instantiate `HeadlessAgent` with the relevant plugins and a focused system prompt
+2. Register it in `AgentFactory.ts` via `new SubAgentPlugin({ toolName, description, agent, inactivityTimeoutMs?, absoluteTimeoutMs? })`
+
+### Timeout options on SubAgentPlugin
+
+| Option | Behaviour |
+|---|---|
+| `inactivityTimeoutMs` | Resets on each tool call; fires if the sub-agent goes quiet for this duration |
+| `absoluteTimeoutMs` | Hard wall-clock cap on the entire `ask()` call |
+| neither | No timeout — appropriate for long-running tasks like video downloads |
 
 ## Plugin Interface
 
