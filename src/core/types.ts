@@ -5,6 +5,7 @@ export interface AgentEventMap {
   thought: [reasoningText: string];
   log: [message: string];
   speak: [response: string];
+  tool_call: [name: string, args: Record<string, unknown>];
 }
 
 export type Message = {
