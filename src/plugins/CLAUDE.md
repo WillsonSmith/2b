@@ -19,7 +19,7 @@ Modular agent capabilities. Each plugin implements `AgentPlugin` from `../core/P
 
 | Plugin | Purpose |
 |--------|---------|
-| `CortexMemoryPlugin` | Long-term memory with types (factual/thought/behavior/procedure), semantic search, linking, deletion, and autonomous conflict resolution; auto-surfaces relevant memories in context each turn — auto-registered by `CortexAgent` |
+| `CortexMemoryPlugin` | Long-term memory with types (factual/thought/behavior/procedure), semantic search, linking, editing, deletion, and autonomous conflict resolution; auto-surfaces relevant memories in context each turn — auto-registered by `CortexAgent`; tools: `search_memory`, `save_memory`, `save_behavior`, `save_procedure`, `edit_memory`, `delete_memory`, `get_linked_memories`, `query_memories`, `hybrid_search`, `aggregate_memories`, `get_memory_timeline` |
 | `ThoughtPlugin` | Persists `<think>` blocks as thought memories; exposes `get_recent_thoughts` — auto-registered by `CortexAgent` |
 | `MemoryPlugin` | Short-term conversation history (max 15 messages, auto-summarises) |
 | `AudioPlugin` | Classifies microphone speech as direct/ambient via intent detection |
