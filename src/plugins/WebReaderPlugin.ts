@@ -38,7 +38,8 @@ export class WebReaderPlugin implements AgentPlugin {
 
   getSystemPromptFragment(): string {
     return `You can fetch and read the main content of web pages.
-Use read_webpage to extract the article text, title, and byline from any HTTPS URL.
+Use read_webpage to extract the article text, title, byline, and links from any HTTPS URL.
+The response includes a links array with {text, href} objects — use these to navigate to related pages.
 Only HTTPS URLs are supported.`;
   }
 
@@ -47,7 +48,7 @@ Only HTTPS URLs are supported.`;
       {
         name: "read_webpage",
         description:
-          "Fetches a webpage and extracts the main readable content (article text, title, byline). Use this to read articles, documentation, or any web page content.",
+          "Fetches a webpage and extracts the main readable content (article text, title, byline) and all links on the page. Use this to read articles, documentation, or any web page content. The links array lets you navigate to related pages.",
         parameters: {
           type: "object",
           properties: {
@@ -89,11 +90,31 @@ Only HTTPS URLs are supported.`;
     if (!Readability) Readability = (await import("@mozilla/readability")).Readability;
 
     const dom = new JSDOM(html, { url });
+
+    // Extract links before Readability clones/modifies the document
+    const baseUrl = new URL(url);
+    const links: { text: string; href: string }[] = [];
+    const seen = new Set<string>();
+    for (const a of dom.window.document.querySelectorAll("a[href]")) {
+      const href = (a as HTMLAnchorElement).href;
+      const text = (a.textContent ?? "").trim();
+      if (!href || !text || seen.has(href)) continue;
+      try {
+        const parsed = new URL(href, baseUrl);
+        if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+          seen.add(href);
+          links.push({ text, href });
+        }
+      } catch {
+        // skip malformed hrefs
+      }
+    }
+
     const reader = new Readability(dom.window.document);
     const article = reader.parse();
 
     if (!article) {
-      return { error: "Could not extract readable content from this page." };
+      return { error: "Could not extract readable content from this page.", links };
     }
 
     const text = article.textContent?.replace(/\n{3,}/g, "\n\n").trim() ?? "";
@@ -106,6 +127,7 @@ Only HTTPS URLs are supported.`;
       url,
       content: truncated,
       total_length: text.length,
+      links,
     };
   }
 }
