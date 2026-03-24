@@ -1,4 +1,5 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
+import type { BaseAgent } from "../core/BaseAgent.ts";
 import type { HeadlessAgent } from "../core/HeadlessAgent.ts";
 
 interface SubAgentPluginOptions {
@@ -18,6 +19,10 @@ export class SubAgentPlugin implements AgentPlugin {
     this.toolName = toolName;
     this.description = description;
     this.agent = agent;
+  }
+
+  onInit(agent: BaseAgent): void {
+    this.agent.setToolCallHandler((name, args) => agent.emit("tool_call", name, args));
   }
 
   getTools(): ToolDefinition[] {

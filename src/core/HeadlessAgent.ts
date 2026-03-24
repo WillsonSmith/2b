@@ -9,11 +9,17 @@ import { logger } from "../logger.ts";
  * Plugins that rely on onMessage, getMessages, or augmentResponse are not invoked.
  */
 export class HeadlessAgent {
+  private toolCallHandler?: (name: string, args: any) => void;
+
   constructor(
     private readonly llm: LLMProvider,
     private readonly plugins: AgentPlugin[],
     private readonly systemPromptBase: string,
   ) {}
+
+  setToolCallHandler(fn: (name: string, args: any) => void): void {
+    this.toolCallHandler = fn;
+  }
 
   async ask(task: string): Promise<string> {
     // Collect system prompt fragments
@@ -50,7 +56,10 @@ export class HeadlessAgent {
         for (const t of pluginTools) {
           if (!t.implementation && plugin.executeTool) {
             const toolName = t.name;
-            t.implementation = (args) => plugin.executeTool!(toolName, args);
+            t.implementation = (args) => {
+              this.toolCallHandler?.(toolName, args);
+              return plugin.executeTool!(toolName, args);
+            };
           }
         }
         tools.push(...pluginTools);
