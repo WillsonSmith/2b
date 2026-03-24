@@ -87,7 +87,9 @@ export class LMStudioProvider implements LLMProvider {
         chat.append({ role: "system", content: effectiveSystemPrompt });
       for (const message of messages) chat.append(message);
 
-      const modelClient = await this.client.llm.model(this.model);
+      const modelClient = await this.client.llm.model(this.model, {
+        verbose: false,
+      });
 
       if (hasTools && this.toolCallingStrategy === "native") {
         return await this.actWithTools(modelClient, chat, tools!, onToken);
@@ -245,7 +247,9 @@ export class LMStudioProvider implements LLMProvider {
   }
 
   public async getEmbedding(text: string): Promise<number[]> {
-    const model = await this.client.embedding.model("nomic-embed-text-v1.5");
+    const model = await this.client.embedding.model("nomic-embed-text-v1.5", {
+      verbose: false,
+    });
     const { embedding } = await model.embed(text);
     return embedding;
   }
