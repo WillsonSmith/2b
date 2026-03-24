@@ -18,6 +18,11 @@ export class SubAgentPlugin implements AgentPlugin {
   private readonly agent: HeadlessAgent;
   private readonly inactivityTimeoutMs?: number;
   private readonly absoluteTimeoutMs?: number;
+  // NOTE: onActivityReset is set/cleared per executeTool() call. Concurrent ask()
+  // calls on the same SubAgentPlugin instance would race on this field — the second
+  // call overwrites the first's reset function, leaving the first without inactivity
+  // tracking. In practice the orchestrator calls sub-agents serially so this is safe,
+  // but do not reuse a single SubAgentPlugin instance across parallel invocations.
   private onActivityReset?: () => void;
 
   constructor({ toolName, description, agent, inactivityTimeoutMs, absoluteTimeoutMs }: SubAgentPluginOptions) {
