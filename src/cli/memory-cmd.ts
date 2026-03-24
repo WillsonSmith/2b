@@ -89,9 +89,11 @@ async function clearMemories(db: Database, force: boolean): Promise<void> {
     }
   }
 
-  db.prepare("DELETE FROM memory_links").run();
-  db.prepare("DELETE FROM memories_fts").run();
-  db.prepare("DELETE FROM memories").run();
+  db.transaction(() => {
+    db.prepare("DELETE FROM memory_links").run();
+    db.prepare("DELETE FROM memories_fts").run();
+    db.prepare("DELETE FROM memories").run();
+  })();
   console.log(`${RED}Cleared ${count} ${count === 1 ? "memory" : "memories"}.${RESET}`);
 }
 
