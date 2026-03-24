@@ -16,6 +16,7 @@ if (rawArgs[0] === "memory") {
 // Flags
 let quiet = false;
 let noReasoning = false;
+let showTools = false;
 let showHelp = false;
 const positional: string[] = [];
 
@@ -25,6 +26,8 @@ for (let i = 0; i < rawArgs.length; i++) {
     quiet = true;
   } else if (arg === "--no-reasoning") {
     noReasoning = true;
+  } else if (arg === "--tools" || arg === "-t") {
+    showTools = true;
   } else if (arg === "--model" || arg === "-m") {
     const next = rawArgs[++i];
     if (next) process.env.MODEL = next;
@@ -47,6 +50,7 @@ ${BOLD}OPTIONS${RESET}
   -m, --model <name>    Use a specific model (overrides MODEL env var)
   -q, --quiet           Output response text only, no labels or colors
   --no-reasoning        Suppress reasoning/thinking output
+  -t, --tools           Show tool/function calls as they happen
   -h, --help            Show this help
 
 ${BOLD}SUBCOMMANDS${RESET}
@@ -84,6 +88,16 @@ if (isPiped && !isOneShot) {
 
 // --- Agent setup ---
 const { agent } = createAgent();
+
+const YELLOW = "\x1b[33m";
+
+if (showTools) {
+  agent.on("tool_call", (name, args) => {
+    const argsStr = JSON.stringify(args);
+    const preview = argsStr.length > 120 ? argsStr.slice(0, 119) + "…" : argsStr;
+    process.stderr.write(`${YELLOW}[tool] ${BOLD}${name}${RESET}${YELLOW} ${preview}${RESET}\n`);
+  });
+}
 
 let reasoningActive = false;
 let responseActive = false;
