@@ -37,15 +37,25 @@ export class ThoughtPlugin implements AgentPlugin {
       }
 
       // Fire-and-forget: synthesize behavioral insight without blocking
-      this.synthesizeAndStore(thought).catch((e) =>
-        logger.error("ThoughtPlugin", "Synthesis failed:", e),
-      );
+      if (this.synthesisProvider) {
+        this.synthesizeAndStore(thought).catch((e) =>
+          logger.error("ThoughtPlugin", "Synthesis failed:", e),
+        );
+      }
     });
   }
 
   private async synthesizeAndStore(thought: string): Promise<void> {
     const insight = await this.synthesizeThought(thought);
     if (!insight) return;
+
+    // Deduplicate: skip if an identical behavior rule is already stored
+    const existing = this.memoryPlugin.db.getRecentMemories(100, "behavior");
+    if (existing.some((m) => m.text === insight)) {
+      logger.debug("ThoughtPlugin", `Behavior insight already stored, skipping: "${insight}"`);
+      return;
+    }
+
     logger.debug("ThoughtPlugin", `Storing behavior insight: "${insight}"`);
     await this.memoryPlugin.db.addMemory(insight, "behavior");
   }
@@ -53,12 +63,14 @@ export class ThoughtPlugin implements AgentPlugin {
   private async synthesizeThought(thought: string): Promise<string | null> {
     if (!this.synthesisProvider) return null;
     try {
+      const truncated = thought.slice(0, 1000);
       const { nonReasoningContent } = await this.synthesisProvider.chat(
-        [{ role: "user", content: thought }],
+        [{ role: "user", content: truncated }],
         SYNTHESIS_PROMPT,
       );
       const reply = nonReasoningContent.trim();
       if (!reply || reply.toUpperCase() === "SKIP") return null;
+      if (!reply.startsWith("I ")) return null;
       return reply;
     } catch (e) {
       logger.debug("ThoughtPlugin", "Synthesis request failed:", e);
