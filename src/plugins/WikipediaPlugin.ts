@@ -52,15 +52,16 @@ export class WikipediaPlugin implements AgentPlugin {
 
   async executeTool(name: string, args: any): Promise<any> {
     if (name === "wikipedia_search") {
-      return this.search(args.query, args.limit ?? 5);
+      return this.search(args.query, args.limit);
     }
     if (name === "wikipedia_get_article") {
       return this.getArticle(args.title);
     }
+    logger.warn(`[WikipediaPlugin] unknown tool: ${name}`);
   }
 
-  private async search(query: string, limit: number): Promise<any> {
-    const clampedLimit = Math.min(Math.max(1, limit), 10);
+  private async search(query: string, limit?: number): Promise<any> {
+    const clampedLimit = Math.min(Math.max(1, limit ?? 5), 10);
     const params = new URLSearchParams({
       action: "query",
       list: "search",
@@ -71,7 +72,9 @@ export class WikipediaPlugin implements AgentPlugin {
     });
 
     logger.debug(`[WikipediaPlugin] searching: ${query}`);
-    const res = await fetch(`${API_BASE}?${params}`);
+    const res = await fetch(`${API_BASE}?${params}`, {
+      headers: { "User-Agent": "2b-agent/1.0 (https://github.com/WillsonSmith/2b)" },
+    });
     if (!res.ok) {
       throw new Error(`Wikipedia search failed: ${res.status} ${res.statusText}`);
     }
@@ -90,7 +93,9 @@ export class WikipediaPlugin implements AgentPlugin {
     const encodedTitle = encodeURIComponent(title.replace(/ /g, "_"));
     logger.debug(`[WikipediaPlugin] fetching article: ${title}`);
 
-    const res = await fetch(`${REST_BASE}/page/summary/${encodedTitle}`);
+    const res = await fetch(`${REST_BASE}/page/summary/${encodedTitle}`, {
+      headers: { "User-Agent": "2b-agent/1.0 (https://github.com/WillsonSmith/2b)" },
+    });
     if (res.status === 404) {
       return { error: `Article not found: "${title}". Try searching first.` };
     }
