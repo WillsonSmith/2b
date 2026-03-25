@@ -53,6 +53,11 @@ export function createAgent(): {
     name: "2b",
     cortexName: "2b",
     model,
+    // NOTE: The sub-agent context instruction below is prompt-based only — it relies
+    // on the LLM following instructions and is not structurally enforced. It may be
+    // ignored or applied inconsistently across model updates, making it fragile and
+    // error-prone. A structural fix (e.g. automatic context injection in SubAgentPlugin)
+    // would be more reliable.
     systemPrompt:
       "You are a helpful assistant with access to tools. Think carefully before responding.\n\nWhen delegating to a sub-agent, always include in the task field all relevant context the sub-agent needs: usernames, URLs, IDs, dates, and any specific facts from memory. Sub-agents have no access to your memory or conversation history.",
   });
