@@ -50,7 +50,8 @@ export class SubAgentPlugin implements AgentPlugin {
           properties: {
             task: {
               type: "string",
-              description: "The task or question for this sub-agent to handle.",
+              description:
+                "The task or question for this sub-agent to handle. Include all relevant context it needs to complete the task — usernames, URLs, IDs, dates, and any specific facts from memory — since sub-agents have no access to your memory or conversation history.",
             },
           },
           required: ["task"],
