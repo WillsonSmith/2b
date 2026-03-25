@@ -9,73 +9,6 @@ import { createWebAgent } from "./sub-agents/createWebAgent.ts";
 import { createSystemAgent } from "./sub-agents/createSystemAgent.ts";
 import { createInfoAgent } from "./sub-agents/createInfoAgent.ts";
 
-// ── Safe arithmetic evaluator (replaces Function/eval) ────────────────────────
-
-function safeEvaluate(expression: string): string {
-  if (!/^[\d\s+\-*/().%]+$/.test(expression)) {
-    return "Error: only arithmetic expressions are allowed.";
-  }
-  try {
-    const tokens = expression.replace(/\s+/g, "");
-    let pos = 0;
-
-    function parseExpr(): number {
-      return parseAddSub();
-    }
-    function parseAddSub(): number {
-      let left = parseMulDiv();
-      while (pos < tokens.length && (tokens[pos] === "+" || tokens[pos] === "-")) {
-        const op = tokens[pos++];
-        const right = parseMulDiv();
-        left = op === "+" ? left + right : left - right;
-      }
-      return left;
-    }
-    function parseMulDiv(): number {
-      let left = parseUnary();
-      while (pos < tokens.length && (tokens[pos] === "*" || tokens[pos] === "/" || tokens[pos] === "%")) {
-        const op = tokens[pos++];
-        const right = parseUnary();
-        if (op === "/") {
-          if (right === 0) throw new Error("Division by zero");
-          left = left / right;
-        } else if (op === "%") {
-          left = left % right;
-        } else {
-          left = left * right;
-        }
-      }
-      return left;
-    }
-    function parseUnary(): number {
-      if (tokens[pos] === "-") { pos++; return -parsePrimary(); }
-      if (tokens[pos] === "+") { pos++; return parsePrimary(); }
-      return parsePrimary();
-    }
-    function parsePrimary(): number {
-      if (tokens[pos] === "(") {
-        pos++;
-        const val = parseExpr();
-        if (tokens[pos] !== ")") throw new Error("Expected closing parenthesis");
-        pos++;
-        return val;
-      }
-      const start = pos;
-      while (pos < tokens.length && /[\d.]/.test(tokens[pos]!)) pos++;
-      if (pos === start) throw new Error("Unexpected character in expression");
-      const n = parseFloat(tokens.slice(start, pos));
-      if (isNaN(n)) throw new Error("Invalid number");
-      return n;
-    }
-
-    const result = parseExpr();
-    if (pos < tokens.length) throw new Error("Unexpected trailing characters");
-    return String(result);
-  } catch (e) {
-    return `Error: ${e instanceof Error ? e.message : String(e)}`;
-  }
-}
-
 // ── Inline tools plugin ───────────────────────────────────────────────────────
 
 class MinimalToolsPlugin implements AgentPlugin {
@@ -88,23 +21,6 @@ class MinimalToolsPlugin implements AgentPlugin {
         description: "Returns the current local date and time.",
         parameters: { type: "object", properties: {} },
         implementation: () => new Date().toString(),
-      },
-      {
-        name: "calculate",
-        description:
-          "Evaluates a simple arithmetic expression and returns the result.",
-        parameters: {
-          type: "object",
-          properties: {
-            expression: {
-              type: "string",
-              description: "e.g. '(3 + 4) * 2'",
-            },
-          },
-          required: ["expression"],
-        },
-        implementation: ({ expression }: { expression: string }) =>
-          safeEvaluate(expression),
       },
       {
         name: "echo",
@@ -137,39 +53,56 @@ export function createAgent(): {
     name: "2b",
     cortexName: "2b",
     model,
+    // NOTE: The sub-agent context instruction below is prompt-based only — it relies
+    // on the LLM following instructions and is not structurally enforced. It may be
+    // ignored or applied inconsistently across model updates, making it fragile and
+    // error-prone. A structural fix (e.g. automatic context injection in SubAgentPlugin)
+    // would be more reliable.
     systemPrompt:
-      "You are a helpful assistant with access to tools. Think carefully before responding.",
+      "You are a helpful assistant with access to tools. Think carefully before responding.\n\nWhen delegating to a sub-agent, always include in the task field all relevant context the sub-agent needs: usernames, URLs, IDs, dates, and any specific facts from memory. Sub-agents have no access to your memory or conversation history.",
   });
 
   const input = new CLIInputSource();
 
-  agent.registerPlugin(new SubAgentPlugin({
-    toolName: "media_agent",
-    description: "Handles media tasks: downloading videos, trimming clips, converting formats, extracting audio, and analyzing images.",
-    agent: createMediaAgent(llm),
-    // No timeouts — downloads and transcodes can take arbitrarily long.
-  }));
-  agent.registerPlugin(new SubAgentPlugin({
-    toolName: "web_agent",
-    description: "Handles web research: searching the web and reading web page content.",
-    agent: createWebAgent(llm),
-    inactivityTimeoutMs: 30_000,
-    absoluteTimeoutMs: 60_000,
-  }));
-  agent.registerPlugin(new SubAgentPlugin({
-    toolName: "system_agent",
-    description: "Handles system operations: running shell commands, reading/writing files, clipboard access, and executing sandboxed code.",
-    agent: createSystemAgent(llm),
-    inactivityTimeoutMs: 30_000,
-    absoluteTimeoutMs: 120_000,
-  }));
-  agent.registerPlugin(new SubAgentPlugin({
-    toolName: "info_agent",
-    description: "Handles information lookup: movies via TMDB, weather conditions, and personal notes management.",
-    agent: createInfoAgent(llm),
-    inactivityTimeoutMs: 15_000,
-    absoluteTimeoutMs: 30_000,
-  }));
+  agent.registerPlugin(
+    new SubAgentPlugin({
+      toolName: "media_agent",
+      description:
+        "Handles media tasks: downloading videos, trimming clips, converting formats, extracting audio, and analyzing images.",
+      agent: createMediaAgent(llm),
+      // No timeouts — downloads and transcodes can take arbitrarily long.
+    }),
+  );
+  agent.registerPlugin(
+    new SubAgentPlugin({
+      toolName: "web_agent",
+      description:
+        "Handles web research: searching the web and reading web page content.",
+      agent: createWebAgent(llm),
+      inactivityTimeoutMs: 60_000,
+      absoluteTimeoutMs: 120_000,
+    }),
+  );
+  agent.registerPlugin(
+    new SubAgentPlugin({
+      toolName: "system_agent",
+      description:
+        "Handles system operations: running shell commands, reading/writing files, clipboard access, and executing sandboxed code.",
+      agent: createSystemAgent(llm),
+      inactivityTimeoutMs: 30_000,
+      absoluteTimeoutMs: 120_000,
+    }),
+  );
+  agent.registerPlugin(
+    new SubAgentPlugin({
+      toolName: "info_agent",
+      description:
+        "Handles information lookup: movies via TMDB, weather conditions, and personal notes management.",
+      agent: createInfoAgent(llm),
+      inactivityTimeoutMs: 15_000,
+      absoluteTimeoutMs: 30_000,
+    }),
+  );
   agent.registerPlugin(new MinimalToolsPlugin());
   agent.registerPlugin(new MemoryPlugin(llm));
   agent.addInputSource(input);
