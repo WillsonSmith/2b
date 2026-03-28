@@ -1,3 +1,7 @@
+export interface AmbientOptions {
+  forceTick?: boolean;
+}
+
 export interface AgentEventMap {
   interrupt: [];
   error: [err: Error];
