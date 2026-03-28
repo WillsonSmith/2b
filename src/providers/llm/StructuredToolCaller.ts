@@ -3,6 +3,50 @@ import type { ToolDefinition } from "../../core/Plugin.ts";
 
 const MAX_ITERATIONS = 10;
 
+/** Minimum interface required of the LMStudio model client used here. */
+interface ModelClient {
+  respond(
+    chat: ChatLike,
+    opts: { structured: { type: "json"; jsonSchema: object } },
+  ): Promise<{ content: string }>;
+}
+
+/** Named error thrown when the tool-call loop reaches its iteration limit. */
+export class ToolCallLimitError extends Error {
+  constructor() {
+    super(`Tool-call loop reached the maximum of ${MAX_ITERATIONS} iterations.`);
+    this.name = "ToolCallLimitError";
+  }
+}
+
+/**
+ * JSON Schema for the structured response envelope.
+ * Defined at module scope so it is not reallocated on every call.
+ */
+const RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    type: { type: "string", enum: ["tool_call", "message"] },
+    tool: { type: "string" },
+    args: { type: "object", additionalProperties: true },
+    content: { type: "string" },
+  },
+  required: ["type"],
+  additionalProperties: false,
+} as const;
+
+/**
+ * Appends a message to a chat object.
+ * `ChatLike` from @lmstudio/sdk does not expose `append` in its public type,
+ * so the cast is encapsulated here rather than repeated at each call site.
+ */
+function appendToChat(chat: ChatLike, role: "user" | "assistant", content: string): void {
+  (chat as unknown as { append(msg: { role: string; content: string }): void }).append({
+    role,
+    content,
+  });
+}
+
 /**
  * Builds a system prompt addition that teaches a non-tool-native model
  * how to call tools via structured JSON output.
@@ -28,24 +72,17 @@ ${toolList}`.trim();
 /**
  * Drives a manual tool-call loop for models that don't support native tool calling.
  * Uses constrained JSON decoding (structured output) so any LMStudio-loaded model can work.
+ *
+ * @throws {ToolCallLimitError} when MAX_ITERATIONS is reached without a final message.
  */
 export async function callWithStructuredTools(
-  modelClient: any,
+  modelClient: ModelClient,
   chat: ChatLike,
   tools: ToolDefinition[],
-  onToolCall?: (name: string, args: any, result: string) => void,
+  onToolCall?: (name: string, args: Record<string, unknown>, result: string) => void,
 ): Promise<string> {
-  const schema = {
-    type: "object",
-    properties: {
-      type: { type: "string", enum: ["tool_call", "message"] },
-      tool: { type: "string" },
-      args: { type: "object", additionalProperties: true },
-      content: { type: "string" },
-    },
-    required: ["type"],
-    additionalProperties: false,
-  };
+  // Build a name→tool map once so lookups inside the loop are O(1).
+  const toolMap = new Map<string, ToolDefinition>(tools.map((t) => [t.name, t]));
 
   let iterations = 0;
 
@@ -53,14 +90,14 @@ export async function callWithStructuredTools(
     iterations++;
 
     const response = await modelClient.respond(chat, {
-      structured: { type: "json", jsonSchema: schema },
+      structured: { type: "json", jsonSchema: RESPONSE_SCHEMA },
     });
 
-    let parsed: { type: string; tool?: string; args?: any; content?: string };
+    let parsed: { type: string; tool?: string; args?: Record<string, unknown>; content?: string };
     try {
-      parsed = JSON.parse(response.content);
+      parsed = JSON.parse(response.content) as typeof parsed;
     } catch {
-      // If JSON parse fails, treat the raw content as the final response
+      // If JSON parse fails, treat the raw content as the final response.
       return response.content;
     }
 
@@ -68,14 +105,21 @@ export async function callWithStructuredTools(
       return parsed.content ?? "";
     }
 
-    if (parsed.type === "tool_call" && parsed.tool) {
-      const tool = tools.find((t) => t.name === parsed.tool);
+    if (parsed.type === "tool_call") {
+      if (!parsed.tool) {
+        // Model produced a tool_call envelope without a tool name — inform and retry.
+        appendToChat(chat, "user", 'Tool error: response was missing the "tool" field.');
+        continue;
+      }
+
+      const tool = toolMap.get(parsed.tool);
 
       if (!tool || !tool.implementation) {
-        (chat as any).append({
-          role: "user",
-          content: `Tool error: "${parsed.tool}" not found or has no implementation.`,
-        });
+        appendToChat(
+          chat,
+          "user",
+          `Tool "${parsed.tool}" not found or has no implementation.`,
+        );
         continue;
       }
 
@@ -83,19 +127,27 @@ export async function callWithStructuredTools(
       try {
         const raw = await tool.implementation(parsed.args ?? {});
         result = typeof raw === "string" ? raw : JSON.stringify(raw);
-      } catch {
-        result = `Tool error: "${parsed.tool}" failed to execute.`;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        result = `Tool "${parsed.tool}" threw: ${message}`;
       }
 
-      onToolCall?.(parsed.tool, parsed.args, result);
+      onToolCall?.(parsed.tool, parsed.args ?? {}, result);
 
-      (chat as any).append({ role: "assistant", content: response.content });
-      (chat as any).append({
-        role: "user",
-        content: `Tool result for ${parsed.tool}: ${result}`,
-      });
+      appendToChat(chat, "assistant", response.content);
+      appendToChat(chat, "user", `Tool result for ${parsed.tool}: ${result}`);
+    } else {
+      // Unknown type — inform the model and allow it to retry.
+      appendToChat(
+        chat,
+        "user",
+        `Unexpected response type "${parsed.type}". Respond with "tool_call" or "message".`,
+      );
     }
   }
 
-  return "I reached my tool call limit for this response.";
+  console.warn(
+    `[StructuredToolCaller] Reached maximum of ${MAX_ITERATIONS} iterations. Throwing ToolCallLimitError.`,
+  );
+  throw new ToolCallLimitError();
 }
