@@ -49,9 +49,9 @@ Run `/review-module` on each of these.
 - [ ] `src/plugins/YtDlpPlugin.ts`
 
 ## Memory & Utils
-- [ ] `src/memory/MemoryProvider.ts`
-- [ ] `src/utils/stream-tts.ts`
-- [ ] `src/utils/deviceSelector.ts`
+- [x] `src/memory/MemoryProvider.ts`
+- [x] `src/utils/stream-tts.ts`
+- [x] `src/utils/deviceSelector.ts`
 
 ## CLI
-- [ ] `src/cli/memory-cmd.ts`
+- [x] `src/cli/memory-cmd.ts`
