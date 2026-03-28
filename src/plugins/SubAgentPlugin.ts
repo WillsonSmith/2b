@@ -1,6 +1,9 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import type { BaseAgent } from "../core/BaseAgent.ts";
 import type { HeadlessAgent } from "../core/HeadlessAgent.ts";
+import { logger } from "../logger.ts";
+
+const MAX_TASK_LENGTH = 10_000;
 
 interface SubAgentPluginOptions {
   toolName: string;
@@ -13,20 +16,19 @@ interface SubAgentPluginOptions {
 }
 
 export class SubAgentPlugin implements AgentPlugin {
-  name: string;
+  name = "SubAgent";
+  private readonly toolName: string;
   private readonly description: string;
   private readonly agent: HeadlessAgent;
   private readonly inactivityTimeoutMs?: number;
   private readonly absoluteTimeoutMs?: number;
-  // NOTE: onActivityReset is set/cleared per executeTool() call. Concurrent ask()
-  // calls on the same SubAgentPlugin instance would race on this field — the second
-  // call overwrites the first's reset function, leaving the first without inactivity
-  // tracking. In practice the orchestrator calls sub-agents serially so this is safe,
-  // but do not reuse a single SubAgentPlugin instance across parallel invocations.
-  private onActivityReset?: () => void;
+  // Each executeTool() call registers its own resetInactivity function here.
+  // Using a Set means concurrent invocations each track their own inactivity
+  // independently, eliminating the previous race condition on a shared field.
+  private readonly onActivityResetHandlers = new Set<() => void>();
 
   constructor({ toolName, description, agent, inactivityTimeoutMs, absoluteTimeoutMs }: SubAgentPluginOptions) {
-    this.name = toolName;
+    this.toolName = toolName;
     this.description = description;
     this.agent = agent;
     this.inactivityTimeoutMs = inactivityTimeoutMs;
@@ -35,15 +37,19 @@ export class SubAgentPlugin implements AgentPlugin {
 
   onInit(agent: BaseAgent): void {
     this.agent.setToolCallHandler((name, args) => {
-      this.onActivityReset?.();
+      for (const reset of this.onActivityResetHandlers) reset();
       agent.emit("tool_call", name, args);
     });
+  }
+
+  getSystemPromptFragment(): string {
+    return this.description;
   }
 
   getTools(): ToolDefinition[] {
     return [
       {
-        name: this.name,
+        name: this.toolName,
         description: this.description,
         parameters: {
           type: "object",
@@ -61,13 +67,20 @@ export class SubAgentPlugin implements AgentPlugin {
   }
 
   async executeTool(name: string, args: any): Promise<any> {
-    if (name !== this.name) return undefined;
+    if (name !== this.toolName) return undefined;
+
+    const task: string =
+      typeof args.task === "string" && args.task.length > MAX_TASK_LENGTH
+        ? args.task.slice(0, MAX_TASK_LENGTH)
+        : args.task;
+
+    logger.debug("SubAgentPlugin", `executing task via ${this.toolName}`);
 
     if (this.inactivityTimeoutMs === undefined && this.absoluteTimeoutMs === undefined) {
-      return this.agent.ask(args.task);
+      return this.agent.ask(task);
     }
 
-    let rejectTimeout!: (err: Error) => void;
+    let rejectTimeout: (err: Error) => void = (_err) => {};
     const timeoutPromise = new Promise<never>((_, reject) => {
       rejectTimeout = reject;
     });
@@ -77,7 +90,7 @@ export class SubAgentPlugin implements AgentPlugin {
       if (this.inactivityTimeoutMs === undefined) return;
       clearTimeout(inactivityTimer);
       inactivityTimer = setTimeout(
-        () => rejectTimeout(new Error(`${this.name} timed out due to inactivity`)),
+        () => rejectTimeout(new Error(`${this.toolName} timed out due to inactivity`)),
         this.inactivityTimeoutMs,
       );
     };
@@ -85,20 +98,20 @@ export class SubAgentPlugin implements AgentPlugin {
     let absoluteTimer: ReturnType<typeof setTimeout> | undefined;
     if (this.absoluteTimeoutMs !== undefined) {
       absoluteTimer = setTimeout(
-        () => rejectTimeout(new Error(`${this.name} exceeded absolute timeout of ${this.absoluteTimeoutMs}ms`)),
+        () => rejectTimeout(new Error(`${this.toolName} exceeded absolute timeout of ${this.absoluteTimeoutMs}ms`)),
         this.absoluteTimeoutMs,
       );
     }
 
-    this.onActivityReset = resetInactivity;
+    this.onActivityResetHandlers.add(resetInactivity);
     resetInactivity();
 
     try {
-      return await Promise.race([this.agent.ask(args.task), timeoutPromise]);
+      return await Promise.race([this.agent.ask(task), timeoutPromise]);
     } finally {
       clearTimeout(inactivityTimer);
       clearTimeout(absoluteTimer);
-      this.onActivityReset = undefined;
+      this.onActivityResetHandlers.delete(resetInactivity);
     }
   }
 }
