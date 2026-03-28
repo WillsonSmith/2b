@@ -4,7 +4,8 @@
       "Bash(grep -r \"TODO\\\\|FIXME\\\\|BUG\\\\|HACK\\\\|XXX\\\\|WARN\" /Users/willsonsmith/Developer/AI/2b/src --include=*.ts --include=*.tsx)",
       "Bash(find /Users/willsonsmith/Developer/AI/2b/src -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" \\\\\\) -exec wc -l {} +)",
       "Skill(explain-module)",
-      "Skill(explain-module:*)"
+      "Skill(explain-module:*)",
+      "Bash(bunx tsc:*)"
     ]
   }
 }

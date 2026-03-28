@@ -57,7 +57,7 @@ export class LMStudioProvider implements LLMProvider {
 
   constructor(
     private model: string = "google/gemma-3-4b",
-    endpoint: string = "http://127.0.0.1:1234",
+    endpoint: string = "ws://127.0.0.1:1234",
     options: LMStudioProviderOptions = {},
   ) {
     this.client = new LMStudioClient({
@@ -107,11 +107,20 @@ export class LMStudioProvider implements LLMProvider {
       });
 
       if (hasTools && this.toolCallingStrategy === "native") {
-        return await this.actWithTools(modelClient, chat, definedTools, onToken);
+        return await this.actWithTools(
+          modelClient,
+          chat,
+          definedTools,
+          onToken,
+        );
       }
 
       if (hasTools && this.toolCallingStrategy === "structured_output") {
-        const result = await callWithStructuredTools(modelClient, chat, definedTools);
+        const result = await callWithStructuredTools(
+          modelClient,
+          chat,
+          definedTools,
+        );
         return {
           response: result,
           nonReasoningContent: result,
@@ -139,7 +148,9 @@ export class LMStudioProvider implements LLMProvider {
   ): Promise<ChatResponse> {
     const lmstudioTools: Tool[] = tools.map((t) => {
       if (!t.parameters || typeof t.parameters !== "object") {
-        throw new Error(`Tool "${t.name}" has invalid or missing parameters schema.`);
+        throw new Error(
+          `Tool "${t.name}" has invalid or missing parameters schema.`,
+        );
       }
       return rawFunctionTool({
         name: t.name,
