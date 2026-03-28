@@ -1,30 +1,38 @@
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
-import { existsSync } from "node:fs";
 import { APP_DATA_DIR } from "../paths.ts";
 
-const BOLD = "\x1b[1m", RESET = "\x1b[0m", GRAY = "\x1b[90m", CYAN = "\x1b[36m", RED = "\x1b[31m";
+const BOLD = "\x1b[1m";
+const RESET = "\x1b[0m";
+const GRAY = "\x1b[90m";
+const CYAN = "\x1b[36m";
+const RED = "\x1b[31m";
 
 const DB_PATH = join(APP_DATA_DIR, "data", "2b.cortex.sqlite");
 
-function openDb(): Database {
-  if (!existsSync(DB_PATH)) {
-    console.error(`No memory database found at ${DB_PATH}`);
-    console.error("Run 2b at least once to create it.");
-    process.exit(1);
+interface MemoryRow {
+  id: string;
+  type: string;
+  timestamp: number;
+  text: string;
+}
+
+async function openDb(): Promise<Database> {
+  if (!(await Bun.file(DB_PATH).exists())) {
+    throw new Error(`No memory database found at ${DB_PATH}\nRun 2b at least once to create it.`);
   }
   return new Database(DB_PATH);
 }
 
 function formatDate(ts: number): string {
-  return new Date(ts).toLocaleString();
+  return new Date(ts).toLocaleString("en-US");
 }
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
-function printRows(rows: { id: string; type: string; timestamp: number; text: string }[]): void {
+function printRows(rows: MemoryRow[]): void {
   for (const row of rows) {
     console.log(
       `${GRAY}${row.id.slice(0, 8)}${RESET}  ${CYAN}${row.type.padEnd(12)}${RESET}  ${GRAY}${formatDate(row.timestamp)}${RESET}`
@@ -33,30 +41,43 @@ function printRows(rows: { id: string; type: string; timestamp: number; text: st
   }
 }
 
+const LIST_LIMIT = 100;
+
 function listMemories(db: Database): void {
   const rows = db
-    .prepare("SELECT id, type, timestamp, text FROM memories ORDER BY timestamp DESC")
-    .all() as { id: string; type: string; timestamp: number; text: string }[];
+    .prepare(`SELECT id, type, timestamp, text FROM memories ORDER BY timestamp DESC LIMIT ${LIST_LIMIT + 1}`)
+    .all() as MemoryRow[];
 
   if (rows.length === 0) {
     console.log("No memories stored.");
     return;
   }
 
-  console.log(`\n${BOLD}${rows.length} memories${RESET}\n`);
-  printRows(rows);
+  const truncated = rows.length > LIST_LIMIT;
+  const display = truncated ? rows.slice(0, LIST_LIMIT) : rows;
+  console.log(`\n${BOLD}${display.length}${truncated ? "+" : ""} memories${RESET}\n`);
+  printRows(display);
+  if (truncated) {
+    console.log(`${GRAY}(showing first ${LIST_LIMIT}; use 'search' to narrow results)${RESET}\n`);
+  }
 }
 
 function searchMemories(db: Database, query: string): void {
-  const rows = db
-    .prepare(
-      `SELECT m.id, m.type, m.timestamp, m.text
-       FROM memories m
-       INNER JOIN memories_fts f ON m.id = f.memory_id
-       WHERE memories_fts MATCH ?
-       ORDER BY m.timestamp DESC`
-    )
-    .all(query) as { id: string; type: string; timestamp: number; text: string }[];
+  let rows: MemoryRow[];
+  try {
+    rows = db
+      .prepare(
+        `SELECT m.id, m.type, m.timestamp, m.text
+         FROM memories m
+         INNER JOIN memories_fts f ON m.id = f.memory_id
+         WHERE memories_fts MATCH ?
+         ORDER BY m.timestamp DESC`
+      )
+      .all(query) as MemoryRow[];
+  } catch {
+    console.error(`Search failed: invalid query syntax. Try simpler terms.`);
+    process.exit(1);
+  }
 
   if (rows.length === 0) {
     console.log(`No memories matching "${query}".`);
@@ -81,7 +102,10 @@ async function clearMemories(db: Database, force: boolean): Promise<void> {
     process.stdout.write(`Clear all ${count} ${count === 1 ? "memory" : "memories"}? ${BOLD}[y/N]${RESET} `);
     const answer = await new Promise<string>((resolve) => {
       process.stdin.setEncoding("utf-8");
-      process.stdin.once("data", (data) => resolve(data.toString().trim()));
+      process.stdin.once("data", (data) => {
+        process.stdin.pause();
+        resolve(data.toString().trim());
+      });
     });
     if (answer.toLowerCase() !== "y") {
       console.log("Aborted.");
@@ -112,34 +136,46 @@ ${BOLD}COMMANDS${RESET}
     return;
   }
 
-  if (sub === "list") {
-    const db = openDb();
-    listMemories(db);
-    db.close();
-    return;
-  }
-
-  if (sub === "search") {
-    const query = args.slice(1).join(" ");
-    if (!query) {
-      console.error("Usage: 2b memory search <query>");
-      process.exit(1);
+  switch (sub) {
+    case "list": {
+      const db = await openDb();
+      try {
+        listMemories(db);
+      } finally {
+        db.close();
+      }
+      return;
     }
-    const db = openDb();
-    searchMemories(db, query);
-    db.close();
-    return;
-  }
 
-  if (sub === "clear") {
-    const force = args.includes("--force");
-    const db = openDb();
-    await clearMemories(db, force);
-    db.close();
-    return;
-  }
+    case "search": {
+      const query = args.slice(1).join(" ");
+      if (!query) {
+        console.error("Usage: 2b memory search <query>");
+        process.exit(1);
+      }
+      const db = await openDb();
+      try {
+        searchMemories(db, query);
+      } finally {
+        db.close();
+      }
+      return;
+    }
 
-  console.error(`Unknown memory subcommand: ${sub}`);
-  console.error("Run '2b memory --help' for usage.");
-  process.exit(1);
+    case "clear": {
+      const force = args.includes("--force");
+      const db = await openDb();
+      try {
+        await clearMemories(db, force);
+      } finally {
+        db.close();
+      }
+      return;
+    }
+
+    default:
+      console.error(`Unknown memory subcommand: ${sub}`);
+      console.error("Run '2b memory --help' for usage.");
+      process.exit(1);
+  }
 }
