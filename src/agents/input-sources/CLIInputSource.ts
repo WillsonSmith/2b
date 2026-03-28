@@ -1,27 +1,49 @@
 import { InputSource } from "../../core/InputSource.ts";
 import { logger } from "../../logger.ts";
 
+type ReadableInput = NodeJS.ReadableStream & { setEncoding?(enc: BufferEncoding): void };
+
 /**
- * Reads from stdin and emits all input as direct_input (always requires a response).
+ * Reads from a readable stream (defaults to stdin) and emits all input as
+ * direct_input (always requires a response).
  */
 export class CLIInputSource extends InputSource {
   name = "CLI";
 
-  async start() {
-    process.stdin.setEncoding("utf-8");
-    process.stdin.resume();
+  private readonly stream: ReadableInput;
+  private _onData?: (data: string) => void;
 
-    process.stdin.on("data", (data) => {
-      const input = data.toString().trim();
+  constructor(stream: ReadableInput = process.stdin) {
+    super();
+    this.stream = stream;
+  }
+
+  async start() {
+    if (this.running) return;
+
+    this.stream.setEncoding?.("utf8");
+    this.stream.resume();
+
+    this._onData = (data: string) => {
+      const input = data.trim();
       if (input.length > 0) {
         this.emit("direct_input", input);
       }
-    });
+    };
 
-    logger.info("CLI", "Input ready. Type to chat.");
+    this.stream.on("data", this._onData as (chunk: unknown) => void);
+
+    this.running = true;
+    logger.info(this.name, "Input ready. Type to chat.");
   }
 
   async stop() {
-    process.stdin.pause();
+    if (!this.running) return;
+    if (this._onData) {
+      this.stream.off("data", this._onData as (chunk: unknown) => void);
+      this._onData = undefined;
+    }
+    this.stream.pause();
+    this.running = false;
   }
 }

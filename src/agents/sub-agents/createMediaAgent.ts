@@ -4,10 +4,19 @@ import { YtDlpPlugin } from "../../plugins/YtDlpPlugin.ts";
 import { FFmpegPlugin } from "../../plugins/FFmpegPlugin.ts";
 import { ImageVisionPlugin } from "../../plugins/ImageVisionPlugin.ts";
 
-export function createMediaAgent(llm: LLMProvider): HeadlessAgent {
+export interface MediaAgentOptions {
+  visionModel?: string;
+  visionBaseUrl?: string;
+}
+
+export function createMediaAgent(llm: LLMProvider, options: MediaAgentOptions = {}): HeadlessAgent {
   return new HeadlessAgent(
     llm,
-    [new YtDlpPlugin(), new FFmpegPlugin(), new ImageVisionPlugin()],
-    "You are a media processing specialist. You can download videos, edit clips, convert formats, extract audio, and analyze images. Focus on completing media tasks efficiently.",
+    [
+      new YtDlpPlugin(),
+      new FFmpegPlugin(),
+      new ImageVisionPlugin(options.visionModel, options.visionBaseUrl),
+    ],
+    "You are a media processing specialist. You can download video clips from URLs, trim and convert video files, extract audio tracks, and analyze images from URLs or local file paths. Verify file paths before editing and prefer non-destructive operations where possible.",
   );
 }
