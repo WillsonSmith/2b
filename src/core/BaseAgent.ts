@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import type { AgentPlugin, ToolDefinition } from "./Plugin.ts";
 import type { InputSource } from "./InputSource.ts";
-import type { AgentConfig, Message } from "./types.ts";
+import type { AgentConfig, AmbientOptions, Message } from "./types.ts";
 import { logger } from "../logger.ts";
 
 export class BaseAgent extends EventEmitter {
@@ -49,7 +49,7 @@ export class BaseAgent extends EventEmitter {
   }
 
   /** Queue passive perception. The agent may choose to ignore it. */
-  public addAmbient(text: string, opts: { forceTick?: boolean } = {}) {
+  public addAmbient(text: string, opts: AmbientOptions = {}) {
     this.ambientQueue.push(text);
     if (opts.forceTick) this.tick();
   }
@@ -58,7 +58,7 @@ export class BaseAgent extends EventEmitter {
    * Backward-compatible shim used by existing plugins (e.g. AudioPlugin, CLIPlugin).
    * Routes [Heard] and [User said] prefixes to directQueue; everything else to ambientQueue.
    */
-  public addPerception(text: string, opts: { forceTick?: boolean } = {}) {
+  public addPerception(text: string, opts: AmbientOptions = {}) {
     if (text.startsWith('[Heard "') || text.startsWith('[User said "')) {
       this.addDirect(text);
     } else {
