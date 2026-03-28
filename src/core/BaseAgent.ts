@@ -17,7 +17,7 @@ export class BaseAgent extends EventEmitter {
   private readonly IGNORE_KEYWORD = "[IGNORE]";
   private tokenCallback: ((token: string, isReasoning: boolean) => void) | undefined = undefined;
   private proactiveTasks: Array<{ intervalMs: number; task: () => string | null; lastRun: number }> = [];
-  private proactiveTimer: ReturnType<typeof setTimeout> | null = null;
+  private proactiveTimer: ReturnType<typeof setInterval> | null = null;
 
   public get name(): string {
     return this.config.name ?? "Agent";
@@ -73,17 +73,17 @@ export class BaseAgent extends EventEmitter {
 
   /** Cancel the current LLM inference (e.g. for barge-in). */
   public interrupt() {
-    this.currentAbortController?.abort();
+    if (this.currentAbortController) this.currentAbortController.abort();
     this.emit("interrupt");
   }
 
   /** Register a recurring background task. If task() returns a non-null string, it is enqueued as ambient input. */
   public scheduleProactiveTick(intervalMs: number, task: () => string | null): void {
     this.proactiveTasks.push({ intervalMs, task, lastRun: 0 });
-    this._scheduleProactiveCheck();
+    this.scheduleProactiveCheck();
   }
 
-  private _scheduleProactiveCheck() {
+  private scheduleProactiveCheck() {
     if (this.proactiveTimer) return;
     const minInterval = Math.min(...this.proactiveTasks.map((t) => t.intervalMs));
     this.proactiveTimer = setInterval(() => {
@@ -101,23 +101,33 @@ export class BaseAgent extends EventEmitter {
   }
 
   public async start() {
+    logger.info("BaseAgent", `Starting ${this.name} with ${this.plugins.length} plugins`);
     for (const plugin of this.plugins) {
       plugin.onInit?.(this);
     }
     for (const source of this.inputSources) {
       await source.start();
     }
-    logger.info("BaseAgent", `Starting ${this.name} with ${this.plugins.length} plugins`);
     this.scheduleTick();
+  }
+
+  public async stop() {
+    if (this.tickTimer) { clearTimeout(this.tickTimer); this.tickTimer = null; }
+    if (this.proactiveTimer) { clearInterval(this.proactiveTimer); this.proactiveTimer = null; }
+    for (const source of this.inputSources) {
+      await source.stop();
+    }
   }
 
   public pause() {
     this.isPaused = true;
     if (this.tickTimer) { clearTimeout(this.tickTimer); this.tickTimer = null; }
+    if (this.proactiveTimer) { clearInterval(this.proactiveTimer); this.proactiveTimer = null; }
   }
 
   public resume() {
     this.isPaused = false;
+    if (this.proactiveTasks.length > 0) this.scheduleProactiveCheck();
     this.tick();
   }
 
@@ -141,15 +151,20 @@ export class BaseAgent extends EventEmitter {
 
     if (direct.length > 0 || ambient.length > 0) {
       logger.debug("BaseAgent", `Tick fired — direct=${direct.length} ambient=${ambient.length}`);
+      this.isThinking = true;
       try {
         await this.act(direct, ambient);
       } catch (error) {
+        this.directQueue.unshift(...direct);
+        this.ambientQueue.unshift(...ambient);
         const err = error instanceof Error ? error : new Error(String(error));
         this.emit("error", err);
         for (const plugin of this.plugins) {
           try {
             plugin.onError?.(err);
-          } catch {}
+          } catch (e) {
+            logger.error("BaseAgent", `onError handler threw in ${plugin.name}:`, e);
+          }
         }
       } finally {
         this.isThinking = false;
@@ -160,12 +175,7 @@ export class BaseAgent extends EventEmitter {
     this.scheduleTick();
   }
 
-  private async act(direct: string[], ambient: string[]) {
-    this.isThinking = true;
-    this.emit("state_change", "thinking");
-    this.currentAbortController = new AbortController();
-
-    // Collect conversation history from plugins
+  private async collectMessages(allInputs: string[]): Promise<{ messages: Message[]; userContent: string }> {
     const messages: Message[] = [];
     for (const plugin of this.plugins) {
       if (plugin.getMessages) {
@@ -178,14 +188,16 @@ export class BaseAgent extends EventEmitter {
         }
       }
     }
-
-    // Append the current input as the latest user message
-    const allInputs = [...direct, ...ambient];
     const userContent = allInputs.join("\n");
     messages.push({ role: "user", content: userContent });
     logger.info("BaseAgent", `User input: "${userContent.slice(0, 100)}${userContent.length > 100 ? "…" : ""}"`);
+    return { messages, userContent };
+  }
 
-    // Collect system prompt fragments and context from plugins
+  private async collectSystemPrompt(
+    allInputs: string[],
+    mustRespond: boolean,
+  ): Promise<{ systemPrompt: string; systemPromptFragments: string[] }> {
     const systemPromptFragments: string[] = [];
     let pluginContext = "";
 
@@ -208,7 +220,11 @@ export class BaseAgent extends EventEmitter {
       }
     }
 
-    // Collect tools from plugins, wiring executeTool as implementation fallback
+    const systemPrompt = this.buildSystemPrompt(mustRespond, pluginContext, systemPromptFragments);
+    return { systemPrompt, systemPromptFragments };
+  }
+
+  private collectTools(): ToolDefinition[] {
     const tools: ToolDefinition[] = [];
     for (const plugin of this.plugins) {
       if (plugin.getTools) {
@@ -225,17 +241,23 @@ export class BaseAgent extends EventEmitter {
         tools.push(...pluginTools);
       }
     }
-    logger.info("BaseAgent", `Dispatching to LLM — messages=${messages.length} tools=${tools.map((t) => t.name).join(", ")}`);
-    logger.debug("BaseAgent", `System prompt (${systemPromptFragments.length} fragments):\n${this.buildSystemPrompt(direct.length > 0, pluginContext, systemPromptFragments).slice(0, 400)}…`);
+    return tools;
+  }
 
+  private async act(direct: string[], ambient: string[]) {
+    this.emit("state_change", "thinking");
+    this.currentAbortController = new AbortController();
+
+    const allInputs = [...direct, ...ambient];
     const mustRespond = direct.length > 0;
-    const systemPrompt = this.buildSystemPrompt(
-      mustRespond,
-      pluginContext,
-      systemPromptFragments,
-    );
 
-    // Notify plugins of the incoming user message
+    const { messages, userContent } = await this.collectMessages(allInputs);
+    const { systemPrompt, systemPromptFragments } = await this.collectSystemPrompt(allInputs, mustRespond);
+    const tools = this.collectTools();
+
+    logger.info("BaseAgent", `Dispatching to LLM — messages=${messages.length} tools=${tools.map((t) => t.name).join(", ")}`);
+    logger.debug("BaseAgent", `System prompt (${systemPromptFragments.length} fragments):\n${systemPrompt.slice(0, 400)}…`);
+
     await this.dispatchMessage("user", userContent, "input");
 
     const { response, nonReasoningContent, reasoningText } = await this.llm.chat(messages, systemPrompt, undefined, tools, this.tokenCallback);
