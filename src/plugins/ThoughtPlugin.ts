@@ -4,7 +4,16 @@ import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import { logger } from "../logger.ts";
 
-const SYNTHESIS_PROMPT = `You analyze internal AI reasoning and extract personality-shaping insights.
+const MAX_SYNTHESIS_CHARS = 1000;
+const MAX_INSIGHT_LENGTH = 200;
+
+export class ThoughtPlugin implements AgentPlugin {
+  name = "Thought";
+  private memoryPlugin: CortexMemoryPlugin;
+  private synthesisProvider: LLMProvider | null;
+  private listenerRegistered = false;
+
+  protected synthesisPrompt = `You analyze internal AI reasoning and extract personality-shaping insights.
 
 Given this internal thought, determine whether it contains a personal preference, value, communication style, or behavioral insight that should shape how the AI behaves in future conversations.
 
@@ -14,17 +23,15 @@ Non-qualifying examples: task-specific reasoning, working memory, step-by-step p
 If the thought contains a qualifying insight: reply with a single concise behavioral rule written in first person starting with "I " (e.g., "I prefer direct answers over lengthy explanations").
 If it does not: reply with exactly the word SKIP and nothing else.`;
 
-export class ThoughtPlugin implements AgentPlugin {
-  name = "ThoughtPlugin";
-  private memoryPlugin: CortexMemoryPlugin;
-  private synthesisProvider: LLMProvider | null;
-
   constructor(memoryPlugin: CortexMemoryPlugin, synthesisProvider: LLMProvider | null = null) {
     this.memoryPlugin = memoryPlugin;
     this.synthesisProvider = synthesisProvider;
   }
 
   onInit(agent: BaseAgent): void {
+    if (this.listenerRegistered) return;
+    this.listenerRegistered = true;
+
     agent.on("thought", async (thought: string) => {
       if (!thought?.trim()) return;
       logger.debug("ThoughtPlugin", `Storing thought (${thought.length} chars)`);
@@ -49,8 +56,8 @@ export class ThoughtPlugin implements AgentPlugin {
     const insight = await this.synthesizeThought(thought);
     if (!insight) return;
 
-    // Deduplicate: skip if an identical behavior rule is already stored
-    const existing = this.memoryPlugin.db.getRecentMemories(100, "behavior");
+    // Deduplicate against all stored behavior memories to avoid window gaps
+    const existing = this.memoryPlugin.db.getRecentMemories(Number.MAX_SAFE_INTEGER, "behavior");
     if (existing.some((m) => m.text === insight)) {
       logger.debug("ThoughtPlugin", `Behavior insight already stored, skipping: "${insight}"`);
       return;
@@ -63,14 +70,16 @@ export class ThoughtPlugin implements AgentPlugin {
   private async synthesizeThought(thought: string): Promise<string | null> {
     if (!this.synthesisProvider) return null;
     try {
-      const truncated = thought.slice(0, 1000);
+      const truncated = thought.slice(0, MAX_SYNTHESIS_CHARS);
+      // nonReasoningContent is used intentionally; reasoning/scratchpad output is discarded
       const { nonReasoningContent } = await this.synthesisProvider.chat(
         [{ role: "user", content: truncated }],
-        SYNTHESIS_PROMPT,
+        this.synthesisPrompt,
       );
       const reply = nonReasoningContent.trim();
       if (!reply || reply.toUpperCase() === "SKIP") return null;
       if (!reply.startsWith("I ")) return null;
+      if (reply.length > MAX_INSIGHT_LENGTH) return null;
       return reply;
     } catch (e) {
       logger.debug("ThoughtPlugin", "Synthesis request failed:", e);
@@ -116,6 +125,8 @@ export class ThoughtPlugin implements AgentPlugin {
       }
     } catch (e) {
       logger.error("ThoughtPlugin", `Tool error (${name}):`, e);
+      return { error: "Failed to retrieve thoughts." };
     }
+    return undefined;
   }
 }
