@@ -10,22 +10,22 @@ Run `/review-module` on each of these.
 
 ## Providers
 - [x] `src/providers/llm/LLMProvider.ts`
-- [ ] `src/providers/llm/LMStudioProvider.ts`
-- [ ] `src/providers/llm/StructuredToolCaller.ts`
-- [ ] `src/providers/audio/AudioProvider.ts`
-- [ ] `src/providers/audio/AudioSystem.ts`
+- [x] `src/providers/llm/LMStudioProvider.ts`
+- [x] `src/providers/llm/StructuredToolCaller.ts`
+- [x] `src/providers/audio/AudioProvider.ts`
+- [x] `src/providers/audio/AudioSystem.ts`
 - [x] `src/providers/audio/TranscriptionProvider.ts`
-- [ ] `src/providers/audio/VoiceActivityDetector.ts`
+- [x] `src/providers/audio/VoiceActivityDetector.ts`
 
 ## Agents
-- [ ] `src/agents/AgentFactory.ts`
-- [ ] `src/agents/input-sources/CLIInputSource.ts`
-- [ ] `src/agents/lmstudioTools.ts`
-- [ ] `src/agents/util.ts`
-- [ ] `src/agents/sub-agents/createMediaAgent.ts`
-- [ ] `src/agents/sub-agents/createSystemAgent.ts`
-- [ ] `src/agents/sub-agents/createInfoAgent.ts`
-- [ ] `src/agents/sub-agents/createWebAgent.ts`
+- [x] `src/agents/AgentFactory.ts`
+- [x] `src/agents/input-sources/CLIInputSource.ts`
+- [x] `src/agents/lmstudioTools.ts`
+- [x] `src/agents/util.ts`
+- [x] `src/agents/sub-agents/createMediaAgent.ts`
+- [x] `src/agents/sub-agents/createSystemAgent.ts`
+- [x] `src/agents/sub-agents/createInfoAgent.ts`
+- [x] `src/agents/sub-agents/createWebAgent.ts`
 
 ## Plugins
 - [ ] `src/plugins/AudioPlugin.ts`

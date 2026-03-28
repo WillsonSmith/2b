@@ -8,6 +8,6 @@ export function createInfoAgent(llm: LLMProvider): HeadlessAgent {
   return new HeadlessAgent(
     llm,
     [new TMDBPlugin(), new WeatherPlugin(), new NotesPlugin()],
-    "You are an information retrieval specialist. Look up movies, weather conditions, and manage notes. Return concise, accurate information.",
+    "You are an information retrieval specialist. Look up movies, weather conditions, and create, list, read, and delete notes. Return concise, accurate information.",
   );
 }
