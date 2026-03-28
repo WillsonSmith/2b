@@ -4,20 +4,24 @@ import type { Message } from "./types.ts";
 export interface ToolDefinition {
   name: string;
   description: string;
-  parameters: any; // JSON Schema
+  parameters: Record<string, unknown>; // JSON Schema
   implementation?: (args: any) => any | Promise<any>;
 }
 
 export interface AgentPlugin {
   name: string;
-  onInit?: (agent: BaseAgent) => void;
+  onInit?: (agent: BaseAgent) => void | Promise<void>;
   /** Return a string injected directly into the agent system prompt. */
   getSystemPromptFragment?: () => string;
+  /**
+   * Return a string of context to inject into the current turn.
+   * @param currentEvents - The raw input strings for the current turn.
+   */
   getContext?: (currentEvents?: string[]) => string | Promise<string>;
   getTools?: () => ToolDefinition[];
-  executeTool?: (name: string, args: any) => any | Promise<any>;
+  executeTool?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   onMessage?: (
-    role: "user" | "assistant" | "system",
+    role: Message["role"],
     content: string,
     source: string,
   ) => void | Promise<void>;
