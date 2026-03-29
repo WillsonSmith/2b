@@ -3,7 +3,7 @@ import { LMStudioProvider } from "../providers/llm/LMStudioProvider.ts";
 import { MemoryPlugin } from "../plugins/MemoryPlugin.ts";
 import { SubAgentPlugin } from "../plugins/SubAgentPlugin.ts";
 import { CLIInputSource } from "./input-sources/CLIInputSource.ts";
-import type { ToolDefinition } from "../core/Plugin.ts";
+import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { createMediaAgent } from "./sub-agents/createMediaAgent.ts";
 import { createWebAgent } from "./sub-agents/createWebAgent.ts";
 import { createSystemAgent } from "./sub-agents/createSystemAgent.ts";
@@ -15,13 +15,12 @@ const minimalTools: ToolDefinition[] = [
   {
     name: "get_current_time",
     description: "Returns the current local date and time.",
-    parameters: { type: "object", properties: {}, additionalProperties: false },
-    implementation: () => new Date().toString(),
+    parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
+    implementation: () => new Date().toLocaleString(),
   },
   {
     name: "echo",
-    description:
-      "Echoes text back. Useful for confirming what the agent heard.",
+    description: "Echoes the given text back.",
     parameters: {
       type: "object",
       properties: { text: { type: "string" } },
@@ -29,10 +28,19 @@ const minimalTools: ToolDefinition[] = [
     },
     implementation: (args: unknown) => {
       const text = (args as Record<string, unknown>)?.text;
-      return typeof text === "string" ? text : String(text ?? "");
+      if (typeof text !== "string") {
+        console.warn("[MinimalTools] echo: expected string for 'text', got", typeof text, "— coercing");
+        return String(text ?? "");
+      }
+      return text;
     },
   },
 ];
+
+const minimalToolsPlugin: AgentPlugin = {
+  name: "MinimalTools",
+  getTools: () => minimalTools,
+};
 
 // ── Factory ───────────────────────────────────────────────────────────────────
 
@@ -109,7 +117,7 @@ export function createAgent(
       absoluteTimeoutMs: 30_000,
     }),
   );
-  agent.registerPlugin({ name: "MinimalTools", getTools: () => minimalTools });
+  agent.registerPlugin(minimalToolsPlugin);
   agent.registerPlugin(new MemoryPlugin(llm));
   agent.addInputSource(input);
 

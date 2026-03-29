@@ -3,9 +3,14 @@ import { logger } from "../logger.ts";
 
 const ALLOWED_COMMANDS = new Set([
   "ls", "pwd", "cat", "head", "tail", "wc", "echo", "date",
-  "git", "grep", "find", "which", "env", "printenv", "uname",
+  "git", "grep", "find", "which", "uname",
   "df", "du", "ps", "whoami", "hostname",
 ]);
+
+const ALLOWED_COMMANDS_LIST = [...ALLOWED_COMMANDS].join(", ");
+
+// Matches ANSI escape sequences (CSI, OSC, etc.) for output sanitisation
+const ANSI_ESCAPE_RE = /\x1b(?:\[[0-9;]*[A-Za-z]|\][^\x07]*\x07|[^[\]])/g;
 
 export class ShellPlugin implements AgentPlugin {
   name = "Shell";
@@ -17,9 +22,8 @@ export class ShellPlugin implements AgentPlugin {
   }
 
   getSystemPromptFragment(): string {
-    const allowed = [...ALLOWED_COMMANDS].join(", ");
     return `You can run read-only shell commands to explore the filesystem and system state.
-Use run_shell to execute commands. Only these base commands are permitted: ${allowed}.
+Use run_shell to execute commands. Only these base commands are permitted: ${ALLOWED_COMMANDS_LIST}.
 Commands that modify files, install packages, or affect system state are not allowed.`;
   }
 
@@ -27,7 +31,7 @@ Commands that modify files, install packages, or affect system state are not all
     return [
       {
         name: "run_shell",
-        description: `Run a read-only shell command. Permitted base commands: ${[...ALLOWED_COMMANDS].join(", ")}. Use this to list files, read content, check git status, or inspect the environment. Shell operators (|, &&, >, ;) are not supported.`,
+        description: `Run a read-only shell command. Permitted base commands: ${ALLOWED_COMMANDS_LIST}. Use this to list files, read content, check git status, or inspect the environment. Shell operators (|, &&, >, ;) are not supported.`,
         parameters: {
           type: "object",
           properties: {
@@ -43,10 +47,18 @@ Commands that modify files, install packages, or affect system state are not all
     ];
   }
 
-  async executeTool(name: string, args: any): Promise<any> {
+  async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
     if (name === "run_shell") {
+      if (typeof args.command !== "string") {
+        return {
+          stdout: "",
+          stderr: "Missing or invalid 'command' argument: expected a string.",
+          exitCode: 1,
+        };
+      }
       return this.runShell(args.command);
     }
+    return undefined;
   }
 
   private async runShell(
@@ -59,12 +71,12 @@ Commands that modify files, install packages, or affect system state are not all
     if (!ALLOWED_COMMANDS.has(baseCmd)) {
       return {
         stdout: "",
-        stderr: `Command '${baseCmd}' is not permitted. Allowed: ${[...ALLOWED_COMMANDS].join(", ")}`,
+        stderr: `Command '${baseCmd}' is not permitted. Allowed: ${ALLOWED_COMMANDS_LIST}`,
         exitCode: 1,
       };
     }
 
-    logger.debug("Shell", `run_shell: ${trimmed}`);
+    logger.debug(this.name, `run_shell: ${trimmed}`);
 
     try {
       // Run directly via Bun.spawn — no shell interpretation, so operators are ignored
@@ -74,15 +86,21 @@ Commands that modify files, install packages, or affect system state are not all
         stderr: "pipe",
       });
 
-      const [stdout, stderr] = await Promise.all([
+      // Await process exit first so exitCode is guaranteed to be set,
+      // then drain the streams.
+      const [, rawStdout, rawStderr] = await Promise.all([
+        proc.exited,
         new Response(proc.stdout).text(),
         new Response(proc.stderr).text(),
       ]);
-      await proc.exited;
+
+      const sanitise = (s: string) => s.replace(ANSI_ESCAPE_RE, "");
+      const stdoutFull = sanitise(rawStdout);
+      const stderrFull = sanitise(rawStderr);
 
       return {
-        stdout: stdout.slice(0, 4096),
-        stderr: stderr.slice(0, 1024),
+        stdout: stdoutFull.length > 4096 ? stdoutFull.slice(0, 4096) + "\n[output truncated]" : stdoutFull,
+        stderr: stderrFull.length > 1024 ? stderrFull.slice(0, 1024) + "\n[output truncated]" : stderrFull,
         exitCode: proc.exitCode ?? 0,
       };
     } catch (e) {

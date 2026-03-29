@@ -1,20 +1,32 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import type { BaseAgent } from "../core/BaseAgent.ts";
+import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import { CortexMemoryDatabase, type MemoryFilter } from "./CortexMemoryDatabase.ts";
 import { logger } from "../logger.ts";
+
+/** Maximum character length enforced on user-supplied memory content fields. */
+const MAX_CONTENT_LENGTH = 10_000;
 
 export class CortexMemoryPlugin implements AgentPlugin {
   name = "CortexMemory";
   public db: CortexMemoryDatabase;
+
+  /**
+   * Events captured from the current turn's getContext() call.
+   * Read by onMessage() to build the conflict-resolution query.
+   * These two hooks are intentionally coupled: getContext() must be called
+   * before onMessage() each turn so this field is current.
+   */
   private currentEvents: string[] = [];
   private savedThisTurn: Set<string> = new Set();
 
-  constructor(llmProvider: any, name: string, dbPath?: string) {
-    this.db = new CortexMemoryDatabase(llmProvider, name, dbPath);
-  }
+  /** Cached behavior memories, invalidated when save_behavior or delete_memory runs. */
+  private behaviorCache: Array<{ text: string }> | null = null;
 
-  onInit(_agent: BaseAgent): void {
-    // Nothing to subscribe to at init; ThoughtPlugin will call db.addMemory directly
+  private readonly MAX_MEMORY_TEXT_LENGTH = 300;
+
+  constructor(llmProvider: LLMProvider, name: string, dbPath?: string) {
+    this.db = new CortexMemoryDatabase(llmProvider, name, dbPath);
   }
 
   getSystemPromptFragment(): string {
@@ -38,12 +50,18 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "Use `get_memory_timeline` to retrieve memories in chronological order.",
     ];
 
-    const behaviors = this.db.getRecentMemories(20, "behavior");
-    if (behaviors.length > 0) {
-      parts.push("\n## Learned Behaviors");
-      for (const b of behaviors) {
-        parts.push(`- ${b.text}`);
+    try {
+      if (this.behaviorCache === null) {
+        this.behaviorCache = this.db.getRecentMemories(20, "behavior");
       }
+      if (this.behaviorCache.length > 0) {
+        parts.push("\n## Learned Behaviors");
+        for (const b of this.behaviorCache) {
+          parts.push(`- ${b.text}`);
+        }
+      }
+    } catch (e) {
+      logger.error(this.name, "Failed to load behavior memories for system prompt:", e);
     }
 
     return parts.join("\n");
@@ -56,13 +74,13 @@ export class CortexMemoryPlugin implements AgentPlugin {
       const query = currentEvents?.join(" ") ?? "";
       if (!query.trim()) return "";
 
-      logger.debug("CortexMemory", `getContext() searching: "${query.slice(0, 80)}…"`);
+      logger.debug(this.name, `getContext() searching: "${query.slice(0, 80)}…"`);
       const embedding = await this.db.getEmbedding(query);
       const [factualResults, procedureResults] = [
         this.db.searchWithEmbedding(embedding, 3, 0.5, ["factual"]),
         this.db.searchWithEmbedding(embedding, 1, 0.65, ["procedure"]),
       ];
-      logger.debug("CortexMemory", `getContext() found ${factualResults.length} memories, ${procedureResults.length} procedures`);
+      logger.debug(this.name, `getContext() found ${factualResults.length} memories, ${procedureResults.length} procedures`);
 
       const parts: string[] = [];
       if (factualResults.length > 0) {
@@ -296,159 +314,208 @@ export class CortexMemoryPlugin implements AgentPlugin {
 
   async executeTool(name: string, args: any): Promise<any> {
     try {
-      if (name === "search_memory") {
-        logger.info("CortexMemory", `search_memory: "${args.query}"${args.type ? ` type=${args.type}` : ""}`);
-        const results = await this.db.search(args.query, 5, 0.4, args.type);
-        logger.debug("CortexMemory", `search_memory found ${results.length} results`);
-        if (results.length === 0) return "No relevant memories found.";
-        const MAX_TEXT = 300;
-        return results
-          .map((r) => {
-            const text =
-              r.text.length > MAX_TEXT ? r.text.slice(0, MAX_TEXT) + "…" : r.text;
-            return `[${r.id.slice(0, 8)}] (score: ${r.score.toFixed(2)}) ${text}`;
-          })
-          .join("\n");
-      }
-
-      if (name === "save_memory") {
-        logger.info("CortexMemory", `save_memory type=${args.type ?? "factual"}: "${String(args.content).slice(0, 100)}"`);
-        const id = await this.db.addMemory(args.content, args.type ?? "factual", args.tags ?? []);
-        this.savedThisTurn.add(id);
-        logger.info("CortexMemory", `save_memory SUCCESS id=${id.slice(0, 8)}`);
-        // Link to top 3 similar existing memories
-        const similar = await this.db.search(args.content, 3, 0.5);
-        logger.debug("CortexMemory", `save_memory linking to ${similar.filter((s) => s.id !== id).length} similar memories`);
-        for (const s of similar) {
-          if (s.id !== id) await this.db.linkMemories(id, s.id);
-        }
-        return `Memory saved (id: ${id.slice(0, 8)}).`;
-      }
-
-      if (name === "save_behavior") {
-        logger.info("CortexMemory", `save_behavior: "${String(args.rule).slice(0, 100)}"`);
-        const id = await this.db.addMemory(args.rule, "behavior");
-        return `Behavior rule saved (id: ${id.slice(0, 8)}).`;
-      }
-
-      if (name === "save_procedure") {
-        const text = `[PROCEDURE] ${args.goal}\n${args.steps}`;
-        logger.info("CortexMemory", `save_procedure: "${String(args.goal).slice(0, 100)}"`);
-        const id = await this.db.addMemory(text, "procedure");
-        return `Procedure saved (id: ${id.slice(0, 8)}).`;
-      }
-
-      if (name === "edit_memory") {
-        logger.info("CortexMemory", `edit_memory id=${args.id.slice(0, 8)}: "${String(args.content).slice(0, 100)}"`);
-        const existing = await this.db.getMemoryById(args.id);
-        if (!existing) return `No memory found with id ${args.id.slice(0, 8)}.`;
-        await this.db.updateMemoryText(args.id, args.content);
-        logger.info("CortexMemory", `edit_memory SUCCESS id=${args.id.slice(0, 8)}`);
-        return `Memory ${args.id.slice(0, 8)} updated.`;
-      }
-
-      if (name === "delete_memory") {
-        logger.info("CortexMemory", `delete_memory id=${args.id.slice(0, 8)}`);
-        await this.db.deleteMemory(args.id);
-        return `Memory ${args.id.slice(0, 8)} deleted.`;
-      }
-
-      if (name === "get_linked_memories") {
-        logger.debug("CortexMemory", `get_linked_memories id=${args.id.slice(0, 8)}`);
-        const linked = await this.db.getLinkedMemories(args.id);
-        logger.debug("CortexMemory", `get_linked_memories found ${linked.length} links`);
-        if (linked.length === 0) return "No linked memories found.";
-        return linked.map((m) => `[${m.id.slice(0, 8)}] ${m.text}`).join("\n");
-      }
-
-      if (name === "query_memories") {
-        logger.info("CortexMemory", `query_memories: ${JSON.stringify(args)}`);
-        const filter: MemoryFilter = {
-          types: args.types,
-          tags: args.tags,
-          after: args.after,
-          before: args.before,
-          contains: args.contains,
-          limit: args.limit,
-        };
-        const results = this.db.queryMemories(filter);
-        logger.debug("CortexMemory", `query_memories found ${results.length} results`);
-        if (results.length === 0) return "No memories match the given filter.";
-        const MAX_TEXT = 300;
-        return results
-          .map((r) => {
-            const text = r.text.length > MAX_TEXT ? r.text.slice(0, MAX_TEXT) + "…" : r.text;
-            const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
-            const date = new Date(r.timestamp).toISOString().slice(0, 10);
-            return `[${r.id.slice(0, 8)}] (${r.type}, ${date}${tagsStr}) ${text}`;
-          })
-          .join("\n");
-      }
-
-      if (name === "hybrid_search") {
-        logger.info("CortexMemory", `hybrid_search: "${args.query}"`);
-        const filter: MemoryFilter = {
-          types: args.types,
-          tags: args.tags,
-          after: args.after,
-          before: args.before,
-          contains: args.contains,
-        };
-        const results = await this.db.hybridSearch(args.query, filter, args.limit ?? 5, 0.4);
-        logger.debug("CortexMemory", `hybrid_search found ${results.length} results`);
-        if (results.length === 0) return "No memories match the given query and filters.";
-        const MAX_TEXT = 300;
-        return results
-          .map((r) => {
-            const text = r.text.length > MAX_TEXT ? r.text.slice(0, MAX_TEXT) + "…" : r.text;
-            const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
-            const date = new Date(r.timestamp).toISOString().slice(0, 10);
-            return `[${r.id.slice(0, 8)}] (score: ${r.score.toFixed(2)}, ${r.type}, ${date}${tagsStr}) ${text}`;
-          })
-          .join("\n");
-      }
-
-      if (name === "aggregate_memories") {
-        logger.info("CortexMemory", `aggregate_memories group_by=${args.group_by}`);
-        const filter: MemoryFilter | undefined = args.filter
-          ? {
-              types: args.filter.types,
-              tags: args.filter.tags,
-              after: args.filter.after,
-              before: args.filter.before,
-              contains: args.filter.contains,
-              limit: args.filter.limit,
-            }
-          : undefined;
-        const results = this.db.aggregateMemories(args.group_by, filter);
-        logger.debug("CortexMemory", `aggregate_memories found ${results.length} groups`);
-        if (results.length === 0) return "No memories found.";
-        const header = `${"Group".padEnd(30)} Count`;
-        const divider = "-".repeat(36);
-        const rows = results.map((r) => `${r.group.padEnd(30)} ${r.count}`);
-        return [header, divider, ...rows].join("\n");
-      }
-
-      if (name === "get_memory_timeline") {
-        logger.info("CortexMemory", `get_memory_timeline start=${args.start} end=${args.end}`);
-        const start = args.start ? new Date(args.start).getTime() : undefined;
-        const end = args.end ? new Date(args.end).getTime() : undefined;
-        const results = this.db.getMemoryTimeline(start, end, args.limit ?? 20);
-        logger.debug("CortexMemory", `get_memory_timeline found ${results.length} memories`);
-        if (results.length === 0) return "No memories found in the given time range.";
-        const MAX_TEXT = 300;
-        return results
-          .map((r) => {
-            const text = r.text.length > MAX_TEXT ? r.text.slice(0, MAX_TEXT) + "…" : r.text;
-            const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
-            const date = new Date(r.timestamp).toISOString().replace("T", " ").slice(0, 19);
-            return `[${r.id.slice(0, 8)}] (${r.type}, ${date}${tagsStr}) ${text}`;
-          })
-          .join("\n");
-      }
+      if (name === "search_memory") return await this.handleSearchMemory(args);
+      if (name === "save_memory") return await this.handleSaveMemory(args);
+      if (name === "save_behavior") return await this.handleSaveBehavior(args);
+      if (name === "save_procedure") return await this.handleSaveProcedure(args);
+      if (name === "edit_memory") return await this.handleEditMemory(args);
+      if (name === "delete_memory") return await this.handleDeleteMemory(args);
+      if (name === "get_linked_memories") return await this.handleGetLinkedMemories(args);
+      if (name === "query_memories") return this.handleQueryMemories(args);
+      if (name === "hybrid_search") return await this.handleHybridSearch(args);
+      if (name === "aggregate_memories") return this.handleAggregateMemories(args);
+      if (name === "get_memory_timeline") return this.handleGetMemoryTimeline(args);
     } catch (e) {
-      logger.error("CortexMemory", `Tool error (${name}):`, e);
+      logger.error(this.name, `Tool error (${name}):`, e);
+      return `Tool error: ${e instanceof Error ? e.message : String(e)}`;
     }
+  }
+
+  private async handleSearchMemory(args: any): Promise<string> {
+    logger.info(this.name, `search_memory: "${args.query}"${args.type ? ` type=${args.type}` : ""}`);
+    const results = await this.db.search(args.query, 5, 0.4, args.type);
+    logger.debug(this.name, `search_memory found ${results.length} results`);
+    if (results.length === 0) return "No relevant memories found.";
+    return results
+      .map((r) => {
+        const text = r.text.length > this.MAX_MEMORY_TEXT_LENGTH
+          ? r.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
+          : r.text;
+        return `[${r.id.slice(0, 8)}] (score: ${r.score.toFixed(2)}) ${text}`;
+      })
+      .join("\n");
+  }
+
+  private async handleSaveMemory(args: any): Promise<string> {
+    const content = String(args.content);
+    if (content.length > MAX_CONTENT_LENGTH) {
+      return `Memory content too long (${content.length} chars). Maximum is ${MAX_CONTENT_LENGTH} characters.`;
+    }
+    logger.info(this.name, `save_memory type=${args.type ?? "factual"}: "${content.slice(0, 100)}"`);
+    const id = await this.db.addMemory(content, args.type ?? "factual", args.tags ?? []);
+    this.savedThisTurn.add(id);
+    logger.info(this.name, `save_memory SUCCESS id=${id.slice(0, 8)}`);
+    // Link to top 3 similar existing memories
+    const similar = await this.db.search(content, 3, 0.5);
+    logger.debug(this.name, `save_memory linking to ${similar.filter((s) => s.id !== id).length} similar memories`);
+    for (const s of similar) {
+      if (s.id !== id) await this.db.linkMemories(id, s.id);
+    }
+    return `Memory saved (type: ${args.type ?? "factual"}, id: ${id.slice(0, 8)}).`;
+  }
+
+  private async handleSaveBehavior(args: any): Promise<string> {
+    const rule = String(args.rule);
+    if (rule.length > MAX_CONTENT_LENGTH) {
+      return `Behavior rule too long (${rule.length} chars). Maximum is ${MAX_CONTENT_LENGTH} characters.`;
+    }
+    logger.info(this.name, `save_behavior: "${rule.slice(0, 100)}"`);
+    const id = await this.db.addMemory(rule, "behavior");
+    this.behaviorCache = null; // invalidate cache
+    return `Memory saved (type: behavior, id: ${id.slice(0, 8)}).`;
+  }
+
+  private async handleSaveProcedure(args: any): Promise<string> {
+    const goal = String(args.goal);
+    const steps = String(args.steps);
+    const combined = `[PROCEDURE] ${goal}\n${steps}`;
+    if (combined.length > MAX_CONTENT_LENGTH) {
+      return `Procedure content too long (${combined.length} chars). Maximum is ${MAX_CONTENT_LENGTH} characters.`;
+    }
+    logger.info(this.name, `save_procedure: "${goal.slice(0, 100)}"`);
+    const id = await this.db.addMemory(combined, "procedure");
+    return `Memory saved (type: procedure, id: ${id.slice(0, 8)}).`;
+  }
+
+  private async handleEditMemory(args: any): Promise<string> {
+    const content = String(args.content);
+    if (content.length > MAX_CONTENT_LENGTH) {
+      return `Memory content too long (${content.length} chars). Maximum is ${MAX_CONTENT_LENGTH} characters.`;
+    }
+    logger.info(this.name, `edit_memory id=${args.id.slice(0, 8)}: "${content.slice(0, 100)}"`);
+    const existing = await this.db.getMemoryById(args.id);
+    if (!existing) return `No memory found with id ${args.id.slice(0, 8)}.`;
+    await this.db.updateMemoryText(args.id, content);
+    logger.info(this.name, `edit_memory SUCCESS id=${args.id.slice(0, 8)}`);
+    return `Memory ${args.id.slice(0, 8)} updated.`;
+  }
+
+  private async handleDeleteMemory(args: any): Promise<string> {
+    if (!args.id || typeof args.id !== "string") {
+      return "delete_memory requires a valid memory id string.";
+    }
+    logger.info(this.name, `delete_memory id=${args.id.slice(0, 8)}`);
+    const existing = await this.db.getMemoryById(args.id);
+    if (!existing) return `No memory found with id ${args.id.slice(0, 8)}.`;
+    await this.db.deleteMemory(args.id);
+    this.behaviorCache = null; // invalidate cache in case a behavior was deleted
+    return `Memory ${args.id.slice(0, 8)} deleted.`;
+  }
+
+  private async handleGetLinkedMemories(args: any): Promise<string> {
+    if (!args.id || typeof args.id !== "string") {
+      return "get_linked_memories requires a valid memory id string.";
+    }
+    logger.debug(this.name, `get_linked_memories id=${args.id.slice(0, 8)}`);
+    const linked = await this.db.getLinkedMemories(args.id);
+    logger.debug(this.name, `get_linked_memories found ${linked.length} links`);
+    if (linked.length === 0) return "No linked memories found.";
+    return linked.map((m) => `[${m.id.slice(0, 8)}] ${m.text}`).join("\n");
+  }
+
+  private handleQueryMemories(args: any): string {
+    logger.info(this.name, `query_memories: ${JSON.stringify(args)}`);
+    const filter: MemoryFilter = this.buildFilter(args);
+    const results = this.db.queryMemories(filter);
+    logger.debug(this.name, `query_memories found ${results.length} results`);
+    if (results.length === 0) return "No memories match the given filter.";
+    return results
+      .map((r) => {
+        const text = r.text.length > this.MAX_MEMORY_TEXT_LENGTH
+          ? r.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
+          : r.text;
+        const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
+        const date = new Date(r.timestamp).toISOString().slice(0, 10);
+        return `[${r.id.slice(0, 8)}] (${r.type}, ${date}${tagsStr}) ${text}`;
+      })
+      .join("\n");
+  }
+
+  private async handleHybridSearch(args: any): Promise<string> {
+    logger.info(this.name, `hybrid_search: "${args.query}"`);
+    const filter: MemoryFilter = this.buildFilter(args);
+    const results = await this.db.hybridSearch(args.query, filter, args.limit ?? 5, 0.4);
+    logger.debug(this.name, `hybrid_search found ${results.length} results`);
+    if (results.length === 0) return "No memories match the given query and filters.";
+    return results
+      .map((r) => {
+        const text = r.text.length > this.MAX_MEMORY_TEXT_LENGTH
+          ? r.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
+          : r.text;
+        const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
+        const date = new Date(r.timestamp).toISOString().slice(0, 10);
+        return `[${r.id.slice(0, 8)}] (score: ${r.score.toFixed(2)}, ${r.type}, ${date}${tagsStr}) ${text}`;
+      })
+      .join("\n");
+  }
+
+  private handleAggregateMemories(args: any): string {
+    logger.info(this.name, `aggregate_memories group_by=${args.group_by}`);
+    let filter: MemoryFilter | undefined = undefined;
+    if (args.filter && typeof args.filter === "object") {
+      filter = this.buildFilter(args.filter);
+    }
+    const results = this.db.aggregateMemories(args.group_by, filter);
+    logger.debug(this.name, `aggregate_memories found ${results.length} groups`);
+    if (results.length === 0) return "No memories found.";
+    const header = `${"Group".padEnd(30)} Count`;
+    const divider = "-".repeat(36);
+    const rows = results.map((r) => `${r.group.padEnd(30)} ${r.count}`);
+    return [header, divider, ...rows].join("\n");
+  }
+
+  private handleGetMemoryTimeline(args: any): string {
+    logger.info(this.name, `get_memory_timeline start=${args.start} end=${args.end}`);
+    const start = this.parseDateArg(args.start);
+    const end = this.parseDateArg(args.end);
+    const results = this.db.getMemoryTimeline(start, end, args.limit ?? 20);
+    logger.debug(this.name, `get_memory_timeline found ${results.length} memories`);
+    if (results.length === 0) return "No memories found in the given time range.";
+    return results
+      .map((r) => {
+        const text = r.text.length > this.MAX_MEMORY_TEXT_LENGTH
+          ? r.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
+          : r.text;
+        const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
+        const date = new Date(r.timestamp).toISOString().replace("T", " ").slice(0, 19);
+        return `[${r.id.slice(0, 8)}] (${r.type}, ${date}${tagsStr}) ${text}`;
+      })
+      .join("\n");
+  }
+
+  /**
+   * Build a MemoryFilter from raw LLM args, validating date fields to avoid
+   * NaN timestamps from invalid date strings.
+   */
+  private buildFilter(args: any): MemoryFilter {
+    return {
+      types: Array.isArray(args.types) ? args.types : undefined,
+      tags: Array.isArray(args.tags) ? args.tags : undefined,
+      after: typeof args.after === "string" ? args.after : undefined,
+      before: typeof args.before === "string" ? args.before : undefined,
+      contains: typeof args.contains === "string" ? args.contains : undefined,
+      limit: typeof args.limit === "number" ? args.limit : undefined,
+    };
+  }
+
+  /**
+   * Parse an ISO date string arg, returning undefined if the value is absent
+   * or not a valid date (avoids NaN timestamps in database queries).
+   */
+  private parseDateArg(value: unknown): number | undefined {
+    if (!value || typeof value !== "string") return undefined;
+    const ms = new Date(value).getTime();
+    return isNaN(ms) ? undefined : ms;
   }
 
   async onMessage(
@@ -457,12 +524,17 @@ export class CortexMemoryPlugin implements AgentPlugin {
     _source: string,
   ): Promise<void> {
     if (role !== "assistant") return;
+    // Skip conflict resolution when no new memories were saved this turn —
+    // conflicts are most likely when fresh memories were just written.
+    if (this.savedThisTurn.size === 0) return;
+    // Guard: require event context to form a focused conflict query.
+    if (this.currentEvents.length === 0) return;
     // Autonomous conflict resolution
     try {
       const conflictQuery = this.currentEvents.join(" ") + " " + content;
-      logger.debug("CortexMemory", "onMessage: running autonomous conflict resolution");
+      logger.debug(this.name, "onMessage: running autonomous conflict resolution");
       const candidates = await this.db.search(conflictQuery, 5, 0.85);
-      logger.debug("CortexMemory", `onMessage: found ${candidates.length} conflict candidates`);
+      logger.debug(this.name, `onMessage: found ${candidates.length} conflict candidates`);
       const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
 
       for (const candidate of candidates) {
@@ -470,16 +542,16 @@ export class CortexMemoryPlugin implements AgentPlugin {
         const mem = await this.db.getMemoryById(candidate.id);
         if (!mem) continue;
         if (mem.timestamp >= twoHoursAgo) {
-          logger.info("CortexMemory", `Deleting recent conflicting memory id=${candidate.id.slice(0, 8)}`);
+          logger.info(this.name, `Deleting recent conflicting memory id=${candidate.id.slice(0, 8)}`);
           await this.db.deleteMemory(candidate.id);
         } else {
-          logger.info("CortexMemory", `Marking memory superseded id=${candidate.id.slice(0, 8)}`);
+          logger.info(this.name, `Marking memory superseded id=${candidate.id.slice(0, 8)}`);
           const superseded = `[SUPERSEDED] User has since changed this position: ${mem.text}`;
           await this.db.updateMemoryText(candidate.id, superseded);
         }
       }
     } catch (e) {
-      logger.error("CortexMemory", "Autonomous memory management error:", e);
+      logger.error(this.name, "Autonomous memory management error:", e);
     }
   }
 }
