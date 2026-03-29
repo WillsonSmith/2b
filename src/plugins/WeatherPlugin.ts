@@ -28,8 +28,19 @@ const WMO_DESCRIPTIONS: Record<number, string> = {
   99: "Thunderstorm with heavy hail",
 };
 
+const CURRENT_WEATHER_FIELDS = [
+  "temperature_2m",
+  "relative_humidity_2m",
+  "apparent_temperature",
+  "precipitation",
+  "weather_code",
+  "wind_speed_10m",
+  "wind_direction_10m",
+  "surface_pressure",
+].join(",");
+
 export class WeatherPlugin implements AgentPlugin {
-  name = "Weather";
+  name = "WeatherPlugin";
 
   getSystemPromptFragment(): string {
     return `You can look up current weather conditions for any location using Open-Meteo (no API key required).
@@ -57,14 +68,23 @@ Use get_weather when the user asks about weather, temperature, or conditions for
     ];
   }
 
-  async executeTool(name: string, args: any): Promise<any> {
+  async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
     if (name === "get_weather") {
-      return this.getWeather(args.location);
+      const location = args.location;
+      if (!location) {
+        return { error: "location argument is required." };
+      }
+      try {
+        return await this.getWeather(String(location));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { error: message };
+      }
     }
   }
 
   private async getWeather(location: string) {
-    logger.debug("Weather", `get_weather: "${location}"`);
+    logger.debug("WeatherPlugin", `get_weather: "${location}"`);
 
     // Step 1: Geocode the location
     const geoUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
@@ -90,20 +110,8 @@ Use get_weather when the user asks about weather, temperature, or conditions for
     const weatherUrl = new URL("https://api.open-meteo.com/v1/forecast");
     weatherUrl.searchParams.set("latitude", String(latitude));
     weatherUrl.searchParams.set("longitude", String(longitude));
-    weatherUrl.searchParams.set(
-      "current",
-      [
-        "temperature_2m",
-        "relative_humidity_2m",
-        "apparent_temperature",
-        "precipitation",
-        "weather_code",
-        "wind_speed_10m",
-        "wind_direction_10m",
-        "surface_pressure",
-      ].join(","),
-    );
-    weatherUrl.searchParams.set("timezone", timezone ?? "auto");
+    weatherUrl.searchParams.set("current", CURRENT_WEATHER_FIELDS);
+    weatherUrl.searchParams.set("timezone", timezone || "auto");
     weatherUrl.searchParams.set("forecast_days", "1");
 
     const weatherRes = await fetch(weatherUrl.toString(), {
