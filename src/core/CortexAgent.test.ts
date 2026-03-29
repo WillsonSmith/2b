@@ -1,15 +1,8 @@
-import { test, expect, describe, mock, afterAll } from "bun:test";
+import { test, expect, describe, mock } from "bun:test";
 import { CortexAgent } from "./CortexAgent";
 import { CortexMemoryPlugin } from "../plugins/CortexMemoryPlugin";
-import { ThoughtPlugin } from "../plugins/ThoughtPlugin";
 import type { AgentPlugin } from "./Plugin";
 import type { LLMProvider } from "../providers/llm/LLMProvider";
-import { unlinkSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
-
-const TEST_DB_PREFIX = "__cortex_agent_test__";
-const cleanupFiles: string[] = [];
 
 function makeLLM(response = "[IGNORE]"): LLMProvider {
   return {
@@ -23,20 +16,12 @@ function makeLLM(response = "[IGNORE]"): LLMProvider {
   } as unknown as LLMProvider;
 }
 
-function uniqueName() {
-  const name = `${TEST_DB_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const xdgDataHome = process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
-  cleanupFiles.push(join(xdgDataHome, "2b", "data", `${name}.cortex.sqlite`));
-  return name;
-}
-
-afterAll(() => {
-  for (const file of cleanupFiles) {
-    if (existsSync(file)) {
-      try { unlinkSync(file); } catch {}
-    }
-  }
-});
+/** Shared base config — all tests use in-memory SQLite. */
+const BASE_CONFIG = {
+  model: "test",
+  systemPrompt: "base",
+  memoryDbPath: ":memory:",
+} as const;
 
 // Wait for an event on a CortexAgent
 function waitForEvent(agent: CortexAgent, event: string, timeoutMs = 500): Promise<unknown[]> {
@@ -67,18 +52,13 @@ function waitForIdle(agent: CortexAgent, timeoutMs = 500): Promise<unknown[]> {
 describe("CortexAgent - plugin registration", () => {
   test("memoryPlugin is a CortexMemoryPlugin instance", () => {
     const llm = makeLLM();
-    const agent = new CortexAgent(llm, { model: "test", systemPrompt: "base", cortexName: uniqueName() });
+    const agent = new CortexAgent(llm, BASE_CONFIG);
     expect(agent.memoryPlugin).toBeInstanceOf(CortexMemoryPlugin);
   });
 
   test("system prompt includes CortexMemoryPlugin fragment even with no extra plugins", async () => {
     const llm = makeLLM();
-    const agent = new CortexAgent(llm, {
-      model: "test",
-      systemPrompt: "base",
-      cortexName: uniqueName(),
-      heartbeatInterval: 100000,
-    });
+    const agent = new CortexAgent(llm, { ...BASE_CONFIG, heartbeatInterval: 100000 });
 
     agent.addDirect("hi");
     await waitForIdle(agent);
@@ -90,12 +70,7 @@ describe("CortexAgent - plugin registration", () => {
 
   test("system prompt includes ThoughtPlugin fragment even with no extra plugins", async () => {
     const llm = makeLLM();
-    const agent = new CortexAgent(llm, {
-      model: "test",
-      systemPrompt: "base",
-      cortexName: uniqueName(),
-      heartbeatInterval: 100000,
-    });
+    const agent = new CortexAgent(llm, { ...BASE_CONFIG, heartbeatInterval: 100000 });
 
     agent.addDirect("hi");
     await waitForIdle(agent);
@@ -107,12 +82,7 @@ describe("CortexAgent - plugin registration", () => {
 
   test("tools include get_recent_thoughts from ThoughtPlugin", async () => {
     const llm = makeLLM();
-    const agent = new CortexAgent(llm, {
-      model: "test",
-      systemPrompt: "base",
-      cortexName: uniqueName(),
-      heartbeatInterval: 100000,
-    });
+    const agent = new CortexAgent(llm, { ...BASE_CONFIG, heartbeatInterval: 100000 });
 
     agent.addDirect("hi");
     await waitForIdle(agent);
@@ -124,12 +94,7 @@ describe("CortexAgent - plugin registration", () => {
 
   test("tools include search_memory from CortexMemoryPlugin", async () => {
     const llm = makeLLM();
-    const agent = new CortexAgent(llm, {
-      model: "test",
-      systemPrompt: "base",
-      cortexName: uniqueName(),
-      heartbeatInterval: 100000,
-    });
+    const agent = new CortexAgent(llm, { ...BASE_CONFIG, heartbeatInterval: 100000 });
 
     agent.addDirect("hi");
     await waitForIdle(agent);
@@ -141,12 +106,7 @@ describe("CortexAgent - plugin registration", () => {
 
   test("additional plugins passed via registerPlugin are also included", async () => {
     const llm = makeLLM();
-    const agent = new CortexAgent(llm, {
-      model: "test",
-      systemPrompt: "base",
-      cortexName: uniqueName(),
-      heartbeatInterval: 100000,
-    });
+    const agent = new CortexAgent(llm, { ...BASE_CONFIG, heartbeatInterval: 100000 });
 
     const extraPlugin: AgentPlugin = {
       name: "ExtraPlugin",
@@ -166,34 +126,19 @@ describe("CortexAgent - plugin registration", () => {
 describe("CortexAgent - cortexName fallback", () => {
   test("cortexName is preferred when set", () => {
     const llm = makeLLM();
-    // Just verify it constructs without error
-    const agent = new CortexAgent(llm, {
-      model: "test",
-      systemPrompt: "base",
-      name: "myAgent",
-      cortexName: uniqueName(),
-    });
+    const agent = new CortexAgent(llm, { ...BASE_CONFIG, name: "myAgent", cortexName: "explicit" });
     expect(agent.memoryPlugin).toBeInstanceOf(CortexMemoryPlugin);
   });
 
   test("falls back to name when cortexName is not set", () => {
     const llm = makeLLM();
-    const name = uniqueName();
-    const agent = new CortexAgent(llm, {
-      model: "test",
-      systemPrompt: "base",
-      name,
-    });
+    const agent = new CortexAgent(llm, { ...BASE_CONFIG, name: "myAgent" });
     expect(agent.memoryPlugin).toBeInstanceOf(CortexMemoryPlugin);
   });
 
   test("falls back to 'cortex' when neither cortexName nor name is set", () => {
     const llm = makeLLM();
-    // Note: this creates data/cortex.cortex.sqlite — may already exist
-    const agent = new CortexAgent(llm, {
-      model: "test",
-      systemPrompt: "base",
-    });
+    const agent = new CortexAgent(llm, BASE_CONFIG);
     expect(agent.memoryPlugin).toBeInstanceOf(CortexMemoryPlugin);
   });
 });
@@ -201,12 +146,7 @@ describe("CortexAgent - cortexName fallback", () => {
 describe("CortexAgent - event forwarding", () => {
   test("speak event fires through on()", async () => {
     const llm = makeLLM("hello world");
-    const agent = new CortexAgent(llm, {
-      model: "test",
-      systemPrompt: "base",
-      cortexName: uniqueName(),
-      heartbeatInterval: 100000,
-    });
+    const agent = new CortexAgent(llm, { ...BASE_CONFIG, heartbeatInterval: 100000 });
 
     const speakPromise = waitForEvent(agent, "speak");
     agent.addDirect("hi");
@@ -218,17 +158,11 @@ describe("CortexAgent - event forwarding", () => {
 
   test("once() fires exactly once", async () => {
     const llm = makeLLM("reply");
-    const agent = new CortexAgent(llm, {
-      model: "test",
-      systemPrompt: "base",
-      cortexName: uniqueName(),
-      heartbeatInterval: 100000,
-    });
+    const agent = new CortexAgent(llm, { ...BASE_CONFIG, heartbeatInterval: 100000 });
 
     const handler = mock((_reply: string) => {});
     agent.once("speak" as any, handler);
 
-    // Trigger two ticks
     agent.addDirect("first");
     await waitForIdle(agent);
     agent.addDirect("second");
@@ -240,12 +174,7 @@ describe("CortexAgent - event forwarding", () => {
 
   test("off() unsubscribes the listener", async () => {
     const llm = makeLLM("reply");
-    const agent = new CortexAgent(llm, {
-      model: "test",
-      systemPrompt: "base",
-      cortexName: uniqueName(),
-      heartbeatInterval: 100000,
-    });
+    const agent = new CortexAgent(llm, { ...BASE_CONFIG, heartbeatInterval: 100000 });
 
     const handler = mock((_reply: string) => {});
     agent.on("speak" as any, handler);
@@ -260,12 +189,7 @@ describe("CortexAgent - event forwarding", () => {
 
   test("addAmbient and addDirect are forwarded to inner agent", async () => {
     const llm = makeLLM("[IGNORE]");
-    const agent = new CortexAgent(llm, {
-      model: "test",
-      systemPrompt: "base",
-      cortexName: uniqueName(),
-      heartbeatInterval: 100000,
-    });
+    const agent = new CortexAgent(llm, { ...BASE_CONFIG, heartbeatInterval: 100000 });
 
     agent.addAmbient("background", { forceTick: true });
     await waitForIdle(agent);

@@ -26,7 +26,7 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
     // Multiple unnamed CortexAgent instances will share the "cortex" namespace — assign
     // config.cortexName or config.name explicitly when running more than one concurrently.
     const cortexName = config.cortexName ?? config.name ?? "cortex";
-    this.memoryPlugin = new CortexMemoryPlugin(llm, cortexName);
+    this.memoryPlugin = new CortexMemoryPlugin(llm, cortexName, config.memoryDbPath);
     const thoughtPlugin = new ThoughtPlugin(this.memoryPlugin, synthesisProvider ?? null);
 
     this.inner.registerPlugin(this.memoryPlugin);
