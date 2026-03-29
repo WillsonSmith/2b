@@ -2,7 +2,7 @@
   "name": "2b",
   "module": "index.ts",
   "bin": {
-    "2b": "./index.ts"
+    "2b": "./src/ui/terminal/run.tsx"
   },
   "devDependencies": {
     "@types/bun": "latest"
