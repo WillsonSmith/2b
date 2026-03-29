@@ -1,4 +1,21 @@
 
+## Codebase Documentation
+
+| Directory | CLAUDE.md |
+|-----------|-----------|
+| `src/core/` | BaseAgent, CortexAgent, HeadlessAgent, Plugin interface, PermissionManager, types |
+| `src/providers/llm/` | LLMProvider interface, LMStudioProvider, StructuredToolCaller |
+| `src/providers/audio/` | AudioProvider, VoiceActivityDetector, TranscriptionProvider, AudioSystem |
+| `src/agents/` | AgentFactory, orchestrator pattern, how to add agents |
+| `src/agents/sub-agents/` | Sub-agent factory pattern, domain agents |
+| `src/agents/input-sources/` | CLIInputSource, MicrophoneInputSource |
+| `src/plugins/` | Full plugin catalog, lifecycle, writing new plugins |
+| `src/memory/` | MemoryProvider interface (legacy) |
+| `src/utils/` | deviceSelector, stream-tts |
+| `src/cli/` | memory-cmd |
+
+---
+
 Default to using Bun instead of Node.js.
 
 - Use `bun <file>` instead of `node <file>` or `ts-node <file>`
