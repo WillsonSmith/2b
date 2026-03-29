@@ -109,7 +109,7 @@ agent.setTokenCallback((token, isReasoning) => {
       process.stdout.write(`\n${GRAY}${BOLD}[thinking]${RESET}${GRAY} `);
       reasoningActive = true;
     }
-    process.stdout.write(`${GRAY}${token}${RESET}`);
+    process.stdout.write(token);
   } else {
     if (reasoningActive) {
       process.stdout.write(`${RESET}\n`);
@@ -122,7 +122,7 @@ agent.setTokenCallback((token, isReasoning) => {
         process.stdout.write(`\n${CYAN}${BOLD}[response]${RESET}${CYAN} `);
         responseActive = true;
       }
-      process.stdout.write(`${CYAN}${token}${RESET}`);
+      process.stdout.write(token);
     }
   }
 });
