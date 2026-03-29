@@ -80,6 +80,7 @@ export class FileIOPlugin implements AgentPlugin {
     return [
       {
         name: "download_file",
+        permission: "once" as const,
         description:
           "Download a file from an HTTPS URL and write it to the downloads/ directory. Use this when the user asks to download, save, or store a file from the internet.",
         parameters: {
@@ -115,6 +116,7 @@ export class FileIOPlugin implements AgentPlugin {
       },
       {
         name: "write_file",
+        permission: "always" as const,
         description:
           "Write text content to a local file, creating parent directories as needed. Use this when the user asks to save, create, or overwrite a file on disk.",
         parameters: {
