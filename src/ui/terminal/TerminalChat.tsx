@@ -5,13 +5,16 @@ import type { ChatMessage, AgentState } from "../types.ts";
 import { MessageItem } from "./MessageItem.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 import { InputBar } from "./InputBar.tsx";
+import { handleSlashCommand } from "./slashCommands.ts";
 
 interface TerminalChatProps {
   session: ChatSession;
   model?: string;
+  systemPrompt?: string;
+  onModelChange?: (model: string) => void;
 }
 
-export function TerminalChat({ session, model }: TerminalChatProps) {
+export function TerminalChat({ session, model = "", systemPrompt = "", onModelChange }: TerminalChatProps) {
   const { exit } = useApp();
 
   // Completed messages go into Static — rendered once, never re-painted.
@@ -23,11 +26,15 @@ export function TerminalChat({ session, model }: TerminalChatProps) {
   const [activeToolCall, setActiveToolCall] = useState<string | undefined>();
   const [input, setInput] = useState("");
 
+  // Toggles — only affect the streaming message and new messages
+  const [showReasoning, setShowReasoning] = useState(true);
+  const [showTools, setShowTools] = useState(true);
+  const [currentModel, setCurrentModel] = useState(model);
+
   // Wire up ChatSession events
   useEffect(() => {
     const onMessage = (msg: ChatMessage) => {
-      if (msg.role === "user") {
-        // User messages are always complete immediately
+      if (msg.role === "user" || msg.role === "system") {
         setCompletedMessages((prev) => [...prev, msg]);
       } else {
         // Assistant placeholder — show in the live area
@@ -37,13 +44,11 @@ export function TerminalChat({ session, model }: TerminalChatProps) {
 
     const onMessageUpdated = (msg: ChatMessage) => {
       if (msg.status === "complete" || msg.status === "error") {
-        // Move to the static list
         setCompletedMessages((prev) => [...prev, msg]);
         setStreamingMessage(null);
         setActiveToolCall(undefined);
       } else {
         setStreamingMessage({ ...msg });
-        // Track the most recent tool call for the status bar
         if (msg.toolCalls.length > 0) {
           setActiveToolCall(msg.toolCalls[msg.toolCalls.length - 1]?.name);
         }
@@ -69,18 +74,33 @@ export function TerminalChat({ session, model }: TerminalChatProps) {
   const handleSubmit = useCallback(
     (text: string) => {
       setInput("");
-      session.send(text);
+
+      const handled = handleSlashCommand(text, {
+        session,
+        showReasoning,
+        setShowReasoning,
+        showTools,
+        setShowTools,
+        currentModel,
+        setCurrentModel,
+        onModelChange: onModelChange ?? (() => {}),
+        systemPrompt,
+      });
+
+      if (!handled) {
+        session.send(text);
+      }
     },
-    [session],
+    [session, showReasoning, showTools, currentModel, onModelChange, systemPrompt],
   );
 
   // Ctrl+C → exit, Ctrl+X → interrupt current response
-  useInput((input, key) => {
-    if (key.ctrl && input === "c") {
+  useInput((inp, key) => {
+    if (key.ctrl && inp === "c") {
       session.interrupt();
       exit();
     }
-    if (key.ctrl && input === "x") {
+    if (key.ctrl && inp === "x") {
       session.interrupt();
     }
   });
@@ -95,10 +115,16 @@ export function TerminalChat({ session, model }: TerminalChatProps) {
       </Static>
 
       {/* Live streaming message */}
-      {streamingMessage && <MessageItem message={streamingMessage} />}
+      {streamingMessage && (
+        <MessageItem
+          message={streamingMessage}
+          showReasoning={showReasoning}
+          showTools={showTools}
+        />
+      )}
 
       {/* Status + input */}
-      <StatusBar state={agentState} activeToolCall={activeToolCall} model={model} />
+      <StatusBar state={agentState} activeToolCall={activeToolCall} model={currentModel} />
       <InputBar
         value={input}
         onChange={setInput}

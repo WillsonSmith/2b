@@ -1,5 +1,5 @@
 export type MessageStatus = "pending" | "streaming" | "complete" | "error";
-export type MessageRole = "user" | "assistant";
+export type MessageRole = "user" | "assistant" | "system";
 export type AgentState = "idle" | "thinking";
 
 export interface ToolCallRecord {

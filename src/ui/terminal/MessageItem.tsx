@@ -3,9 +3,22 @@ import type { ChatMessage } from "../types.ts";
 
 interface MessageItemProps {
   message: ChatMessage;
+  showReasoning?: boolean;
+  showTools?: boolean;
 }
 
-export function MessageItem({ message }: MessageItemProps) {
+export function MessageItem({ message, showReasoning = true, showTools = true }: MessageItemProps) {
+  // System messages — inline notifications from slash commands
+  if (message.role === "system") {
+    return (
+      <Box flexDirection="column" marginBottom={1} paddingX={1} borderStyle="single" borderColor="gray">
+        <Text color="gray" dimColor>
+          {message.content}
+        </Text>
+      </Box>
+    );
+  }
+
   const isUser = message.role === "user";
 
   return (
@@ -16,7 +29,7 @@ export function MessageItem({ message }: MessageItemProps) {
       </Text>
 
       {/* Thought block (reasoning) */}
-      {message.thought && (
+      {showReasoning && message.thought && (
         <Box marginLeft={2} marginBottom={1}>
           <Text color="gray" dimColor>
             {"⟨think⟩ "}
@@ -28,7 +41,7 @@ export function MessageItem({ message }: MessageItemProps) {
       )}
 
       {/* Tool calls */}
-      {message.toolCalls.length > 0 && (
+      {showTools && message.toolCalls.length > 0 && (
         <Box flexDirection="column" marginLeft={2} marginBottom={1}>
           {message.toolCalls.map((tc, i) => (
             <Text key={i} color="yellow">
@@ -46,7 +59,7 @@ export function MessageItem({ message }: MessageItemProps) {
         ) : message.status === "error" ? (
           <Text color="red">Error — something went wrong.</Text>
         ) : (
-          <Text color={isUser ? "white" : "white"}>
+          <Text>
             {message.content}
             {message.status === "streaming" && (
               <Text color="cyan">▌</Text>
