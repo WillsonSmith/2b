@@ -93,6 +93,18 @@ Each LLM call assembles a fresh system prompt by concatenating:
 3. `getContext()` results from all plugins
 4. `getSystemPromptFragment()` from all plugins
 
+## Utilities
+
+### `util.ts`
+Exports `removeThinkTags(text, strict?)` — strips `<think>...</think>` blocks from model output.
+- `strict: false` (default) — uses a flexible regex that handles leading/trailing whitespace
+- `strict: true` — requires the tag to start at the beginning of the string
+
+Used by callers that need clean prose before displaying or further processing the response.
+
+### `lmstudioTools.ts`
+Standalone `ToolDefinition` objects for the old LMStudio SDK tool format (pre-plugin architecture). Includes file I/O, note management, and datetime tools with safe path validation (cwd boundary checks). Retained for reference — not used by the current plugin-based agent.
+
 ## Adding a New Agent
 
 1. Create a factory function in `src/agents/<Name>AgentFactory.ts`
