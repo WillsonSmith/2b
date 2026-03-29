@@ -46,16 +46,16 @@ beforeEach(() => {
 describe("send()", () => {
   test("adds a user message immediately", () => {
     session.send("hello");
-    expect(session.messages[0].role).toBe("user");
-    expect(session.messages[0].content).toBe("hello");
-    expect(session.messages[0].status).toBe("complete");
+    expect(session.messages[0]!.role).toBe("user");
+    expect(session.messages[0]!.content).toBe("hello");
+    expect(session.messages[0]!.status).toBe("complete");
   });
 
   test("adds a pending assistant placeholder immediately", () => {
     session.send("hello");
-    expect(session.messages[1].role).toBe("assistant");
-    expect(session.messages[1].status).toBe("pending");
-    expect(session.messages[1].content).toBe("");
+    expect(session.messages[1]!.role).toBe("assistant");
+    expect(session.messages[1]!.status).toBe("pending");
+    expect(session.messages[1]!.content).toBe("");
   });
 
   test("forwards text to agent.addDirect", () => {
@@ -68,8 +68,8 @@ describe("send()", () => {
     session.on("message", (m) => emitted.push(m));
     session.send("hi");
     expect(emitted).toHaveLength(2);
-    expect(emitted[0].role).toBe("user");
-    expect(emitted[1].role).toBe("assistant");
+    expect(emitted[0]!.role).toBe("user");
+    expect(emitted[1]!.role).toBe("assistant");
   });
 });
 
@@ -78,15 +78,15 @@ describe("token streaming", () => {
     session.send("hi");
     agent.sendToken("Hel");
     agent.sendToken("lo");
-    expect(session.messages[1].content).toBe("Hello");
-    expect(session.messages[1].status).toBe("streaming");
+    expect(session.messages[1]!.content).toBe("Hello");
+    expect(session.messages[1]!.status).toBe("streaming");
   });
 
   test("ignores reasoning tokens in content", () => {
     session.send("hi");
     agent.sendToken("<think>", true);
     agent.sendToken("reasoning", true);
-    expect(session.messages[1].content).toBe("");
+    expect(session.messages[1]!.content).toBe("");
   });
 
   test("emits 'message_updated' for each token", () => {
@@ -104,8 +104,8 @@ describe("speak event", () => {
     session.send("hi");
     agent.sendToken("partial");
     agent.speak("full response");
-    expect(session.messages[1].content).toBe("full response");
-    expect(session.messages[1].status).toBe("complete");
+    expect(session.messages[1]!.content).toBe("full response");
+    expect(session.messages[1]!.status).toBe("complete");
   });
 
   test("clears pending assistant id after speak", () => {
@@ -123,13 +123,13 @@ describe("thought event", () => {
   test("attaches reasoning to pending assistant message", () => {
     session.send("hi");
     agent.think("I am reasoning");
-    expect(session.messages[1].thought).toBe("I am reasoning");
+    expect(session.messages[1]!.thought).toBe("I am reasoning");
   });
 
   test("ignores empty thought text", () => {
     session.send("hi");
     agent.think("");
-    expect(session.messages[1].thought).toBeUndefined();
+    expect(session.messages[1]!.thought).toBeUndefined();
   });
 });
 
@@ -138,9 +138,9 @@ describe("tool_call event", () => {
     session.send("hi");
     agent.toolCall("web_search", { query: "bun.sh" });
     agent.toolCall("echo", { text: "hi" });
-    expect(session.messages[1].toolCalls).toHaveLength(2);
-    expect(session.messages[1].toolCalls[0].name).toBe("web_search");
-    expect(session.messages[1].toolCalls[1].name).toBe("echo");
+    expect(session.messages[1]!.toolCalls).toHaveLength(2);
+    expect(session.messages[1]!.toolCalls[0]!.name).toBe("web_search");
+    expect(session.messages[1]!.toolCalls[1]!.name).toBe("echo");
   });
 });
 
@@ -165,7 +165,7 @@ describe("error event", () => {
   test("marks pending message as error", () => {
     session.send("hi");
     agent.error(new Error("boom"));
-    expect(session.messages[1].status).toBe("error");
+    expect(session.messages[1]!.status).toBe("error");
   });
 
   test("re-emits error", () => {
@@ -174,7 +174,7 @@ describe("error event", () => {
     session.send("hi");
     agent.error(new Error("boom"));
     expect(errors).toHaveLength(1);
-    expect(errors[0].message).toBe("boom");
+    expect(errors[0]!.message).toBe("boom");
   });
 });
 
@@ -189,8 +189,8 @@ describe("interrupt()", () => {
     session.send("hi");
     agent.sendToken("partial");
     session.interrupt();
-    expect(session.messages[1].status).toBe("complete");
-    expect(session.messages[1].content).toBe("partial");
+    expect(session.messages[1]!.status).toBe("complete");
+    expect(session.messages[1]!.content).toBe("partial");
   });
 });
 
@@ -211,7 +211,7 @@ describe("message immutability", () => {
     agent.sendToken("A");
     agent.sendToken("B");
     // First snapshot captured "A", second captured "AB"
-    expect(emitted[0].content).toBe("A");
-    expect(emitted[1].content).toBe("AB");
+    expect(emitted[0]!.content).toBe("A");
+    expect(emitted[1]!.content).toBe("AB");
   });
 });
