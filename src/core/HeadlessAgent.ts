@@ -36,6 +36,9 @@ export class HeadlessAgent {
 
   async ask(task: string): Promise<string> {
     const agentName = this.options.agentName ?? "HeadlessAgent";
+    // Fix #2: resolve once per ask() rather than allocating inside each tool
+    // implementation closure, which would create a new instance per tool call.
+    const pm = this.options.permissionManager ?? new AutoDenyPermissionManager();
 
     // Collect system prompt fragments and tools in a single pass
     const fragments: string[] = [];
@@ -53,7 +56,6 @@ export class HeadlessAgent {
             const permission = rawTool.permission ?? "none";
             t.implementation = async (args) => {
               if (permission !== "none") {
-                const pm = this.options.permissionManager ?? new AutoDenyPermissionManager();
                 const allowed = await pm.requestApproval({
                   agentName,
                   toolName,

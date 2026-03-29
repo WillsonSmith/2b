@@ -229,7 +229,10 @@ export class BaseAgent extends EventEmitter {
     for (const plugin of this.plugins) {
       if (plugin.getTools) {
         const pluginTools = plugin.getTools();
-        for (const t of pluginTools) {
+        for (const rawTool of pluginTools) {
+          // Fix #1: shallow-copy before mutating to avoid stale closure capture
+          // if a plugin returns the same object references across calls.
+          const t: ToolDefinition = { ...rawTool };
           if (!t.implementation && plugin.executeTool) {
             const toolName = t.name;
             const permission = t.permission ?? "none";
@@ -247,8 +250,8 @@ export class BaseAgent extends EventEmitter {
               return plugin.executeTool!(toolName, args);
             };
           }
+          tools.push(t);
         }
-        tools.push(...pluginTools);
       }
     }
     return tools;

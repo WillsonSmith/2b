@@ -88,9 +88,23 @@ describe("ScriptedPermissionManager", () => {
     expect(await pm.requestApproval(req("download_file"))).toBe(false);
   });
 
-  test("isSessionApproved always returns false", () => {
+  test("isSessionApproved returns false with default empty cache", () => {
     const pm = new ScriptedPermissionManager({ write_file: true });
     expect(pm.isSessionApproved("write_file")).toBe(false);
+  });
+
+  test("isSessionApproved reflects a pre-populated SessionCache", () => {
+    const cache = new SessionCache();
+    cache.add("write_file");
+    const pm = new ScriptedPermissionManager({}, cache);
+    expect(pm.isSessionApproved("write_file")).toBe(true);
+  });
+
+  test("isSessionApproved returns false for tools not in the cache", () => {
+    const cache = new SessionCache();
+    cache.add("write_file");
+    const pm = new ScriptedPermissionManager({}, cache);
+    expect(pm.isSessionApproved("download_file")).toBe(false);
   });
 });
 
