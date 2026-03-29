@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 /**
  * Terminal UI entry point for the 2b agent.
  *
