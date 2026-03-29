@@ -1,11 +1,14 @@
 import type { BaseAgent } from "./BaseAgent.ts";
 import type { Message } from "./types.ts";
+import type { PermissionLevel } from "./PermissionManager.ts";
 
 export interface ToolDefinition {
   name: string;
   description: string;
   parameters: Record<string, unknown>; // JSON Schema
   implementation?: (args: any) => any | Promise<any>;
+  /** Whether this tool requires user approval before execution. Default: "none". */
+  permission?: PermissionLevel;
 }
 
 export interface AgentPlugin {

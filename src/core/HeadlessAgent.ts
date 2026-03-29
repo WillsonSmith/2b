@@ -1,7 +1,15 @@
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import type { AgentPlugin, ToolDefinition } from "./Plugin.ts";
 import type { Message } from "./types.ts";
+import { AutoDenyPermissionManager, type PermissionManager } from "./PermissionManager.ts";
 import { logger } from "../logger.ts";
+
+export interface HeadlessAgentOptions {
+  /** Permission manager for tools that declare permission !== "none". If omitted, such tools are auto-denied. */
+  permissionManager?: PermissionManager;
+  /** Display name used in permission prompts. Defaults to "HeadlessAgent". */
+  agentName?: string;
+}
 
 /**
  * A stateless, single-call agent with no tick loop or input sources.
@@ -19,6 +27,7 @@ export class HeadlessAgent {
     private readonly llm: LLMProvider,
     private readonly plugins: AgentPlugin[],
     private readonly systemPromptBase: string,
+    private readonly options: HeadlessAgentOptions = {},
   ) {}
 
   setToolCallHandler(fn: (event: "start" | "end", name: string, args: Record<string, unknown>) => void): void {
@@ -26,6 +35,11 @@ export class HeadlessAgent {
   }
 
   async ask(task: string): Promise<string> {
+    const agentName = this.options.agentName ?? "HeadlessAgent";
+    // Fix #2: resolve once per ask() rather than allocating inside each tool
+    // implementation closure, which would create a new instance per tool call.
+    const pm = this.options.permissionManager ?? new AutoDenyPermissionManager();
+
     // Collect system prompt fragments and tools in a single pass
     const fragments: string[] = [];
     const tools: ToolDefinition[] = [];
@@ -39,7 +53,16 @@ export class HeadlessAgent {
           const t: ToolDefinition = { ...rawTool };
           if (!t.implementation && plugin.executeTool) {
             const toolName = t.name;
+            const permission = rawTool.permission ?? "none";
             t.implementation = async (args) => {
+              if (permission !== "none") {
+                const allowed = await pm.requestApproval({
+                  agentName,
+                  toolName,
+                  args: args as Record<string, unknown>,
+                });
+                if (!allowed) return { error: "Permission denied by user." };
+              }
               this.toolCallHandler?.("start", toolName, args as Record<string, unknown>);
               const result = await plugin.executeTool!(toolName, args as Record<string, unknown>);
               this.toolCallHandler?.("end", toolName, args as Record<string, unknown>);
@@ -71,7 +94,7 @@ export class HeadlessAgent {
     const systemPrompt = parts.filter((p) => p.trim().length > 0).join("\n\n");
 
     const messages: Message[] = [{ role: "user", content: task }];
-    logger.info("HeadlessAgent", `ask() — tools=[${tools.map((t) => t.name).join(", ")}]`);
+    logger.info("HeadlessAgent", `ask() [${agentName}] — tools=[${tools.map((t) => t.name).join(", ")}]`);
 
     const { nonReasoningContent } = await this.llm.chat(messages, systemPrompt, undefined, tools);
 
