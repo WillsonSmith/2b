@@ -96,6 +96,11 @@ export class InteractivePermissionManager implements PermissionManager {
     const answer = await this.promptWithTimeout();
     const normalized = answer.trim().toLowerCase();
 
+    // The [a]lways option is intentionally offered for every tool regardless of
+    // whether its permission annotation is "per_call" or "session". User intent
+    // overrides the tool annotation — if the user wants to grant session-level
+    // approval for a per_call tool, that's their call. The annotation signals
+    // the recommended approval granularity to the user, not a hard ceiling.
     if (normalized === "a" || normalized === "always") {
       this.cache.add(request.toolName);
       this.output.write(`Approved for this session.\n`);
