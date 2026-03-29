@@ -1,9 +1,10 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
-import { join, resolve, relative, isAbsolute } from "node:path";
+import { join, resolve, relative, isAbsolute, basename } from "node:path";
 import { readdir } from "node:fs/promises";
 
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024; // 100 MB
 const MAX_READ_BYTES = 1 * 1024 * 1024; // 1 MB
+const DOWNLOAD_TIMEOUT_MS = 60_000;
 const DOWNLOADS_DIR = join(process.cwd(), "downloads");
 const BASE_DIR = process.cwd();
 
@@ -18,6 +19,8 @@ function validateUrl(url: string): URL {
     throw new Error("Only HTTPS URLs are allowed.");
   }
   const host = parsed.hostname.toLowerCase();
+  // Strip IPv6 brackets for bare comparison
+  const bareHost = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
   if (
     host === "localhost" ||
     host === "127.0.0.1" ||
@@ -29,7 +32,11 @@ function validateUrl(url: string): URL {
     /^169\.254\.\d{1,3}\.\d{1,3}$/.test(host) ||
     host === "metadata.google.internal" ||
     host.endsWith(".internal") ||
-    host.endsWith(".local")
+    host.endsWith(".local") ||
+    // Private / link-local IPv6 ranges: fc00::/7 (fc/fd), fe80::/10, loopback
+    /^fc[0-9a-f]{2}:/i.test(bareHost) ||
+    /^fd[0-9a-f]{2}:/i.test(bareHost) ||
+    /^fe[89ab][0-9a-f]:/i.test(bareHost)
   ) {
     throw new Error("Requests to private or internal addresses are not allowed.");
   }
@@ -59,12 +66,14 @@ export class FileIOPlugin implements AgentPlugin {
   name = "FileIO";
 
   getSystemPromptFragment(): string {
-    return `You can download files from the internet and read/write files on the local filesystem.
-Use download_file to fetch a file from a URL and save it to the downloads/ directory (HTTPS only).
-Use read_file to read the text content of a local file.
-Use write_file to write or overwrite text content to a local file (creates parent directories as needed).
-Use list_directory to list the contents of a local directory.
-All local file operations are restricted to the current working directory.`;
+    return [
+      "You can download files from the internet and read/write files on the local filesystem.",
+      "Use download_file to fetch a file from a URL and save it to the downloads/ directory (HTTPS only).",
+      "Use read_file to read the text content of a local file.",
+      "Use write_file to write or overwrite text content to a local file (creates parent directories as needed).",
+      "Use list_directory to list the contents of a local directory.",
+      "All local file operations are restricted to the current working directory.",
+    ].join("\n");
   }
 
   getTools(): ToolDefinition[] {
@@ -141,18 +150,18 @@ All local file operations are restricted to the current working directory.`;
     ];
   }
 
-  async executeTool(name: string, args: any): Promise<any> {
-    if (name === "download_file") {
-      return this.downloadFile(args.url, args.destination);
-    }
-    if (name === "read_file") {
-      return this.readFile(args.path);
-    }
-    if (name === "write_file") {
-      return this.writeFile(args.path, args.content);
-    }
-    if (name === "list_directory") {
-      return this.listDirectory(args.path);
+  async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+    switch (name) {
+      case "download_file":
+        return this.downloadFile(args.url as string, args.destination as string | undefined);
+      case "read_file":
+        return this.readFile(args.path as string);
+      case "write_file":
+        return this.writeFile(args.path as string, args.content as string);
+      case "list_directory":
+        return this.listDirectory(args.path as string | undefined);
+      default:
+        return undefined;
     }
   }
 
@@ -167,14 +176,15 @@ All local file operations are restricted to the current working directory.`;
       throw new Error(e instanceof Error ? e.message : "Invalid URL.");
     }
 
-    const filename = destination
-      ? destination.replace(/[/\\]/g, "") // strip any path separators from bare filename
+    const rawFilename = destination
+      ? basename(destination)
       : (parsed.pathname.split("/").pop() || "download");
+    const filename = rawFilename || "download";
 
     const savePath = validateDestination(join(DOWNLOADS_DIR, filename));
 
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -190,17 +200,18 @@ All local file operations are restricted to the current working directory.`;
       throw new Error("File exceeds the 100 MB size limit.");
     }
 
-    const buffer = await res.arrayBuffer();
-    if (buffer.byteLength > MAX_DOWNLOAD_BYTES) {
+    // Stream the response body directly to disk to avoid buffering 100 MB in JS heap.
+    const contentType = res.headers.get("content-type") ?? "application/octet-stream";
+    const bytesWritten = await Bun.write(savePath, res);
+
+    if (bytesWritten > MAX_DOWNLOAD_BYTES) {
       throw new Error("File exceeds the 100 MB size limit.");
     }
 
-    await Bun.write(savePath, buffer);
-
     return {
       path: savePath,
-      size: buffer.byteLength,
-      contentType: res.headers.get("content-type") ?? "application/octet-stream",
+      size: bytesWritten,
+      contentType,
     };
   }
 
@@ -217,25 +228,36 @@ All local file operations are restricted to the current working directory.`;
 
   private async writeFile(path: string, content: string): Promise<{ path: string; size: number }> {
     const resolved = validatePath(path);
-    await Bun.write(resolved, content);
-    return { path: resolved, size: Buffer.byteLength(content) };
+    const size = await Bun.write(resolved, content);
+    return { path: resolved, size };
   }
 
   private async listDirectory(
     path?: string,
-  ): Promise<{ path: string; entries: { name: string; type: "file" | "directory"; size?: number }[] }> {
+  ): Promise<{ path: string; entries: { name: string; type: "file" | "directory" | "symlink"; size?: number }[] }> {
     const resolved = validatePath(path ?? ".");
-    const entries: { name: string; type: "file" | "directory"; size?: number }[] = [];
     const dirents = await readdir(resolved, { withFileTypes: true });
-    for (const entry of dirents) {
-      const entryPath = join(resolved, entry.name);
-      if (entry.isFile()) {
-        const size = Bun.file(entryPath).size;
-        entries.push({ name: entry.name, type: "file", size });
-      } else if (entry.isDirectory()) {
-        entries.push({ name: entry.name, type: "directory" });
-      }
-    }
-    return { path: resolved, entries };
+
+    const entries = await Promise.all(
+      dirents.map(async (entry) => {
+        const entryPath = join(resolved, entry.name);
+        if (entry.isFile()) {
+          const size = Bun.file(entryPath).size;
+          return { name: entry.name, type: "file" as const, size };
+        }
+        if (entry.isDirectory()) {
+          return { name: entry.name, type: "directory" as const };
+        }
+        if (entry.isSymbolicLink()) {
+          return { name: entry.name, type: "symlink" as const };
+        }
+        return null;
+      }),
+    );
+
+    return {
+      path: resolved,
+      entries: entries.filter((e): e is NonNullable<typeof e> => e !== null),
+    };
   }
 }

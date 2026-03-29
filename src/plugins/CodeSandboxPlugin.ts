@@ -42,6 +42,7 @@ export class CodeSandboxPlugin implements AgentPlugin {
   private codeModel: string;
   private runtime: ContainerRuntime = "docker";
   private initPromise: Promise<void> | null = null;
+  private modelClient: Awaited<ReturnType<LMStudioClient["llm"]["model"]>> | null = null;
 
   constructor() {
     this.lmClient = new LMStudioClient();
@@ -50,7 +51,11 @@ export class CodeSandboxPlugin implements AgentPlugin {
 
   private ensureInitialized(): Promise<void> {
     if (!this.initPromise) {
-      this.initPromise = this.initialize();
+      this.initPromise = this.initialize().catch((err) => {
+        // Reset so the next call can retry rather than immediately re-rejecting.
+        this.initPromise = null;
+        throw err;
+      });
     }
     return this.initPromise;
   }
@@ -84,7 +89,7 @@ export class CodeSandboxPlugin implements AgentPlugin {
   async onInit(_agent: BaseAgent): Promise<void> {
     // Eagerly initialize when running under BaseAgent so the image is
     // pre-pulled before the first user request.
-    this.ensureInitialized();
+    await this.ensureInitialized();
   }
 
   getSystemPromptFragment(): string {
@@ -133,7 +138,7 @@ export class CodeSandboxPlugin implements AgentPlugin {
     ];
   }
 
-  async executeTool(name: string, args: any): Promise<any> {
+  async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
     if (name !== "execute_code") return undefined;
 
     await this.ensureInitialized();
@@ -146,7 +151,8 @@ export class CodeSandboxPlugin implements AgentPlugin {
 
     if (typeof task !== "string" || task.trim().length === 0)
       throw new Error("task must be a non-empty string");
-    if (Buffer.byteLength(task) > 4096)
+    const taskBytes = Buffer.byteLength(task);
+    if (taskBytes > 4096)
       throw new Error("task exceeds maximum size of 4096 bytes");
 
     if (input_data !== undefined && input_data !== null) {
@@ -173,12 +179,21 @@ export class CodeSandboxPlugin implements AgentPlugin {
 
     logger.info("CodeSandbox", `Generating code via ${this.codeModel}...`);
 
-    const code = await this.generateCode(codeGenPrompt);
+    // Cap code generation at MAX_TIMEOUT_MS so a slow or hung LM Studio call
+    // does not block indefinitely (the per-execution timeout only covers the
+    // container run, not the upstream LLM request).
+    const code = await Promise.race([
+      this.generateCode(codeGenPrompt),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Code generation timed out")), MAX_TIMEOUT_MS),
+      ),
+    ]);
 
-    if (Buffer.byteLength(code) > MAX_INPUT_BYTES)
+    const codeBytes = Buffer.byteLength(code);
+    if (codeBytes > MAX_INPUT_BYTES)
       throw new Error(`generated code exceeds maximum size of ${MAX_INPUT_BYTES} bytes`);
 
-    logger.info("CodeSandbox", `Generated ${Buffer.byteLength(code)} bytes of Python`);
+    logger.info("CodeSandbox", `Generated ${codeBytes} bytes of Python`);
     logger.debug("CodeSandbox", `Generated code:\n${code}`);
 
     const runArgs = this.buildRunArgs(input_data);
@@ -190,6 +205,11 @@ export class CodeSandboxPlugin implements AgentPlugin {
       stdout: "pipe",
       stderr: "pipe",
     });
+
+    // Begin buffering stdout/stderr immediately — before awaiting exited — so
+    // we don't race against Bun closing the streams after the process exits.
+    const stdoutPromise = new Response(proc.stdout).text();
+    const stderrPromise = new Response(proc.stderr).text();
 
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     const timeoutRace = new Promise<"timeout">((resolve) => {
@@ -204,10 +224,7 @@ export class CodeSandboxPlugin implements AgentPlugin {
     const timedOut = result === "timeout";
     const exitCode = timedOut ? null : (result as number);
 
-    const [stdoutRaw, stderrRaw] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
+    const [stdoutRaw, stderrRaw] = await Promise.all([stdoutPromise, stderrPromise]);
 
     logger.info(
       "CodeSandbox",
@@ -240,11 +257,19 @@ export class CodeSandboxPlugin implements AgentPlugin {
         "--read-only",
         "--tmpfs", "/tmp",
       ];
+      // INPUT_DATA is passed as a discrete array element to Bun.spawn — there
+      // is no shell involved, so no shell injection is possible. The value is
+      // visible in the container's environment (e.g. /proc/1/environ) but the
+      // sandboxed process is expected to read it; this is intentional.
       if (input_data != null) args.push("-e", `INPUT_DATA=${input_data}`);
       return args;
     }
 
-    // Docker with full hardening
+    // Docker with full hardening.
+    // Trust boundary: generated code originates from an LLM and executes with
+    // the container user's (65534) privileges. Resource caps (memory, CPU,
+    // pids), --cap-drop=ALL, --network=none, and a read-only rootfs collectively
+    // limit blast radius; no host resources are reachable from inside.
     const args = [
       "docker", "run",
       "--rm",
@@ -258,12 +283,17 @@ export class CodeSandboxPlugin implements AgentPlugin {
       "--read-only",
       "--tmpfs", "/tmp:size=32m,noexec,nosuid,nodev",
     ];
+    // See note above re: shell injection safety.
     if (input_data != null) args.push("-e", `INPUT_DATA=${input_data}`);
     return args;
   }
 
   private async generateCode(prompt: string): Promise<string> {
-    const modelClient = await this.lmClient.llm.model(this.codeModel);
+    // Cache the model handle so we pay the resolution cost only once.
+    if (!this.modelClient) {
+      this.modelClient = await this.lmClient.llm.model(this.codeModel);
+    }
+    const modelClient = this.modelClient;
     const chat = Chat.from([
       { role: "system", content: CODE_GEN_SYSTEM_PROMPT },
       { role: "user", content: prompt },
@@ -280,6 +310,11 @@ export class CodeSandboxPlugin implements AgentPlugin {
 
 function truncate(text: string, maxBytes: number): string {
   if (Buffer.byteLength(text) <= maxBytes) return text;
-  return Buffer.from(text).slice(0, maxBytes).toString("utf8") +
+  // Walk back from maxBytes to the start of a UTF-8 codepoint boundary so we
+  // never split a multi-byte character, which would yield replacement chars.
+  const buf = Buffer.from(text);
+  let end = maxBytes;
+  while (end > 0 && (buf[end]! & 0xc0) === 0x80) end--;
+  return buf.subarray(0, end).toString("utf8") +
     `\n[output truncated at ${maxBytes} bytes]`;
 }

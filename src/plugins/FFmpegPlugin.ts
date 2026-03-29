@@ -7,7 +7,6 @@ const DOWNLOADS_DIR = "downloads";
 
 export class FFmpegPlugin implements AgentPlugin {
   name = "FFmpeg";
-  private dirEnsured = false;
 
   getSystemPromptFragment(): string {
     return `You can edit local video files using FFmpeg.
@@ -193,7 +192,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
       {
         name: "ffmpeg_images_to_video",
         description:
-          "Create a video from an ordered sequence of image files. Provide either a glob pattern (e.g. 'frames/*.jpg') or an explicit ordered list of file paths. Output saved to downloads/.",
+          "Create a video from an ordered sequence of image files. You MUST provide either input_pattern (a glob or numbered pattern) or input_files (explicit list) — at least one is required. Output saved to downloads/.",
         parameters: {
           type: "object",
           properties: {
@@ -502,12 +501,6 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     }
   }
 
-  private stem(filePath: string): string {
-    const base = basename(filePath);
-    const ext = extname(base);
-    return ext ? base.slice(0, -ext.length) : base;
-  }
-
   private outPath(filename: string, ext: string): string {
     const safe = basename(filename);
     return join(DOWNLOADS_DIR, `${safe}.${ext}`);
@@ -522,9 +515,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   }
 
   private async ensureDownloadsDir(): Promise<void> {
-    if (this.dirEnsured) return;
     await $`mkdir -p ${DOWNLOADS_DIR}`.quiet();
-    this.dirEnsured = true;
   }
 
   private async getInfo(inputFile: string) {
@@ -585,7 +576,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_trimmed`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_trimmed`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
 
@@ -613,7 +604,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_converted`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_converted`;
     const output = this.outPath(stem, outputFormat);
 
     const vcodec = videoCodec ?? "copy";
@@ -641,7 +632,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_audio`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_audio`;
     const output = this.outPath(stem, outputFormat);
 
     logger.debug("FFmpeg", `extract_audio: ${inputFile} -> ${output}`);
@@ -664,7 +655,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_resized`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_resized`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
     const scale = `${width}:${height}`;
@@ -709,7 +700,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     const listContent = inputFiles
       .map((f) => `file '${f.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`)
       .join("\n");
-    const listFile = join(DOWNLOADS_DIR, `_concat_list_${Date.now()}.txt`);
+    const listFile = join(DOWNLOADS_DIR, `_concat_list_${crypto.randomUUID()}.txt`);
 
     logger.debug(
       "FFmpeg",
@@ -745,6 +736,12 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
       };
     }
 
+    if (inputPattern) {
+      if (inputPattern.startsWith("..") || inputPattern.startsWith("/")) {
+        return { success: false, error: "input_pattern must be relative to the working directory." };
+      }
+    }
+
     if (inputFiles && inputFiles.length > 0) {
       for (const f of inputFiles) {
         const pathErr = this.validateInputPath(f);
@@ -762,7 +759,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
       const listContent = inputFiles
         .map((f) => `file '${f.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`)
         .join("\n");
-      const listFile = join(DOWNLOADS_DIR, `_images_list_${Date.now()}.txt`);
+      const listFile = join(DOWNLOADS_DIR, `_images_list_${crypto.randomUUID()}.txt`);
       logger.debug(
         "FFmpeg",
         `images_to_video (list): ${inputFiles.length} files -> ${output}`,
@@ -786,7 +783,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
       `images_to_video (pattern): ${inputPattern} -> ${output}`,
     );
     try {
-      const hasGlob = /[*?[\]{}]/.test(inputPattern);
+      const hasGlob = /[*?[\]{}]/.test(inputPattern!);
       if (hasGlob) {
         await $`ffmpeg -y -r ${String(framerate)} -pattern_type glob -i ${inputPattern} -c:v ${videoCodec} -pix_fmt yuv420p ${output}`;
       } else {
@@ -811,7 +808,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     if (videoPathErr) return { success: false, error: videoPathErr };
     const audioPathErr = this.validateInputPath(audioFile);
     if (audioPathErr) return { success: false, error: audioPathErr };
-    const stem = outputFilename ?? `${this.stem(videoFile)}_with_audio`;
+    const stem = outputFilename ?? `${basename(videoFile, extname(videoFile))}_with_audio`;
     const ext = extname(videoFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
 
@@ -839,7 +836,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const prefix = outputPrefix ?? `${this.stem(inputFile)}_frame`;
+    const prefix = outputPrefix ?? `${basename(inputFile, extname(inputFile))}_frame`;
     const outputPattern = join(DOWNLOADS_DIR, `${prefix}_%04d.${imageFormat}`);
 
     logger.debug(
@@ -865,7 +862,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_screenshot`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_screenshot`;
     const output = this.outPath(stem, imageFormat);
 
     logger.debug(
@@ -893,7 +890,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_cropped`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_cropped`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
     const cropFilter = `crop=${width}:${height}:${x}:${y}`;
@@ -920,7 +917,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     }
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_speed`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_speed`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
 
@@ -947,7 +944,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_rotated`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_rotated`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
 
@@ -978,7 +975,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
 }
 
 // atempo only accepts values in [0.5, 2.0] — chain multiple filters for values outside that range
-function buildAtempoChain(speed: number): string {
+export function buildAtempoChain(speed: number): string {
   const filters: string[] = [];
   let remaining = speed;
   while (remaining > 2.0) {

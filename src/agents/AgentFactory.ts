@@ -9,55 +9,69 @@ import { createWebAgent } from "./sub-agents/createWebAgent.ts";
 import { createSystemAgent } from "./sub-agents/createSystemAgent.ts";
 import { createInfoAgent } from "./sub-agents/createInfoAgent.ts";
 
-// ── Inline tools plugin ───────────────────────────────────────────────────────
+// ── Inline tools ─────────────────────────────────────────────────────────────
 
-class MinimalToolsPlugin implements AgentPlugin {
-  name = "MinimalTools";
+const minimalTools: ToolDefinition[] = [
+  {
+    name: "get_current_time",
+    description: "Returns the current local date and time.",
+    parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
+    implementation: () => new Date().toLocaleString(),
+  },
+  {
+    name: "echo",
+    description: "Echoes the given text back.",
+    parameters: {
+      type: "object",
+      properties: { text: { type: "string" } },
+      required: ["text"],
+    },
+    implementation: (args: unknown) => {
+      const text = (args as Record<string, unknown>)?.text;
+      if (typeof text !== "string") {
+        console.warn("[MinimalTools] echo: expected string for 'text', got", typeof text, "— coercing");
+        return String(text ?? "");
+      }
+      return text;
+    },
+  },
+];
 
-  getTools(): ToolDefinition[] {
-    return [
-      {
-        name: "get_current_time",
-        description: "Returns the current local date and time.",
-        parameters: { type: "object", properties: {} },
-        implementation: () => new Date().toString(),
-      },
-      {
-        name: "echo",
-        description:
-          "Echoes text back. Useful for confirming what the agent heard.",
-        parameters: {
-          type: "object",
-          properties: { text: { type: "string" } },
-          required: ["text"],
-        },
-        implementation: ({ text }: { text: string }) => text,
-      },
-    ];
-  }
-}
+const minimalToolsPlugin: AgentPlugin = {
+  name: "MinimalTools",
+  getTools: () => minimalTools,
+};
 
 // ── Factory ───────────────────────────────────────────────────────────────────
 
-export function createAgent(): {
+export interface CreateAgentResult {
   agent: CortexAgent;
   input: CLIInputSource;
-} {
-  const model = process.env.MODEL ?? "nvidia/nemotron-3-nano-4b";
-  const lmStudioUrl = process.env.LM_STUDIO_URL ?? "http://127.0.0.1:1234";
-  const llm = new LMStudioProvider(model, lmStudioUrl, {
+}
+
+export function createAgent(
+  model?: string,
+  lmStudioUrl?: string,
+): CreateAgentResult {
+  const resolvedModel = model ?? process.env.MODEL ?? "nvidia/nemotron-3-nano-4b";
+  if (!resolvedModel) throw new Error("MODEL env var is set but empty");
+  const resolvedLmStudioUrl = lmStudioUrl ?? process.env.LM_STUDIO_URL ?? "ws://127.0.0.1:1234";
+  try {
+    new URL(resolvedLmStudioUrl);
+  } catch {
+    throw new Error(`LM_STUDIO_URL is not a valid URL: "${resolvedLmStudioUrl}"`);
+  }
+  const llm = new LMStudioProvider(resolvedModel, resolvedLmStudioUrl, {
     toolCallingStrategy: "native",
   });
 
   const agent = new CortexAgent(llm, {
     name: "2b",
     cortexName: "2b",
-    model,
-    // NOTE: The sub-agent context instruction below is prompt-based only — it relies
-    // on the LLM following instructions and is not structurally enforced. It may be
-    // ignored or applied inconsistently across model updates, making it fragile and
-    // error-prone. A structural fix (e.g. automatic context injection in SubAgentPlugin)
-    // would be more reliable.
+    model: resolvedModel,
+    // TODO(SubAgentPlugin): The context instruction below is prompt-based only and not
+    // structurally enforced. Move to automatic context injection in SubAgentPlugin for
+    // reliability across model updates.
     systemPrompt:
       "You are a helpful assistant with access to tools. Think carefully before responding.\n\nWhen delegating to a sub-agent, always include in the task field all relevant context the sub-agent needs: usernames, URLs, IDs, dates, and any specific facts from memory. Sub-agents have no access to your memory or conversation history.",
   });
@@ -70,7 +84,7 @@ export function createAgent(): {
       description:
         "Handles media tasks: downloading videos, trimming clips, converting formats, extracting audio, and analyzing images.",
       agent: createMediaAgent(llm),
-      // No timeouts — downloads and transcodes can take arbitrarily long.
+      // intentionally no timeout — downloads and transcodes can take arbitrarily long
     }),
   );
   agent.registerPlugin(
@@ -103,7 +117,7 @@ export function createAgent(): {
       absoluteTimeoutMs: 30_000,
     }),
   );
-  agent.registerPlugin(new MinimalToolsPlugin());
+  agent.registerPlugin(minimalToolsPlugin);
   agent.registerPlugin(new MemoryPlugin(llm));
   agent.addInputSource(input);
 
