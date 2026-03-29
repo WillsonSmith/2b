@@ -18,7 +18,7 @@ This directory contains agent factory functions and input sources. The core agen
 **HeadlessAgent** (`src/core/HeadlessAgent.ts`) is a stateless, single-call agent with no tick loop or input sources. It exposes one method — `ask(task: string): Promise<string>` — and is used as the building block for sub-agents. Plugins that rely on `onMessage`, `getMessages`, or `augmentResponse` are not invoked; the agent is task-in/result-out.
 
 **Agent Factories** compose an agent with specific plugins for a use case:
-- `AgentFactory.ts` — 2b CLI chat agent; orchestrates four domain sub-agents via `SubAgentPlugin` plus `MinimalToolsPlugin` and `MemoryPlugin`
+- `AgentFactory.ts` — 2b CLI chat agent; orchestrates four domain sub-agents via `SubAgentPlugin` plus `MinimalTools` (inline plain-object plugin — not a class or standalone file) and `MemoryPlugin`
 
 ## Orchestrator + Sub-agent Pattern
 
@@ -30,7 +30,7 @@ User → Orchestrator (CortexAgent)
            ├── web_agent    → HeadlessAgent [WebSearch, WebReader]
            ├── system_agent → HeadlessAgent [Shell, FileIO, Clipboard, CodeSandbox]
            ├── info_agent   → HeadlessAgent [TMDB, Weather, Notes]
-           ├── MinimalToolsPlugin (calculate, get_current_time, echo)
+           ├── MinimalTools (get_current_time, echo)
            └── MemoryPlugin
 ```
 
@@ -70,7 +70,7 @@ interface AgentPlugin {
 }
 ```
 
-`ToolDefinition` also supports an optional `implementation` field for inline tool handlers (used by `MinimalToolsPlugin` in `AgentFactory.ts`).
+`ToolDefinition` also supports an optional `implementation` field for inline tool handlers (used by the `MinimalTools` plugin in `AgentFactory.ts`).
 
 Plugins never crash the agent — all plugin calls are wrapped in try-catch.
 

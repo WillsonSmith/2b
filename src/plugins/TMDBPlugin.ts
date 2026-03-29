@@ -4,17 +4,26 @@ import { logger } from "../logger.ts";
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
 
-function imgUrl(path: string | null | undefined, size = "w500"): string | null {
-  return path ? `${TMDB_IMAGE_BASE}/${size}${path}` : null;
-}
-
 export class TMDBPlugin implements AgentPlugin {
   name = "TMDB";
+
+  // Result-count caps — adjust here to affect all methods uniformly
+  private static readonly MAX_SEARCH_RESULTS = 10;
+  private static readonly MAX_CAST = 15;
+  private static readonly MAX_TRENDING = 20;
+  private static readonly MAX_PERSON_CAST_CREDITS = 20;
+  private static readonly MAX_PERSON_CREW_CREDITS = 10;
 
   private apiKey: string;
 
   constructor(apiKey?: string) {
     this.apiKey = apiKey ?? process.env.TMDB_API_KEY ?? "";
+  }
+
+  // API key is sent via Authorization header only — never added to query params
+  // so it is never captured in debug logs (see tmdbFetch).
+  private static imgUrl(path: string | null | undefined, size = "w500"): string | null {
+    return path ? `${TMDB_IMAGE_BASE}/${size}${path}` : null;
   }
 
   getSystemPromptFragment(): string {
@@ -152,37 +161,55 @@ Only use search_person or get_person_details when the conversation is explicitly
     ];
   }
 
-  async executeTool(name: string, args: any): Promise<any> {
+  async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
     if (!this.apiKey) {
       return { error: "TMDB_API_KEY is not set. Please configure the API key." };
     }
 
-    if (name === "search_movies") {
-      return this.searchMovies(args.query, args.year, args.page);
-    }
+    const dispatch: Record<string, () => Promise<unknown>> = {
+      search_movies: () => {
+        const query = args.query as string | undefined;
+        if (!query || query.trim() === "") {
+          return Promise.resolve({ error: "query is required and must be a non-empty string." });
+        }
+        return this.searchMovies(query, args.year as number | undefined, args.page as number | undefined);
+      },
+      get_movie_details: () => {
+        if (args.movie_id == null) return Promise.resolve({ error: "movie_id is required." });
+        return this.getMovieDetails(args.movie_id as number);
+      },
+      get_movie_credits: () => {
+        if (args.movie_id == null) return Promise.resolve({ error: "movie_id is required." });
+        return this.getMovieCredits(args.movie_id as number);
+      },
+      get_movie_recommendations: () => {
+        if (args.movie_id == null) return Promise.resolve({ error: "movie_id is required." });
+        return this.getMovieRecommendations(args.movie_id as number, args.page as number | undefined);
+      },
+      get_trending_movies: () =>
+        this.getTrendingMovies((args.time_window as "day" | "week" | undefined) ?? "week"),
+      search_person: () => {
+        const query = args.query as string | undefined;
+        if (!query || query.trim() === "") {
+          return Promise.resolve({ error: "query is required and must be a non-empty string." });
+        }
+        return this.searchPerson(query, args.page as number | undefined);
+      },
+      get_person_details: () => {
+        if (args.person_id == null) return Promise.resolve({ error: "person_id is required." });
+        return this.getPersonDetails(args.person_id as number);
+      },
+    };
 
-    if (name === "get_movie_details") {
-      return this.getMovieDetails(args.movie_id);
-    }
+    const handler = dispatch[name];
+    if (!handler) return undefined;
 
-    if (name === "get_movie_credits") {
-      return this.getMovieCredits(args.movie_id);
-    }
-
-    if (name === "get_movie_recommendations") {
-      return this.getMovieRecommendations(args.movie_id, args.page);
-    }
-
-    if (name === "get_trending_movies") {
-      return this.getTrendingMovies(args.time_window ?? "week");
-    }
-
-    if (name === "search_person") {
-      return this.searchPerson(args.query, args.page);
-    }
-
-    if (name === "get_person_details") {
-      return this.getPersonDetails(args.person_id);
+    try {
+      return await handler();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error("TMDB", `Tool ${name} failed: ${message}`);
+      return { error: message };
     }
   }
 
@@ -190,12 +217,14 @@ Only use search_person or get_person_details when the conversation is explicitly
   // API helpers
   // ---------------------------------------------------------------------------
 
-  private async tmdbFetch(path: string, params: Record<string, string | number> = {}): Promise<any> {
+  private async tmdbFetch(path: string, params: Record<string, string | number> = {}): Promise<unknown> {
     const url = new URL(`${TMDB_BASE_URL}${path}`);
     for (const [key, value] of Object.entries(params)) {
       url.searchParams.set(key, String(value));
     }
 
+    // API key is in the Authorization header — not in query params — so it
+    // never appears in the debug log below.
     logger.debug("TMDB", `GET ${url.pathname}${url.search}`);
 
     const res = await fetch(url.toString(), {
@@ -218,13 +247,13 @@ Only use search_person or get_person_details when the conversation is explicitly
     const params: Record<string, string | number> = { query, page };
     if (year) params.year = year;
 
-    const data = await this.tmdbFetch("/search/movie", params);
+    const data = await this.tmdbFetch("/search/movie", params) as Record<string, unknown>;
 
     return {
       total_results: data.total_results,
       total_pages: data.total_pages,
       page: data.page,
-      results: (data.results ?? []).slice(0, 10).map((m: any) => ({
+      results: ((data.results as any[]) ?? []).slice(0, TMDBPlugin.MAX_SEARCH_RESULTS).map((m) => ({
         id: m.id,
         title: m.title,
         original_title: m.original_title,
@@ -234,13 +263,13 @@ Only use search_person or get_person_details when the conversation is explicitly
         vote_count: m.vote_count,
         popularity: m.popularity,
         genre_ids: m.genre_ids,
-        poster_url: imgUrl(m.poster_path),
+        poster_url: TMDBPlugin.imgUrl(m.poster_path),
       })),
     };
   }
 
   private async getMovieDetails(movieId: number) {
-    const data = await this.tmdbFetch(`/movie/${movieId}`);
+    const data = await this.tmdbFetch(`/movie/${movieId}`) as Record<string, unknown>;
 
     return {
       id: data.id,
@@ -251,35 +280,35 @@ Only use search_person or get_person_details when the conversation is explicitly
       release_date: data.release_date,
       runtime: data.runtime,
       status: data.status,
-      genres: (data.genres ?? []).map((g: any) => g.name),
+      genres: ((data.genres as any[]) ?? []).map((g) => g.name),
       vote_average: data.vote_average,
       vote_count: data.vote_count,
       popularity: data.popularity,
       budget: data.budget,
       revenue: data.revenue,
       original_language: data.original_language,
-      production_companies: (data.production_companies ?? []).map((c: any) => c.name),
-      production_countries: (data.production_countries ?? []).map((c: any) => c.name),
-      spoken_languages: (data.spoken_languages ?? []).map((l: any) => l.english_name),
+      production_companies: ((data.production_companies as any[]) ?? []).map((c) => c.name),
+      production_countries: ((data.production_countries as any[]) ?? []).map((c) => c.name),
+      spoken_languages: ((data.spoken_languages as any[]) ?? []).map((l) => l.english_name),
       homepage: data.homepage,
       imdb_id: data.imdb_id,
-      poster_url: imgUrl(data.poster_path),
-      backdrop_url: imgUrl(data.backdrop_path, "w1280"),
+      poster_url: TMDBPlugin.imgUrl(data.poster_path as string | null),
+      backdrop_url: TMDBPlugin.imgUrl(data.backdrop_path as string | null, "w1280"),
     };
   }
 
   private async getMovieCredits(movieId: number) {
-    const data = await this.tmdbFetch(`/movie/${movieId}/credits`);
+    const data = await this.tmdbFetch(`/movie/${movieId}/credits`) as Record<string, unknown>;
 
-    const topCast = (data.cast ?? []).slice(0, 15).map((p: any) => ({
+    const topCast = ((data.cast as any[]) ?? []).slice(0, TMDBPlugin.MAX_CAST).map((p) => ({
       name: p.name,
       character: p.character,
       order: p.order,
     }));
 
-    const keyCrew = (data.crew ?? [])
-      .filter((p: any) => ["Director", "Writer", "Screenplay", "Story", "Producer", "Executive Producer"].includes(p.job))
-      .map((p: any) => ({
+    const keyCrew = ((data.crew as any[]) ?? [])
+      .filter((p) => ["Director", "Writer", "Screenplay", "Story", "Producer", "Executive Producer"].includes(p.job))
+      .map((p) => ({
         name: p.name,
         job: p.job,
         department: p.department,
@@ -293,30 +322,30 @@ Only use search_person or get_person_details when the conversation is explicitly
   }
 
   private async getMovieRecommendations(movieId: number, page = 1) {
-    const data = await this.tmdbFetch(`/movie/${movieId}/recommendations`, { page });
+    const data = await this.tmdbFetch(`/movie/${movieId}/recommendations`, { page }) as Record<string, unknown>;
 
     return {
       total_results: data.total_results,
       total_pages: data.total_pages,
       page: data.page,
-      results: (data.results ?? []).slice(0, 10).map((m: any) => ({
+      results: ((data.results as any[]) ?? []).slice(0, TMDBPlugin.MAX_SEARCH_RESULTS).map((m) => ({
         id: m.id,
         title: m.title,
         release_date: m.release_date,
         overview: m.overview,
         vote_average: m.vote_average,
         popularity: m.popularity,
-        poster_url: imgUrl(m.poster_path),
+        poster_url: TMDBPlugin.imgUrl(m.poster_path),
       })),
     };
   }
 
   private async getTrendingMovies(timeWindow: "day" | "week") {
-    const data = await this.tmdbFetch(`/trending/movie/${timeWindow}`);
+    const data = await this.tmdbFetch(`/trending/movie/${timeWindow}`) as Record<string, unknown>;
 
     return {
       time_window: timeWindow,
-      results: (data.results ?? []).slice(0, 20).map((m: any) => ({
+      results: ((data.results as any[]) ?? []).slice(0, TMDBPlugin.MAX_TRENDING).map((m) => ({
         id: m.id,
         title: m.title,
         release_date: m.release_date,
@@ -324,30 +353,30 @@ Only use search_person or get_person_details when the conversation is explicitly
         vote_average: m.vote_average,
         popularity: m.popularity,
         media_type: m.media_type,
-        poster_url: imgUrl(m.poster_path),
+        poster_url: TMDBPlugin.imgUrl(m.poster_path),
       })),
     };
   }
 
   private async searchPerson(query: string, page = 1) {
-    const data = await this.tmdbFetch("/search/person", { query, page });
+    const data = await this.tmdbFetch("/search/person", { query, page }) as Record<string, unknown>;
 
     return {
       total_results: data.total_results,
       total_pages: data.total_pages,
       page: data.page,
-      results: (data.results ?? []).slice(0, 10).map((p: any) => ({
+      results: ((data.results as any[]) ?? []).slice(0, TMDBPlugin.MAX_SEARCH_RESULTS).map((p) => ({
         id: p.id,
         name: p.name,
         known_for_department: p.known_for_department,
         popularity: p.popularity,
-        profile_url: imgUrl(p.profile_path, "w185"),
-        known_for: (p.known_for ?? []).slice(0, 3).map((m: any) => ({
+        profile_url: TMDBPlugin.imgUrl(p.profile_path, "w185"),
+        known_for: ((p.known_for as any[]) ?? []).slice(0, 3).map((m) => ({
           id: m.id,
           title: m.title ?? m.name,
           media_type: m.media_type,
           release_date: m.release_date ?? m.first_air_date,
-          poster_url: imgUrl(m.poster_path),
+          poster_url: TMDBPlugin.imgUrl(m.poster_path),
         })),
       })),
     };
@@ -357,23 +386,23 @@ Only use search_person or get_person_details when the conversation is explicitly
     const [details, credits] = await Promise.all([
       this.tmdbFetch(`/person/${personId}`),
       this.tmdbFetch(`/person/${personId}/movie_credits`),
-    ]);
+    ]) as [Record<string, unknown>, Record<string, unknown>];
 
-    const castCredits = (credits.cast ?? [])
-      .sort((a: any, b: any) => (b.popularity ?? 0) - (a.popularity ?? 0))
-      .slice(0, 20)
-      .map((m: any) => ({
+    const castCredits = ((credits.cast as any[]) ?? [])
+      .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
+      .slice(0, TMDBPlugin.MAX_PERSON_CAST_CREDITS)
+      .map((m) => ({
         id: m.id,
         title: m.title,
         character: m.character,
         release_date: m.release_date,
       }));
 
-    const crewCredits = (credits.crew ?? [])
-      .filter((m: any) => ["Director", "Writer", "Screenplay"].includes(m.job))
-      .sort((a: any, b: any) => (b.popularity ?? 0) - (a.popularity ?? 0))
-      .slice(0, 10)
-      .map((m: any) => ({
+    const crewCredits = ((credits.crew as any[]) ?? [])
+      .filter((m) => ["Director", "Writer", "Screenplay"].includes(m.job))
+      .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
+      .slice(0, TMDBPlugin.MAX_PERSON_CREW_CREDITS)
+      .map((m) => ({
         id: m.id,
         title: m.title,
         job: m.job,
@@ -390,7 +419,7 @@ Only use search_person or get_person_details when the conversation is explicitly
       place_of_birth: details.place_of_birth,
       popularity: details.popularity,
       also_known_as: details.also_known_as,
-      profile_url: imgUrl(details.profile_path, "w185"),
+      profile_url: TMDBPlugin.imgUrl(details.profile_path as string | null, "w185"),
       cast_credits: castCredits,
       crew_credits: crewCredits,
     };

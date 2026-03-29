@@ -501,10 +501,6 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     }
   }
 
-  private stem(filePath: string): string {
-    return basename(filePath, extname(filePath));
-  }
-
   private outPath(filename: string, ext: string): string {
     const safe = basename(filename);
     return join(DOWNLOADS_DIR, `${safe}.${ext}`);
@@ -580,7 +576,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_trimmed`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_trimmed`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
 
@@ -608,7 +604,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_converted`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_converted`;
     const output = this.outPath(stem, outputFormat);
 
     const vcodec = videoCodec ?? "copy";
@@ -636,7 +632,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_audio`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_audio`;
     const output = this.outPath(stem, outputFormat);
 
     logger.debug("FFmpeg", `extract_audio: ${inputFile} -> ${output}`);
@@ -659,7 +655,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_resized`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_resized`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
     const scale = `${width}:${height}`;
@@ -812,7 +808,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     if (videoPathErr) return { success: false, error: videoPathErr };
     const audioPathErr = this.validateInputPath(audioFile);
     if (audioPathErr) return { success: false, error: audioPathErr };
-    const stem = outputFilename ?? `${this.stem(videoFile)}_with_audio`;
+    const stem = outputFilename ?? `${basename(videoFile, extname(videoFile))}_with_audio`;
     const ext = extname(videoFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
 
@@ -840,7 +836,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const prefix = outputPrefix ?? `${this.stem(inputFile)}_frame`;
+    const prefix = outputPrefix ?? `${basename(inputFile, extname(inputFile))}_frame`;
     const outputPattern = join(DOWNLOADS_DIR, `${prefix}_%04d.${imageFormat}`);
 
     logger.debug(
@@ -866,7 +862,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_screenshot`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_screenshot`;
     const output = this.outPath(stem, imageFormat);
 
     logger.debug(
@@ -894,7 +890,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_cropped`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_cropped`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
     const cropFilter = `crop=${width}:${height}:${x}:${y}`;
@@ -921,7 +917,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
     }
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_speed`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_speed`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
 
@@ -948,7 +944,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
   ) {
     const pathErr = this.validateInputPath(inputFile);
     if (pathErr) return { success: false, error: pathErr };
-    const stem = outputFilename ?? `${this.stem(inputFile)}_rotated`;
+    const stem = outputFilename ?? `${basename(inputFile, extname(inputFile))}_rotated`;
     const ext = extname(inputFile).replace(".", "") || "mp4";
     const output = this.outPath(stem, ext);
 
@@ -979,7 +975,7 @@ All input paths are relative to the working directory. Use ffmpeg_get_info to in
 }
 
 // atempo only accepts values in [0.5, 2.0] — chain multiple filters for values outside that range
-function buildAtempoChain(speed: number): string {
+export function buildAtempoChain(speed: number): string {
   const filters: string[] = [];
   let remaining = speed;
   while (remaining > 2.0) {

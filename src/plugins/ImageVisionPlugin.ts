@@ -1,5 +1,6 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
-import { resolve, relative, isAbsolute } from "node:path";
+import { resolve, relative, isAbsolute, extname } from "node:path";
+import { logger } from "../logger.ts";
 
 const MIME_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
@@ -8,6 +9,13 @@ const MIME_TYPES: Record<string, string> = {
   gif: "image/gif",
   webp: "image/webp",
 };
+
+const ALLOWED_MIME_SET = new Set(Object.values(MIME_TYPES));
+
+const VISION_MAX_TOKENS = 1024;
+const MAX_IMAGE_BYTES = 100 * 1024 * 1024; // 100 MB
+
+const NS = "ImageVisionPlugin";
 
 function validateImageUrl(url: string): void {
   let parsed: URL;
@@ -54,11 +62,16 @@ export class ImageVisionPlugin implements AgentPlugin {
   private baseUrl: string;
 
   constructor(
-    visionModel = "google/gemma-3-4b",
+    visionModel = process.env.VISION_MODEL ?? "google/gemma-3-4b",
     baseUrl = "http://127.0.0.1:1234",
   ) {
     this.visionModel = visionModel;
     this.baseUrl = baseUrl;
+
+    const url = new URL(baseUrl);
+    if (url.protocol !== "https:" && url.hostname !== "127.0.0.1" && url.hostname !== "localhost") {
+      logger.warn(NS, `baseUrl "${baseUrl}" uses plain HTTP with a non-local host — image data will be transmitted unencrypted.`);
+    }
   }
 
   getSystemPromptFragment(): string {
@@ -112,43 +125,77 @@ Use analyze_image_file to analyze an image saved on the local filesystem.`;
     ];
   }
 
-  async executeTool(name: string, args: any): Promise<any> {
+  async executeTool(name: string, args: Record<string, unknown>): Promise<string | undefined> {
     if (name === "analyze_image_url") {
-      return this.analyzeImageUrl(args.url, args.prompt);
+      const url = args.url;
+      const prompt = args.prompt;
+      if (typeof url !== "string" || url.trim() === "") {
+        return "Error: Missing or invalid required argument 'url'.";
+      }
+      return this.analyzeImageUrl(url, typeof prompt === "string" ? prompt : undefined);
     }
     if (name === "analyze_image_file") {
-      return this.analyzeImageFile(args.file_path, args.prompt);
+      const filePath = args.file_path;
+      const prompt = args.prompt;
+      if (typeof filePath !== "string" || filePath.trim() === "") {
+        return "Error: Missing or invalid required argument 'file_path'.";
+      }
+      return this.analyzeImageFile(filePath, typeof prompt === "string" ? prompt : undefined);
     }
+    logger.debug(NS, `executeTool called with unrecognised tool name: ${name}`);
+    return undefined;
   }
 
   private async analyzeImageUrl(url: string, prompt?: string): Promise<string> {
     try {
       validateImageUrl(url);
     } catch (e) {
+      logger.warn(NS, `URL validation failed: ${e instanceof Error ? e.message : String(e)}`);
       return `Error: ${e instanceof Error ? e.message : "Invalid URL."}`;
     }
     try {
       const res = await fetch(url, {
+        redirect: "error",
         signal: AbortSignal.timeout(30_000),
         headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+          "User-Agent": "ImageVisionPlugin/1.0",
         },
       });
       if (!res.ok) {
+        logger.warn(NS, `Image download failed: HTTP ${res.status} for ${url}`);
         return "Error: Failed to download image.";
       }
 
-      const contentType = res.headers.get("content-type") ?? "image/jpeg";
+      const contentLengthHeader = res.headers.get("content-length");
+      if (contentLengthHeader !== null) {
+        const contentLength = parseInt(contentLengthHeader, 10);
+        if (!isNaN(contentLength) && contentLength > MAX_IMAGE_BYTES) {
+          logger.warn(NS, `Image too large: Content-Length ${contentLength} exceeds ${MAX_IMAGE_BYTES} bytes`);
+          return `Error: Image is too large (${contentLength} bytes). Maximum allowed size is ${MAX_IMAGE_BYTES} bytes.`;
+        }
+      }
+
+      const contentType = res.headers.get("content-type") ?? "";
       const mime = contentType.split(";")[0]?.trim() ?? "";
+      if (!ALLOWED_MIME_SET.has(mime)) {
+        logger.warn(NS, `Unsupported MIME type from URL: "${mime}"`);
+        return `Error: Unsupported image type "${mime}". Supported types: ${[...ALLOWED_MIME_SET].join(", ")}`;
+      }
+
       const buffer = await res.arrayBuffer();
+      if (buffer.byteLength > MAX_IMAGE_BYTES) {
+        logger.warn(NS, `Downloaded image too large: ${buffer.byteLength} bytes`);
+        return `Error: Image is too large (${buffer.byteLength} bytes). Maximum allowed size is ${MAX_IMAGE_BYTES} bytes.`;
+      }
       const base64 = Buffer.from(buffer).toString("base64");
 
       return this.callVisionModel(base64, mime, prompt);
     } catch (err) {
       if (err instanceof Error && err.name === "TimeoutError") {
+        logger.warn(NS, `Image download timed out for ${url}`);
         return "Error: Image download timed out.";
       }
+      logger.error(NS, `Unexpected error downloading image from ${url}`, err);
       return "Error: Failed to analyze image.";
     }
   }
@@ -161,20 +208,29 @@ Use analyze_image_file to analyze an image saved on the local filesystem.`;
     try {
       safePath = validateImagePath(filePath);
     } catch (e) {
+      logger.warn(NS, `File path validation failed: ${e instanceof Error ? e.message : String(e)}`);
       return `Error: ${e instanceof Error ? e.message : "Invalid file path."}`;
     }
     try {
-      const ext = safePath.split(".").pop()?.toLowerCase() ?? "";
+      const ext = extname(safePath).slice(1).toLowerCase();
       const mime = MIME_TYPES[ext];
       if (!mime) {
-        return `Error: Unsupported file type ".${ext}". Supported types: ${Object.keys(MIME_TYPES).join(", ")}`;
+        return `Error: Unsupported file type "${ext ? `.${ext}` : "(no extension)"}". Supported types: ${Object.keys(MIME_TYPES).join(", ")}`;
       }
 
-      const buffer = await Bun.file(safePath).arrayBuffer();
+      const bunFile = Bun.file(safePath);
+      const size = bunFile.size;
+      if (size > MAX_IMAGE_BYTES) {
+        logger.warn(NS, `Image file too large: ${size} bytes for ${safePath}`);
+        return `Error: Image file is too large (${size} bytes). Maximum allowed size is ${MAX_IMAGE_BYTES} bytes.`;
+      }
+
+      const buffer = await bunFile.arrayBuffer();
       const base64 = Buffer.from(buffer).toString("base64");
 
       return this.callVisionModel(base64, mime, prompt);
-    } catch {
+    } catch (err) {
+      logger.error(NS, `Failed to read or analyze image file: ${safePath}`, err);
       return "Error: Failed to read or analyze image file.";
     }
   }
@@ -205,22 +261,36 @@ Use analyze_image_file to analyze an image saved on the local filesystem.`;
               ],
             },
           ],
-          max_tokens: 1024,
+          max_tokens: VISION_MAX_TOKENS,
         }),
       });
 
       if (!res.ok) {
+        logger.warn(NS, `Vision model request failed: HTTP ${res.status}`);
         return "Error: Vision model request failed.";
       }
 
-      const data = (await res.json()) as any;
-      return (
-        data.choices?.[0]?.message?.content ?? "No response from vision model."
-      );
+      const data: unknown = await res.json();
+      const content =
+        data !== null &&
+        typeof data === "object" &&
+        "choices" in data &&
+        Array.isArray((data as { choices: unknown }).choices)
+          ? ((data as { choices: Array<{ message?: { content?: unknown } }> })
+              .choices[0]?.message?.content)
+          : undefined;
+
+      if (typeof content !== "string") {
+        logger.warn(NS, "Vision model returned no string content", data);
+        return "No response from vision model.";
+      }
+      return content;
     } catch (err) {
       if (err instanceof Error && err.name === "TimeoutError") {
+        logger.warn(NS, "Vision model request timed out.");
         return "Error: Vision model request timed out.";
       }
+      logger.error(NS, "Unexpected error calling vision model.", err);
       return "Error: Failed to get vision model response.";
     }
   }

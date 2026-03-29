@@ -1,6 +1,6 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { join, resolve, relative, isAbsolute } from "node:path";
-import { unlinkSync } from "node:fs";
+import { rm, mkdir } from "node:fs/promises";
 import { logger } from "../logger.ts";
 import { appDataPath } from "../paths.ts";
 
@@ -21,11 +21,9 @@ function safeNotePath(title: string): string {
 export class NotesPlugin implements AgentPlugin {
   name = "Notes";
 
-  constructor() {}
-
   getSystemPromptFragment(): string {
     return `You can save and retrieve persistent markdown notes stored in the notes/ directory.
-Use create_note to save information the user wants to keep across conversations.
+Use create_note to save information the user wants to keep across conversations (overwrites silently if the title already exists).
 Use list_notes to see all saved notes, read_note to retrieve one, and delete_note to remove one.`;
   }
 
@@ -47,7 +45,7 @@ Use list_notes to see all saved notes, read_note to retrieve one, and delete_not
       {
         name: "list_notes",
         description: "List all saved notes by title. Use this when the user asks what notes exist or wants to browse saved notes.",
-        parameters: { type: "object", properties: {} },
+        parameters: { type: "object" },
       },
       {
         name: "read_note",
@@ -74,8 +72,11 @@ Use list_notes to see all saved notes, read_note to retrieve one, and delete_not
     ];
   }
 
-  async executeTool(name: string, args: any): Promise<any> {
+  async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
     if (name === "create_note") {
+      if (typeof args.title !== "string" || typeof args.content !== "string") {
+        return { error: "create_note requires string 'title' and 'content'." };
+      }
       const path = safeNotePath(args.title);
       const content = `# ${args.title}\n\n${args.content}`;
       await Bun.write(path, content);
@@ -84,6 +85,7 @@ Use list_notes to see all saved notes, read_note to retrieve one, and delete_not
     }
 
     if (name === "list_notes") {
+      await mkdir(NOTES_DIR, { recursive: true });
       const glob = new Bun.Glob("*.md");
       const notes: string[] = [];
       for await (const file of glob.scan(NOTES_DIR)) {
@@ -93,6 +95,9 @@ Use list_notes to see all saved notes, read_note to retrieve one, and delete_not
     }
 
     if (name === "read_note") {
+      if (typeof args.title !== "string") {
+        return { error: "read_note requires string 'title'." };
+      }
       const path = safeNotePath(args.title);
       const file = Bun.file(path);
       if (!(await file.exists())) return { error: `Note "${args.title}" not found.` };
@@ -100,12 +105,17 @@ Use list_notes to see all saved notes, read_note to retrieve one, and delete_not
     }
 
     if (name === "delete_note") {
+      if (typeof args.title !== "string") {
+        return { error: "delete_note requires string 'title'." };
+      }
       const path = safeNotePath(args.title);
       const file = Bun.file(path);
       if (!(await file.exists())) return { error: `Note "${args.title}" not found.` };
-      unlinkSync(path);
+      await rm(path);
       logger.info("Notes", `delete_note: ${path}`);
       return { success: true };
     }
+
+    return undefined;
   }
 }
