@@ -4,6 +4,7 @@ import { MemoryPlugin } from "../plugins/MemoryPlugin.ts";
 import { SubAgentPlugin } from "../plugins/SubAgentPlugin.ts";
 import { CLIInputSource } from "./input-sources/CLIInputSource.ts";
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
+import { InteractivePermissionManager, SessionCache } from "../core/PermissionManager.ts";
 import { createMediaAgent } from "./sub-agents/createMediaAgent.ts";
 import { createWebAgent } from "./sub-agents/createWebAgent.ts";
 import { createSystemAgent } from "./sub-agents/createSystemAgent.ts";
@@ -65,10 +66,14 @@ export function createAgent(
     toolCallingStrategy: "native",
   });
 
+  const sessionCache = new SessionCache();
+  const permissionManager = new InteractivePermissionManager({ timeoutMs: 30_000, cache: sessionCache });
+
   const agent = new CortexAgent(llm, {
     name: "2b",
     cortexName: "2b",
     model: resolvedModel,
+    permissionManager,
     // TODO(SubAgentPlugin): The context instruction below is prompt-based only and not
     // structurally enforced. Move to automatic context injection in SubAgentPlugin for
     // reliability across model updates.
@@ -83,7 +88,7 @@ export function createAgent(
       toolName: "media_agent",
       description:
         "Handles media tasks: downloading videos, trimming clips, converting formats, extracting audio, and analyzing images.",
-      agent: createMediaAgent(llm),
+      agent: createMediaAgent(llm, { permissionManager }),
       // intentionally no timeout — downloads and transcodes can take arbitrarily long
     }),
   );
@@ -92,7 +97,7 @@ export function createAgent(
       toolName: "web_agent",
       description:
         "Handles web research: searching the web and reading web page content.",
-      agent: createWebAgent(llm),
+      agent: createWebAgent(llm, { permissionManager }),
       inactivityTimeoutMs: 60_000,
       absoluteTimeoutMs: 120_000,
     }),
@@ -102,7 +107,7 @@ export function createAgent(
       toolName: "system_agent",
       description:
         "Handles system operations: running shell commands, reading/writing files, clipboard access, and executing sandboxed code.",
-      agent: createSystemAgent(llm),
+      agent: createSystemAgent(llm, { permissionManager }),
       inactivityTimeoutMs: 30_000,
       absoluteTimeoutMs: 120_000,
     }),
@@ -112,7 +117,7 @@ export function createAgent(
       toolName: "info_agent",
       description:
         "Handles information lookup: movies via TMDB, weather conditions, and personal notes management.",
-      agent: createInfoAgent(llm),
+      agent: createInfoAgent(llm, { permissionManager }),
       inactivityTimeoutMs: 15_000,
       absoluteTimeoutMs: 30_000,
     }),
