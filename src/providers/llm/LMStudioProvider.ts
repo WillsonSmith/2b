@@ -40,13 +40,17 @@ function processFragment(
     reasoningText.value += fragment.content;
     onToken?.(fragment.content, true);
   } else if (responseFragment.reasoningType === "none") {
-    responseContent.value += fragment.content;
-    onToken?.(fragment.content, false);
+    // Strip leaked </think> closing tags — the SDK correctly marks reasoning
+    // content as "reasoning" but the closing tag itself can arrive as "none".
+    const cleaned = fragment.content.replace(/<\/think>/g, "");
+    responseContent.value += cleaned;
+    if (cleaned) onToken?.(cleaned, false);
   } else {
     // Unknown or undefined reasoningType — treat as regular response content
     // so fragments are never silently discarded.
-    responseContent.value += fragment.content;
-    onToken?.(fragment.content, false);
+    const cleaned = fragment.content.replace(/<\/think>/g, "");
+    responseContent.value += cleaned;
+    if (cleaned) onToken?.(cleaned, false);
   }
 }
 
@@ -152,10 +156,15 @@ export class LMStudioProvider implements LLMProvider {
           `Tool "${t.name}" has invalid or missing parameters schema.`,
         );
       }
+      const schema = t.parameters as Record<string, unknown>;
+      const normalizedSchema =
+        schema.properties === undefined
+          ? { ...schema, properties: {} }
+          : schema;
       return rawFunctionTool({
         name: t.name,
         description: t.description,
-        parametersJsonSchema: t.parameters,
+        parametersJsonSchema: normalizedSchema,
         implementation: async (params, _ctx) => {
           logger.info("LMStudio", `Tool called by model: ${t.name}`, params);
           if (!t.implementation) {
@@ -238,9 +247,10 @@ export class LMStudioProvider implements LLMProvider {
       !postToolResponseStreamed &&
       finalRoundNonReasoningContent
     ) {
-      if (onToken) onToken(finalRoundNonReasoningContent, false);
+      const cleanedFallback = finalRoundNonReasoningContent.replace(/<\/think>/g, "");
+      if (onToken && cleanedFallback) onToken(cleanedFallback, false);
       if (!responseContent.value) {
-        responseContent.value = finalRoundNonReasoningContent;
+        responseContent.value = cleanedFallback;
       }
     }
 
