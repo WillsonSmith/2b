@@ -95,6 +95,18 @@ export class ChatSession extends EventEmitter {
     }
   }
 
+  /** Add an inline system notification (slash command feedback, errors, etc.). */
+  addSystemMessage(content: string): void {
+    this.addMessage({
+      id: crypto.randomUUID(),
+      role: "system",
+      content,
+      toolCalls: [],
+      status: "complete",
+      timestamp: new Date(),
+    });
+  }
+
   /** Remove all messages from the session (does not reset agent memory). */
   clear(): void {
     this._messages = [];

@@ -67,13 +67,15 @@ const llm = new LMStudioProvider(model, lmStudioUrl, { toolCallingStrategy: "nat
 // TODO: replace with an Ink-native permission dialog.
 const permissionManager = new AutoApprovePermissionManager();
 
+const systemPrompt =
+  "You are a helpful assistant with access to tools. Think carefully before responding.\n\nWhen delegating to a sub-agent, always include in the task field all relevant context the sub-agent needs: usernames, URLs, IDs, dates, and any specific facts from memory. Sub-agents have no access to your memory or conversation history.";
+
 const agent = new CortexAgent(llm, {
   name: "2b",
   cortexName: "2b",
   model,
   permissionManager,
-  systemPrompt:
-    "You are a helpful assistant with access to tools. Think carefully before responding.\n\nWhen delegating to a sub-agent, always include in the task field all relevant context the sub-agent needs: usernames, URLs, IDs, dates, and any specific facts from memory. Sub-agents have no access to your memory or conversation history.",
+  systemPrompt,
 });
 
 agent.registerPlugin(
@@ -122,4 +124,11 @@ await agent.start();
 
 const session = new ChatSession(agent);
 
-render(<TerminalChat session={session} model={model} />);
+render(
+  <TerminalChat
+    session={session}
+    model={model}
+    systemPrompt={systemPrompt}
+    onModelChange={(newModel) => llm.setModel(newModel)}
+  />,
+);
