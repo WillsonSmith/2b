@@ -28,6 +28,8 @@ export interface AgentConfig {
   historyLimit?: number;
   name?: string;
   cortexName?: string;
+  /** Override the SQLite file path used by CortexMemoryPlugin. Pass ":memory:" in tests. */
+  memoryDbPath?: string;
   /** Permission manager for tools that declare permission !== "none". */
   permissionManager?: import("./PermissionManager.ts").PermissionManager;
 }
