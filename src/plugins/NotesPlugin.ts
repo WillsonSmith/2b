@@ -45,7 +45,7 @@ Use list_notes to see all saved notes, read_note to retrieve one, and delete_not
       {
         name: "list_notes",
         description: "List all saved notes by title. Use this when the user asks what notes exist or wants to browse saved notes.",
-        parameters: { type: "object" },
+        parameters: { type: "object", properties: {} },
       },
       {
         name: "read_note",
