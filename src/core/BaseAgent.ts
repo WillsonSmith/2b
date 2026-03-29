@@ -232,7 +232,17 @@ export class BaseAgent extends EventEmitter {
         for (const t of pluginTools) {
           if (!t.implementation && plugin.executeTool) {
             const toolName = t.name;
-            t.implementation = (args) => {
+            const permission = t.permission ?? "none";
+            const pm = this.config.permissionManager;
+            t.implementation = async (args) => {
+              if (permission !== "none" && pm) {
+                const allowed = await pm.requestApproval({
+                  agentName: this.name,
+                  toolName,
+                  args: args as Record<string, unknown>,
+                });
+                if (!allowed) return { error: "Permission denied by user." };
+              }
               this.emit("tool_call", toolName, args);
               return plugin.executeTool!(toolName, args);
             };
