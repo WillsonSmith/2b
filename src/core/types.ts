@@ -28,4 +28,6 @@ export interface AgentConfig {
   historyLimit?: number;
   name?: string;
   cortexName?: string;
+  /** Permission manager for tools that declare permission !== "none". */
+  permissionManager?: import("./PermissionManager.ts").PermissionManager;
 }

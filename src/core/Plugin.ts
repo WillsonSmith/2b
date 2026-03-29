@@ -6,6 +6,8 @@ export interface ToolDefinition {
   description: string;
   parameters: Record<string, unknown>; // JSON Schema
   implementation?: (args: any) => any | Promise<any>;
+  /** Whether this tool requires user approval before execution. Default: "none". */
+  permission?: "none" | "once" | "always";
 }
 
 export interface AgentPlugin {
