@@ -1,7 +1,10 @@
 import * as readline from "node:readline";
 import { logger } from "../logger.ts";
 
-export type PermissionLevel = "none" | "once" | "always";
+// Fix #4: renamed "once" → "per_call" and "always" → "session" to make semantics
+// explicit — "per_call" means approve each invocation individually, "session"
+// means once approved the grant carries for the lifetime of the session.
+export type PermissionLevel = "none" | "per_call" | "session";
 
 export interface PermissionRequest {
   agentName: string;
@@ -66,10 +69,18 @@ function buildPrompt(request: PermissionRequest, timeoutSec: number): string {
 export class InteractivePermissionManager implements PermissionManager {
   private readonly cache: SessionCache;
   private readonly timeoutMs: number;
+  // Fix #7: accept an optional output stream so the class is testable without
+  // coupling to process.stdout.
+  private readonly output: NodeJS.WritableStream;
 
-  constructor(options: { timeoutMs?: number; cache?: SessionCache } = {}) {
+  constructor(options: {
+    timeoutMs?: number;
+    cache?: SessionCache;
+    output?: NodeJS.WritableStream;
+  } = {}) {
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.cache = options.cache ?? new SessionCache();
+    this.output = options.output ?? process.stdout;
   }
 
   isSessionApproved(toolName: string): boolean {
@@ -80,21 +91,21 @@ export class InteractivePermissionManager implements PermissionManager {
     if (this.cache.has(request.toolName)) return true;
 
     const timeoutSec = Math.round(this.timeoutMs / 1000);
-    process.stdout.write(buildPrompt(request, timeoutSec));
+    this.output.write(buildPrompt(request, timeoutSec));
 
     const answer = await this.promptWithTimeout();
     const normalized = answer.trim().toLowerCase();
 
     if (normalized === "a" || normalized === "always") {
       this.cache.add(request.toolName);
-      process.stdout.write(`Approved for this session.\n`);
+      this.output.write(`Approved for this session.\n`);
       return true;
     }
     if (normalized === "y" || normalized === "yes") {
       return true;
     }
 
-    process.stdout.write(`Denied.\n`);
+    this.output.write(`Denied.\n`);
     return false;
   }
 
@@ -102,7 +113,8 @@ export class InteractivePermissionManager implements PermissionManager {
     return new Promise((resolve) => {
       const rl = readline.createInterface({
         input: process.stdin,
-        output: process.stdout,
+        // Fix #7: use this.output instead of process.stdout
+        output: this.output as NodeJS.WriteStream,
         terminal: false,
       });
 
@@ -117,12 +129,22 @@ export class InteractivePermissionManager implements PermissionManager {
       };
 
       const timer = setTimeout(() => {
-        process.stdout.write(`\nAuto-denied (timeout after ${Math.round(this.timeoutMs / 1000)}s).\n`);
+        this.output.write(`\nAuto-denied (timeout after ${Math.round(this.timeoutMs / 1000)}s).\n`);
         settle("n");
       }, this.timeoutMs);
 
       rl.once("line", (line) => settle(line));
-      rl.once("close", () => settle("n"));
+      // Fix #3: distinguish a close-based denial (stdin closed/piped) from a
+      // normal "n" response so callers can see why the prompt resolved.
+      rl.once("close", () => {
+        if (!settled) {
+          logger.warn(
+            "InteractivePermissionManager",
+            "stdin closed before a response was received — auto-denying.",
+          );
+        }
+        settle("n");
+      });
     });
   }
 }
@@ -168,19 +190,29 @@ export class AutoApprovePermissionManager implements PermissionManager {
   }
 }
 
-/** Returns pre-scripted responses per tool name; denies anything not listed. Use in tests only. */
+/**
+ * Returns pre-scripted responses per tool name; denies anything not listed.
+ * Accepts an optional SessionCache so callers can pre-populate session
+ * approvals when testing cache-dependent code paths.
+ * Use in tests only.
+ */
 export class ScriptedPermissionManager implements PermissionManager {
   private readonly responses: Map<string, boolean>;
+  // Fix #5: accept optional SessionCache so session-approval code paths can be
+  // tested. Defaults to an empty cache (isSessionApproved returns false for
+  // all tools unless the caller pre-populates the cache).
+  private readonly cache: SessionCache;
 
-  constructor(responses: Record<string, boolean> = {}) {
+  constructor(responses: Record<string, boolean> = {}, cache: SessionCache = new SessionCache()) {
     this.responses = new Map(Object.entries(responses));
+    this.cache = cache;
   }
 
   async requestApproval(request: PermissionRequest): Promise<boolean> {
     return this.responses.get(request.toolName) ?? false;
   }
 
-  isSessionApproved(_toolName: string): boolean {
-    return false;
+  isSessionApproved(toolName: string): boolean {
+    return this.cache.has(toolName);
   }
 }
