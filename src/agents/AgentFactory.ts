@@ -4,11 +4,15 @@ import { MemoryPlugin } from "../plugins/MemoryPlugin.ts";
 import { SubAgentPlugin } from "../plugins/SubAgentPlugin.ts";
 import { CLIInputSource } from "./input-sources/CLIInputSource.ts";
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
-import { InteractivePermissionManager, SessionCache } from "../core/PermissionManager.ts";
+import {
+  InteractivePermissionManager,
+  SessionCache,
+} from "../core/PermissionManager.ts";
 import { createMediaAgent } from "./sub-agents/createMediaAgent.ts";
 import { createWebAgent } from "./sub-agents/createWebAgent.ts";
 import { createSystemAgent } from "./sub-agents/createSystemAgent.ts";
 import { createInfoAgent } from "./sub-agents/createInfoAgent.ts";
+import { createFileSystemAgent } from "./sub-agents/createIoAgent.ts";
 
 // ── Inline tools ─────────────────────────────────────────────────────────────
 
@@ -16,7 +20,12 @@ const minimalTools: ToolDefinition[] = [
   {
     name: "get_current_time",
     description: "Returns the current local date and time.",
-    parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    },
     implementation: () => new Date().toLocaleString(),
   },
   {
@@ -30,7 +39,11 @@ const minimalTools: ToolDefinition[] = [
     implementation: (args: unknown) => {
       const text = (args as Record<string, unknown>)?.text;
       if (typeof text !== "string") {
-        console.warn("[MinimalTools] echo: expected string for 'text', got", typeof text, "— coercing");
+        console.warn(
+          "[MinimalTools] echo: expected string for 'text', got",
+          typeof text,
+          "— coercing",
+        );
         return String(text ?? "");
       }
       return text;
@@ -54,20 +67,27 @@ export function createAgent(
   model?: string,
   lmStudioUrl?: string,
 ): CreateAgentResult {
-  const resolvedModel = model ?? process.env.MODEL ?? "nvidia/nemotron-3-nano-4b";
+  const resolvedModel =
+    model ?? process.env.MODEL ?? "nvidia/nemotron-3-nano-4b";
   if (!resolvedModel) throw new Error("MODEL env var is set but empty");
-  const resolvedLmStudioUrl = lmStudioUrl ?? process.env.LM_STUDIO_URL ?? "ws://127.0.0.1:1234";
+  const resolvedLmStudioUrl =
+    lmStudioUrl ?? process.env.LM_STUDIO_URL ?? "ws://127.0.0.1:1234";
   try {
     new URL(resolvedLmStudioUrl);
   } catch {
-    throw new Error(`LM_STUDIO_URL is not a valid URL: "${resolvedLmStudioUrl}"`);
+    throw new Error(
+      `LM_STUDIO_URL is not a valid URL: "${resolvedLmStudioUrl}"`,
+    );
   }
   const llm = new LMStudioProvider(resolvedModel, resolvedLmStudioUrl, {
     toolCallingStrategy: "native",
   });
 
   const sessionCache = new SessionCache();
-  const permissionManager = new InteractivePermissionManager({ timeoutMs: 30_000, cache: sessionCache });
+  const permissionManager = new InteractivePermissionManager({
+    timeoutMs: 30_000,
+    cache: sessionCache,
+  });
 
   const agent = new CortexAgent(llm, {
     name: "2b",
@@ -92,36 +112,47 @@ export function createAgent(
       // intentionally no timeout — downloads and transcodes can take arbitrarily long
     }),
   );
+
   agent.registerPlugin(
     new SubAgentPlugin({
-      toolName: "web_agent",
+      toolName: "file_system_agent",
       description:
-        "Handles web research: searching the web and reading web page content.",
-      agent: createWebAgent(llm, { permissionManager }),
-      inactivityTimeoutMs: 60_000,
-      absoluteTimeoutMs: 120_000,
+        "Handles file system operations: reading, writing, and managing directories.",
+      agent: createFileSystemAgent(llm, { permissionManager }),
+      inactivityTimeoutMs: 10_000,
+      absoluteTimeoutMs: 10_000,
     }),
   );
-  agent.registerPlugin(
-    new SubAgentPlugin({
-      toolName: "system_agent",
-      description:
-        "Handles system operations: running shell commands, reading/writing files, clipboard access, and executing sandboxed code.",
-      agent: createSystemAgent(llm, { permissionManager }),
-      inactivityTimeoutMs: 30_000,
-      absoluteTimeoutMs: 120_000,
-    }),
-  );
-  agent.registerPlugin(
-    new SubAgentPlugin({
-      toolName: "info_agent",
-      description:
-        "Handles information lookup: movies via TMDB, weather conditions, and personal notes management.",
-      agent: createInfoAgent(llm, { permissionManager }),
-      inactivityTimeoutMs: 15_000,
-      absoluteTimeoutMs: 30_000,
-    }),
-  );
+  // agent.registerPlugin(
+  //   new SubAgentPlugin({
+  //     toolName: "web_agent",
+  //     description:
+  //       "Handles web research: searching the web and reading web page content.",
+  //     agent: createWebAgent(llm, { permissionManager }),
+  //     inactivityTimeoutMs: 60_000,
+  //     absoluteTimeoutMs: 120_000,
+  //   }),
+  // );
+  // agent.registerPlugin(
+  //   new SubAgentPlugin({
+  //     toolName: "system_agent",
+  //     description:
+  //       "Handles system operations: running shell commands, reading/writing files, clipboard access, and executing sandboxed code.",
+  //     agent: createSystemAgent(llm, { permissionManager }),
+  //     inactivityTimeoutMs: 30_000,
+  //     absoluteTimeoutMs: 120_000,
+  //   }),
+  // );
+  // agent.registerPlugin(
+  //   new SubAgentPlugin({
+  //     toolName: "info_agent",
+  //     description:
+  //       "Handles information lookup: movies via TMDB, weather conditions, and personal notes management.",
+  //     agent: createInfoAgent(llm, { permissionManager }),
+  //     inactivityTimeoutMs: 15_000,
+  //     absoluteTimeoutMs: 30_000,
+  //   }),
+  // );
   agent.registerPlugin(minimalToolsPlugin);
   agent.registerPlugin(new MemoryPlugin(llm));
   agent.addInputSource(input);
