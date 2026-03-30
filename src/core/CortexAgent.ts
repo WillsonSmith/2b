@@ -5,6 +5,7 @@ import type { InputSource } from "./InputSource.ts";
 import type { AgentConfig, AgentEventMap, AmbientOptions } from "./types.ts";
 import { CortexMemoryPlugin } from "../plugins/CortexMemoryPlugin.ts";
 import { ThoughtPlugin } from "../plugins/ThoughtPlugin.ts";
+import { MetacognitionPlugin } from "../plugins/MetacognitionPlugin.ts";
 
 export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
   private inner: BaseAgent;
@@ -29,8 +30,12 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
     this.memoryPlugin = new CortexMemoryPlugin(llm, cortexName, config.memoryDbPath);
     const thoughtPlugin = new ThoughtPlugin(this.memoryPlugin, synthesisProvider ?? null);
 
+    const sourceRoot = new URL("../..", import.meta.url).pathname;
+    const metacognitionPlugin = new MetacognitionPlugin(this.memoryPlugin, { sourceRoot });
+
     this.inner.registerPlugin(this.memoryPlugin);
     this.inner.registerPlugin(thoughtPlugin);
+    this.inner.registerPlugin(metacognitionPlugin);
   }
 
   /** Register an additional plugin with the underlying agent. */

@@ -22,6 +22,7 @@ import { createInfoAgent } from "../../agents/sub-agents/createInfoAgent.ts";
 import type { AgentPlugin, ToolDefinition } from "../../core/Plugin.ts";
 import { ChatSession } from "../ChatSession.ts";
 import { TerminalChat } from "./TerminalChat.tsx";
+import { createFileSystemAgent } from "../../agents/sub-agents/createFileSystemAgent.ts";
 
 // ── Parse CLI args ────────────────────────────────────────────────────────────
 
@@ -38,7 +39,12 @@ const minimalTools: ToolDefinition[] = [
   {
     name: "get_current_time",
     description: "Returns the current local date and time.",
-    parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    },
     implementation: () => new Date().toLocaleString(),
   },
   {
@@ -49,7 +55,8 @@ const minimalTools: ToolDefinition[] = [
       properties: { text: { type: "string" } },
       required: ["text"],
     },
-    implementation: (args: unknown) => String((args as Record<string, unknown>)?.text ?? ""),
+    implementation: (args: unknown) =>
+      String((args as Record<string, unknown>)?.text ?? ""),
   },
 ];
 
@@ -60,7 +67,9 @@ const minimalToolsPlugin: AgentPlugin = {
 
 // ── Build agent (no CLIInputSource — Ink owns stdin) ─────────────────────────
 
-const llm = new LMStudioProvider(model, lmStudioUrl, { toolCallingStrategy: "native" });
+const llm = new LMStudioProvider(model, lmStudioUrl, {
+  toolCallingStrategy: "native",
+});
 
 // AutoApprovePermissionManager is used here because InteractivePermissionManager
 // reads from stdin, which conflicts with Ink's input handling.
@@ -88,33 +97,43 @@ agent.registerPlugin(
 );
 agent.registerPlugin(
   new SubAgentPlugin({
-    toolName: "web_agent",
-    description: "Handles web research: searching the web and reading web page content.",
-    agent: createWebAgent(llm, { permissionManager }),
-    inactivityTimeoutMs: 60_000,
-    absoluteTimeoutMs: 120_000,
-  }),
-);
-agent.registerPlugin(
-  new SubAgentPlugin({
-    toolName: "system_agent",
+    toolName: "file_system_agent",
     description:
-      "Handles system operations: running shell commands, reading/writing files, clipboard access, and executing sandboxed code.",
-    agent: createSystemAgent(llm, { permissionManager }),
-    inactivityTimeoutMs: 30_000,
-    absoluteTimeoutMs: 120_000,
+      "Handles file system operations: reading, writing, and managing directories.",
+    agent: createFileSystemAgent(llm, { permissionManager }),
+    inactivityTimeoutMs: 10_000,
+    absoluteTimeoutMs: 10_000,
   }),
 );
-agent.registerPlugin(
-  new SubAgentPlugin({
-    toolName: "info_agent",
-    description:
-      "Handles information lookup: movies via TMDB, weather conditions, and personal notes management.",
-    agent: createInfoAgent(llm, { permissionManager }),
-    inactivityTimeoutMs: 15_000,
-    absoluteTimeoutMs: 30_000,
-  }),
-);
+// agent.registerPlugin(
+//   new SubAgentPlugin({
+//     toolName: "web_agent",
+//     description: "Handles web research: searching the web and reading web page content.",
+//     agent: createWebAgent(llm, { permissionManager }),
+//     inactivityTimeoutMs: 60_000,
+//     absoluteTimeoutMs: 120_000,
+//   }),
+// );
+// agent.registerPlugin(
+//   new SubAgentPlugin({
+//     toolName: "system_agent",
+//     description:
+//       "Handles system operations: running shell commands, reading/writing files, clipboard access, and executing sandboxed code.",
+//     agent: createSystemAgent(llm, { permissionManager }),
+//     inactivityTimeoutMs: 30_000,
+//     absoluteTimeoutMs: 120_000,
+//   }),
+// );
+// agent.registerPlugin(
+//   new SubAgentPlugin({
+//     toolName: "info_agent",
+//     description:
+//       "Handles information lookup: movies via TMDB, weather conditions, and personal notes management.",
+//     agent: createInfoAgent(llm, { permissionManager }),
+//     inactivityTimeoutMs: 15_000,
+//     absoluteTimeoutMs: 30_000,
+//   }),
+// );
 agent.registerPlugin(minimalToolsPlugin);
 agent.registerPlugin(new MemoryPlugin(llm));
 
