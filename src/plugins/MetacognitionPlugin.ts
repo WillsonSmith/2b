@@ -24,6 +24,7 @@ const SOURCE_TOOLS = new Set(["read_source_file", "list_source_dir", "grep_sourc
 const SYSTEM_TOOLS = new Set([
   "introspect", "memory_status", "show_active_rules",
   "list_registered_plugins", "list_available_tools", "get_system_prompt",
+  "efficiency_report",
   ...SOURCE_TOOLS,
 ]);
 
@@ -38,12 +39,15 @@ interface ToolCallRecord {
 interface TurnState {
   turn_id: string;
   started_at: Date;
+  ended_at?: Date;
   tool_calls: ToolCallRecord[];
   memory_access_count: number;
   external_tool_count: number;
   behavioral_rules_active: string[];
   uncertainty_markers: string[];
 }
+
+const TURN_HISTORY_LIMIT = 20;
 
 function categorize(tool: string): ToolCallRecord["category"] {
   if (MEMORY_TOOLS.has(tool)) return "memory";
@@ -55,6 +59,7 @@ function categorize(tool: string): ToolCallRecord["category"] {
 export class MetacognitionPlugin implements AgentPlugin {
   name = "Metacognition";
   private currentTurn: TurnState;
+  private turnHistory: TurnState[] = [];
   private readonly saturationThreshold: number;
   private readonly sourceReader: SourceReaderPlugin;
   private agentRef: BaseAgent | null = null;
@@ -115,6 +120,7 @@ export class MetacognitionPlugin implements AgentPlugin {
       "[Memory Search: <query>]. After tool-heavy turns, reflect on whether your reasoning relied " +
       "on retrieval or inference. Use the introspect tool to examine your current cognitive state. " +
       "Use read_source_file, list_source_dir, and grep_source to read your own implementation code. " +
+      "Use efficiency_report to analyze your own tool-use patterns and identify redundancy or overuse. " +
       "Flag assumptions explicitly rather than presenting them as facts."
     );
   }
@@ -182,6 +188,15 @@ export class MetacognitionPlugin implements AgentPlugin {
           "Returns the full assembled system prompt from the most recent LLM call, showing exactly what instructions the model received.",
         parameters: { type: "object", properties: {} },
       },
+      // --- Efficiency analysis ---
+      {
+        name: "efficiency_report",
+        description:
+          "Analyzes your own tool-use patterns across recent turns and the current turn. " +
+          "Identifies redundant calls, dead searches, saturation events, and hedging frequency. " +
+          "Use this to understand your own cognitive inefficiencies in concrete, measurable terms.",
+        parameters: { type: "object", properties: {} },
+      },
       // --- Source code reading (delegated to SourceReaderPlugin) ---
       ...this.sourceReader.getTools(),
     ];
@@ -195,6 +210,7 @@ export class MetacognitionPlugin implements AgentPlugin {
       if (name === "list_registered_plugins") return this.handleListRegisteredPlugins();
       if (name === "list_available_tools") return this.handleListAvailableTools();
       if (name === "get_system_prompt") return this.handleGetSystemPrompt();
+      if (name === "efficiency_report") return this.handleEfficiencyReport();
       if (SOURCE_TOOLS.has(name)) return await this.sourceReader.executeTool(name, args);
     } catch (e) {
       console.warn(`[MetacognitionPlugin] Tool error (${name}):`, e);
@@ -204,6 +220,14 @@ export class MetacognitionPlugin implements AgentPlugin {
 
   onMessage(role: Message["role"], content: string): void {
     if (role === "user") {
+      // Archive the completed turn before starting a new one
+      if (this.currentTurn.tool_calls.length > 0) {
+        this.currentTurn.ended_at = new Date();
+        this.turnHistory.push(this.currentTurn);
+        if (this.turnHistory.length > TURN_HISTORY_LIMIT) {
+          this.turnHistory.shift();
+        }
+      }
       this.currentTurn = this.newTurn();
       try {
         const behaviors = this.memoryPlugin.db.getRecentMemories(20, "behavior");
@@ -281,6 +305,152 @@ export class MetacognitionPlugin implements AgentPlugin {
     } catch (e) {
       return `Error reading behavioral rules: ${e instanceof Error ? e.message : String(e)}`;
     }
+  }
+
+  private handleEfficiencyReport(): string {
+    const allTurns = [...this.turnHistory, this.currentTurn].filter(
+      (t) => t.tool_calls.length > 0,
+    );
+
+    if (allTurns.length === 0) {
+      return "No turn data yet. Use some tools first, then call efficiency_report.";
+    }
+
+    const sections: string[] = [];
+
+    // ── Current turn analysis ──────────────────────────────────────────────────
+    const t = this.currentTurn;
+    sections.push("## Current Turn");
+
+    // Redundant calls: same tool called more than once
+    const callCounts = new Map<string, ToolCallRecord[]>();
+    for (const tc of t.tool_calls) {
+      const group = callCounts.get(tc.tool) ?? [];
+      group.push(tc);
+      callCounts.set(tc.tool, group);
+    }
+    const redundant = [...callCounts.entries()].filter(([, calls]) => calls.length > 1);
+    if (redundant.length > 0) {
+      sections.push("**Redundant tool calls** (same tool invoked multiple times this turn):");
+      for (const [tool, calls] of redundant) {
+        sections.push(`  ${tool} × ${calls.length}`);
+        for (const c of calls) {
+          sections.push(`    args: ${c.args_summary}`);
+        }
+      }
+    } else {
+      sections.push("No redundant tool calls this turn.");
+    }
+
+    // Saturation
+    if (t.uncertainty_markers.includes("tool_saturation")) {
+      sections.push(
+        `**Tool saturation**: ${t.memory_access_count} memory accesses exceeded threshold (${this.saturationThreshold}).`,
+      );
+    }
+
+    // Hedging
+    if (t.uncertainty_markers.includes("hedged_language")) {
+      sections.push("**Hedged language detected** in this turn's response — possible low confidence.");
+    }
+
+    // Tool mix
+    const byCategory = new Map<string, number>();
+    for (const tc of t.tool_calls) {
+      byCategory.set(tc.category, (byCategory.get(tc.category) ?? 0) + 1);
+    }
+    if (byCategory.size > 0) {
+      sections.push(
+        "Tool mix: " +
+          [...byCategory.entries()].map(([k, v]) => `${k}=${v}`).join(", "),
+      );
+    }
+
+    // ── Historical analysis ────────────────────────────────────────────────────
+    const historical = this.turnHistory;
+    if (historical.length > 0) {
+      sections.push(`\n## Historical Patterns (last ${historical.length} completed turns)`);
+
+      const avgMemory =
+        historical.reduce((s, turn) => s + turn.memory_access_count, 0) / historical.length;
+      const avgTools =
+        historical.reduce((s, turn) => s + turn.tool_calls.length, 0) / historical.length;
+      const saturationCount = historical.filter((turn) =>
+        turn.uncertainty_markers.includes("tool_saturation"),
+      ).length;
+      const hedgeCount = historical.filter((turn) =>
+        turn.uncertainty_markers.includes("hedged_language"),
+      ).length;
+
+      sections.push(`Average memory accesses per turn: ${avgMemory.toFixed(1)}`);
+      sections.push(`Average total tool calls per turn: ${avgTools.toFixed(1)}`);
+      sections.push(
+        `Saturation events: ${saturationCount}/${historical.length} turns (${Math.round((saturationCount / historical.length) * 100)}%)`,
+      );
+      sections.push(
+        `Hedged responses: ${hedgeCount}/${historical.length} turns (${Math.round((hedgeCount / historical.length) * 100)}%)`,
+      );
+
+      // Most-used tools across history
+      const toolFreq = new Map<string, number>();
+      for (const turn of historical) {
+        for (const tc of turn.tool_calls) {
+          toolFreq.set(tc.tool, (toolFreq.get(tc.tool) ?? 0) + 1);
+        }
+      }
+      const topTools = [...toolFreq.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([tool, count]) => `  ${tool}: ${count} calls`);
+      sections.push(`Top tools used:\n${topTools.join("\n")}`);
+
+      // Turns with redundant calls
+      const redundantTurns = historical.filter((turn) => {
+        const seen = new Set<string>();
+        for (const tc of turn.tool_calls) {
+          if (seen.has(tc.tool)) return true;
+          seen.add(tc.tool);
+        }
+        return false;
+      });
+      sections.push(
+        `Turns with redundant tool calls: ${redundantTurns.length}/${historical.length}`,
+      );
+    }
+
+    // ── Suggestions ────────────────────────────────────────────────────────────
+    sections.push("\n## Suggestions");
+    const suggestions: string[] = [];
+
+    if (redundant.length > 0) {
+      suggestions.push(
+        "You called the same tool multiple times this turn. Check whether the first result was sufficient before re-querying.",
+      );
+    }
+    const memoryRatio = t.tool_calls.length > 0
+      ? t.memory_access_count / t.tool_calls.length
+      : 0;
+    if (memoryRatio > 0.6 && t.tool_calls.length >= 3) {
+      suggestions.push(
+        "Over 60% of your tool calls this turn were memory lookups. Consider whether you could have answered from context alone.",
+      );
+    }
+    if (t.uncertainty_markers.includes("hedged_language") && t.memory_access_count === 0) {
+      suggestions.push(
+        "You hedged your response but didn't search memory. A targeted memory search may have resolved the uncertainty.",
+      );
+    }
+    if (t.uncertainty_markers.includes("hedged_language") && t.memory_access_count > 3) {
+      suggestions.push(
+        "You searched memory extensively but still hedged. The relevant memory may not exist yet — consider saving what you learn.",
+      );
+    }
+    if (suggestions.length === 0) {
+      suggestions.push("No specific inefficiencies detected this turn.");
+    }
+    sections.push(...suggestions.map((s) => `- ${s}`));
+
+    return sections.join("\n");
   }
 
   private handleListRegisteredPlugins(): string {
