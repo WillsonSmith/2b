@@ -27,7 +27,7 @@ import { createCodeReaderAgent } from "../../agents/sub-agents/createCodeReaderA
 const args = process.argv.slice(2);
 const modelFlag = args.indexOf("--model");
 const modelArg = modelFlag !== -1 ? args[modelFlag + 1] : undefined;
-const model = modelArg ?? process.env["MODEL"] ?? "nvidia/nemotron-3-nano-4b";
+const model = modelArg ?? process.env["MODEL"] ?? "qwen/qwen3.5-35b-a3b";
 
 const lmStudioUrl = process.env["LM_STUDIO_URL"] ?? "ws://127.0.0.1:1234";
 
@@ -115,7 +115,9 @@ agent.registerPlugin(
   }),
 );
 agent.registerPlugin(minimalToolsPlugin);
-agent.registerPlugin(new MemoryPlugin(llm, { cortexMemory: agent.memoryPlugin }));
+agent.registerPlugin(
+  new MemoryPlugin(llm, { cortexMemory: agent.memoryPlugin }),
+);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 

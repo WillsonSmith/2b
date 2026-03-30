@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useInput } from "ink";
 import type { ChatMessage } from "../types.ts";
 
 interface ThinkingBoxProps {
@@ -16,15 +16,22 @@ function ThinkingBox({ thought, isInProgress }: ThinkingBoxProps) {
     }
   }, [isInProgress]);
 
+  useInput((_input, key) => {
+    if (key.ctrl && _input === "t") {
+      setExpanded((prev) => !prev);
+    }
+  });
+
   const lineCount = thought.split("\n").length;
+  const lineLabel = lineCount === 1 ? "1 line" : `${lineCount} lines`;
 
   if (!expanded) {
     return (
       <Box marginLeft={2} marginBottom={1}>
         <Text color="gray" dimColor>
           {"▶ Thinking ("}
-          {lineCount}
-          {" lines)"}
+          {lineLabel}
+          {") — ctrl+t to expand"}
         </Text>
       </Box>
     );
@@ -63,7 +70,7 @@ export function MessageItem({ message, showReasoning = true }: MessageItemProps)
 
   const isUser = message.role === "user";
   const displayContent = message.content.trimStart();
-  const thinkingInProgress = message.status === "streaming" && displayContent.length === 0;
+  const thinkingInProgress = message.status === "streaming";
 
   return (
     <Box flexDirection="column" marginBottom={1}>
