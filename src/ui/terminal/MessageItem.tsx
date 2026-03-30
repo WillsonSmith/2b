@@ -12,7 +12,7 @@ export function MessageItem({ message, showReasoning = true, showTools = true }:
   if (message.role === "system") {
     return (
       <Box flexDirection="column" marginBottom={1} paddingX={1} borderStyle="single" borderColor="gray">
-        <Text color="gray" dimColor>
+        <Text color="white">
           {message.content}
         </Text>
       </Box>
