@@ -31,17 +31,15 @@ function ThinkingBox({ thought, isInProgress }: ThinkingBoxProps) {
   }
 
   return (
-    <Box
-      flexDirection="column"
-      marginLeft={2}
-      marginBottom={1}
-      borderStyle="single"
-      borderColor="gray"
-      paddingX={1}
-    >
-      <Text color="gray" dimColor>
-        {thought}
+    <Box flexDirection="column" marginLeft={2} marginBottom={1}>
+      <Text color="gray" dimColor bold>
+        {"▼ Thinking"}
       </Text>
+      <Box marginLeft={2} marginTop={0}>
+        <Text color="gray" dimColor wrap="wrap">
+          {thought}
+        </Text>
+      </Box>
     </Box>
   );
 }
