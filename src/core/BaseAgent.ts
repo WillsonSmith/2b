@@ -8,6 +8,7 @@ import { logger } from "../logger.ts";
 export class BaseAgent extends EventEmitter {
   private isThinking = false;
   private isPaused = false;
+  private lastSystemPrompt = "";
   private directQueue: string[] = [];
   private ambientQueue: string[] = [];
   private tickTimer: ReturnType<typeof setTimeout> | null = null;
@@ -98,6 +99,24 @@ export class BaseAgent extends EventEmitter {
         }
       }
     }, minInterval);
+  }
+
+  /** Returns name and tool count for every registered plugin. */
+  public getRegisteredPlugins(): Array<{ name: string; toolCount: number }> {
+    return this.plugins.map((p) => ({
+      name: p.name,
+      toolCount: p.getTools?.().length ?? 0,
+    }));
+  }
+
+  /** Returns all tools currently available across all plugins. */
+  public getAvailableTools(): ToolDefinition[] {
+    return this.collectTools();
+  }
+
+  /** Returns the assembled system prompt from the most recent tick. */
+  public getLastSystemPrompt(): string {
+    return this.lastSystemPrompt;
   }
 
   public async start() {
@@ -221,6 +240,7 @@ export class BaseAgent extends EventEmitter {
     }
 
     const systemPrompt = this.buildSystemPrompt(mustRespond, pluginContext, systemPromptFragments);
+    this.lastSystemPrompt = systemPrompt;
     return { systemPrompt, systemPromptFragments };
   }
 
