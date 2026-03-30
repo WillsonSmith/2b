@@ -21,6 +21,7 @@ Modular agent capabilities. Each plugin implements `AgentPlugin` from `../core/P
 |--------|---------|
 | `CortexMemoryPlugin` | Long-term memory with types (factual/thought/behavior/procedure), semantic search, linking, editing, deletion, and autonomous conflict resolution; auto-surfaces relevant memories in context each turn — auto-registered by `CortexAgent`; tools: `search_memory`, `save_memory`, `save_behavior`, `save_procedure`, `edit_memory`, `delete_memory`, `get_linked_memories`, `query_memories`, `hybrid_search`, `aggregate_memories`, `get_memory_timeline` |
 | `ThoughtPlugin` | Persists `<think>` blocks as thought memories; exposes `get_recent_thoughts` — auto-registered by `CortexAgent` |
+| `MetacognitionPlugin` | Tracks per-turn cognitive state (tool calls, memory access count, uncertainty markers, active behavioral rules) and exposes it to the agent — auto-registered by `CortexAgent` (last, so it observes all other plugins); tools: `introspect` (full turn state dump), `memory_status` (counts by type + saturation info), `show_active_rules` (all behavior memories with tags and dates); injects `[Metacognition]` context block every LLM call; detects tool saturation (configurable threshold, default 5 memory accesses) and hedged language in responses |
 | `MemoryPlugin` | Short-term conversation history (max 15 messages, auto-summarises) |
 | `AudioPlugin` | Classifies microphone speech as direct/ambient via intent detection |
 | `TimePlugin` | Injects current time into context; exposes `get_current_time` tool |
