@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Box, useInput, useApp } from "ink";
+import { Box, Static, useInput, useApp } from "ink";
 import type { ChatSession } from "../ChatSession.ts";
 import type { ChatMessage, AgentState } from "../types.ts";
 import { MessageItem } from "./MessageItem.tsx";
@@ -49,8 +49,9 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
       } else {
         setStreamingMessage({ ...msg });
         if (msg.toolCalls.length > 0) {
-          const names = msg.toolCalls.map((tc) => tc.name);
-          setActiveToolCalls(names);
+          // Only the last tool call is currently running; earlier ones have already completed.
+          const lastName = msg.toolCalls[msg.toolCalls.length - 1]!.name;
+          setActiveToolCalls([lastName]);
         }
       }
     };
@@ -107,10 +108,10 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      {/* Completed messages */}
-      {completedMessages.map((msg) => (
-        <MessageItem key={msg.id} message={msg} showReasoning={showReasoning} />
-      ))}
+      {/* Completed messages — painted once, never re-rendered */}
+      <Static items={completedMessages}>
+        {(msg) => <MessageItem key={msg.id} message={msg} />}
+      </Static>
 
       {/* Live streaming message */}
       {streamingMessage && (

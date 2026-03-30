@@ -65,8 +65,7 @@ export function createAgent(
   model?: string,
   lmStudioUrl?: string,
 ): CreateAgentResult {
-  const resolvedModel =
-    model ?? process.env.MODEL ?? "nvidia/nemotron-3-nano-4b";
+  const resolvedModel = model ?? process.env.MODEL ?? "qwen/qwen3.5-35b-a3b";
   if (!resolvedModel) throw new Error("MODEL env var is set but empty");
   const resolvedLmStudioUrl =
     lmStudioUrl ?? process.env.LM_STUDIO_URL ?? "ws://127.0.0.1:1234";
@@ -134,7 +133,9 @@ export function createAgent(
   );
 
   agent.registerPlugin(minimalToolsPlugin);
-  agent.registerPlugin(new MemoryPlugin(llm, { cortexMemory: agent.memoryPlugin }));
+  agent.registerPlugin(
+    new MemoryPlugin(llm, { cortexMemory: agent.memoryPlugin }),
+  );
   agent.addInputSource(input);
 
   return { agent, input };

@@ -5,7 +5,7 @@ A modular AI agent framework built with Bun. Features a plugin-based architectur
 ## Requirements
 
 - [Bun](https://bun.sh) v1.3.9+
-- [LM Studio](https://lmstudio.ai) running locally with a model loaded (default: `nvidia/nemotron-3-nano-4b`)
+- [LM Studio](https://lmstudio.ai) running locally with a model loaded (default: `qwen/qwen3.5-35b-a3b`)
 
 Optional (enables specific plugins):
 - [ffmpeg](https://ffmpeg.org) in PATH — `FFmpegPlugin`, `YtDlpPlugin`, microphone input
@@ -133,7 +133,7 @@ Four memory types:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MODEL` | `nvidia/nemotron-3-nano-4b` | Chat model name as shown in LM Studio |
+| `MODEL` | `qwen/qwen3.5-35b-a3b` | Chat model name as shown in LM Studio |
 | `LM_STUDIO_URL` | `ws://127.0.0.1:1234` | LM Studio WebSocket endpoint |
 | `CODE_MODEL` | `qwen2.5-coder-7b-instruct-mlx` | Model used by `CodeSandboxPlugin` to generate Python |
 | `VISION_MODEL` | `google/gemma-3-4b` | Model used by `ImageVisionPlugin` for image analysis |
