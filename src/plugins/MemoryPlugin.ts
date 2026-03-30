@@ -1,6 +1,7 @@
 import type { Message } from "../core/types.ts";
 import type { AgentPlugin } from "../core/Plugin.ts";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
+import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
 import { logger } from "../logger.ts";
 
 export class MemoryPlugin implements AgentPlugin {
@@ -13,13 +14,19 @@ export class MemoryPlugin implements AgentPlugin {
   // Configuration for memory management
   private readonly MAX_MESSAGES: number;
   private readonly MIN_MESSAGES: number;
+  private readonly cortexMemory: CortexMemoryPlugin | undefined;
 
   constructor(
     private llm: LLMProvider,
-    { maxMessages = 15, minMessages = 5 }: { maxMessages?: number; minMessages?: number } = {},
+    {
+      maxMessages = 15,
+      minMessages = 5,
+      cortexMemory,
+    }: { maxMessages?: number; minMessages?: number; cortexMemory?: CortexMemoryPlugin } = {},
   ) {
     this.MAX_MESSAGES = maxMessages;
     this.MIN_MESSAGES = minMessages;
+    this.cortexMemory = cortexMemory;
   }
 
   async onMessage(
@@ -130,12 +137,72 @@ ${conversationText}`;
       };
 
       this.messages = recentMessages;
+
+      // Persist the structured summary to long-term memory (fire-and-forget)
+      if (this.cortexMemory && summaryResponse) {
+        this.cortexMemory.db
+          .addMemory(
+            `[SESSION_SUMMARY ${new Date().toISOString()}]\n${summaryResponse}`,
+            "factual",
+            ["session_summary"],
+          )
+          .catch((e) => logger.error("MemoryPlugin", "Failed to persist summary:", e));
+
+        // Extract procedures from the summarized messages (fire-and-forget)
+        this.extractProcedures(toSummarize).catch((e) =>
+          logger.error("MemoryPlugin", "Failed to extract procedures:", e),
+        );
+      }
     } catch (error) {
       logger.error("MemoryPlugin", "Failed to summarize context:", error);
 
       // 4. Safer fallback: Instead of splicing exactly 2, drop the old messages
       // entirely based on the splitIndex. This guarantees we still start on a 'user' message.
       this.messages = recentMessages;
+    }
+  }
+
+  /**
+   * Runs a second LLM pass over the summarized messages to extract tool-use
+   * rationale and decision chains, then saves the result as a procedure memory.
+   * Called fire-and-forget after summarization — does not block the main path.
+   */
+  private async extractProcedures(messages: Message[]): Promise<void> {
+    const hasToolActivity = messages.some((m) =>
+      /\b(tool|search|save|search_memory|hybrid_search|save_memory|save_behavior)\b/i.test(m.content),
+    );
+    if (!hasToolActivity) return;
+
+    const conversationText = messages.map((m) => `${m.role}: ${m.content}`).join("\n");
+    const extractionPrompt = `Review this conversation segment and extract any reusable procedures or decision chains.
+
+If there are tool calls with clear goals and steps, output a procedure in this format:
+GOAL: <short description of what was accomplished>
+STEPS:
+1. <step>
+2. <step>
+...
+
+If there are no meaningful procedures to extract, output: NONE
+
+Conversation:
+${conversationText}`;
+
+    try {
+      const { nonReasoningContent: extractionResponse } = await this.llm.chat([
+        { role: "user", content: extractionPrompt },
+      ]);
+
+      if (!extractionResponse || extractionResponse.trim() === "NONE") return;
+
+      await this.cortexMemory!.db.addMemory(
+        `[AUTO_EXTRACTED]\n${extractionResponse}`,
+        "procedure",
+        ["auto_extracted"],
+      );
+      logger.info("MemoryPlugin", "Extracted procedure from summarized context");
+    } catch (e) {
+      logger.error("MemoryPlugin", "extractProcedures LLM call failed:", e);
     }
   }
 }
