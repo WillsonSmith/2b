@@ -100,9 +100,18 @@ export class MemoryPlugin implements AgentPlugin {
       return;
     }
 
-    const summaryPrompt = `Summarize the key points of this conversation so far in 2-3 sentences:\n${toSummarize
+    const conversationText = toSummarize
       .map((m) => `${m.role}: ${m.content}`)
-      .join("\n")}`;
+      .join("\n");
+    const summaryPrompt = `Analyze this conversation segment and respond with exactly these four labeled sections:
+
+DECISIONS: Key decisions or conclusions reached (one per line, or "none")
+TOOLS: Tools called and what they returned or revealed (one per line, or "none")
+MEMORIES_SAVED: Facts or behaviors explicitly saved to long-term memory (one per line, or "none")
+OPEN_QUESTIONS: Unresolved questions or uncertainties that carry forward (one per line, or "none")
+
+Conversation:
+${conversationText}`;
 
     try {
       const { nonReasoningContent: summaryResponse } = await this.llm.chat([
