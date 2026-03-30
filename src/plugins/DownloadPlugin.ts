@@ -1,5 +1,6 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { join, resolve, relative, isAbsolute, basename } from "node:path";
+import { unlink } from "node:fs/promises";
 
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024; // 100 MB
 const DOWNLOAD_TIMEOUT_MS = 60_000;
@@ -131,6 +132,7 @@ export class DownloadPlugin implements AgentPlugin {
     const bytesWritten = await Bun.write(savePath, res);
 
     if (bytesWritten > MAX_DOWNLOAD_BYTES) {
+      await unlink(savePath).catch(() => {});
       throw new Error("File exceeds the 100 MB size limit.");
     }
 

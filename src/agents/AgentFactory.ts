@@ -9,9 +9,6 @@ import {
   SessionCache,
 } from "../core/PermissionManager.ts";
 import { createMediaAgent } from "./sub-agents/createMediaAgent.ts";
-import { createWebAgent } from "./sub-agents/createWebAgent.ts";
-import { createSystemAgent } from "./sub-agents/createSystemAgent.ts";
-import { createInfoAgent } from "./sub-agents/createInfoAgent.ts";
 import { createFileSystemAgent } from "./sub-agents/createFileSystemAgent.ts";
 import { createCodeReaderAgent } from "./sub-agents/createCodeReaderAgent.ts";
 
@@ -124,36 +121,6 @@ export function createAgent(
       absoluteTimeoutMs: 10_000,
     }),
   );
-  // agent.registerPlugin(
-  //   new SubAgentPlugin({
-  //     toolName: "web_agent",
-  //     description:
-  //       "Handles web research: searching the web and reading web page content.",
-  //     agent: createWebAgent(llm, { permissionManager }),
-  //     inactivityTimeoutMs: 60_000,
-  //     absoluteTimeoutMs: 120_000,
-  //   }),
-  // );
-  // agent.registerPlugin(
-  //   new SubAgentPlugin({
-  //     toolName: "system_agent",
-  //     description:
-  //       "Handles system operations: running shell commands, reading/writing files, clipboard access, and executing sandboxed code.",
-  //     agent: createSystemAgent(llm, { permissionManager }),
-  //     inactivityTimeoutMs: 30_000,
-  //     absoluteTimeoutMs: 120_000,
-  //   }),
-  // );
-  // agent.registerPlugin(
-  //   new SubAgentPlugin({
-  //     toolName: "info_agent",
-  //     description:
-  //       "Handles information lookup: movies via TMDB, weather conditions, and personal notes management.",
-  //     agent: createInfoAgent(llm, { permissionManager }),
-  //     inactivityTimeoutMs: 15_000,
-  //     absoluteTimeoutMs: 30_000,
-  //   }),
-  // );
   const sourceRoot = new URL("../..", import.meta.url).pathname;
   agent.registerPlugin(
     new SubAgentPlugin({
