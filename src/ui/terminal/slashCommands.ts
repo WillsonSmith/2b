@@ -4,8 +4,6 @@ export interface SlashCommandContext {
   session: ChatSession;
   showReasoning: boolean;
   setShowReasoning: (v: boolean) => void;
-  showTools: boolean;
-  setShowTools: (v: boolean) => void;
   currentModel: string;
   setCurrentModel: (model: string) => void;
   onModelChange: (model: string) => void;
@@ -16,7 +14,6 @@ const HELP_TEXT = `Available slash commands:
   /help              — show this list
   /clear             — clear the chat display
   /reasoning         — toggle reasoning/thinking display
-  /tools             — toggle tool call display
   /model [name]      — show current model or switch to a new one
   /retry             — resend the last user message
   /copy              — copy the last response to clipboard
@@ -49,13 +46,6 @@ export function handleSlashCommand(input: string, ctx: SlashCommandContext): boo
       const next = !ctx.showReasoning;
       ctx.setShowReasoning(next);
       ctx.session.addSystemMessage(`Reasoning display: ${next ? "on" : "off"}`);
-      return true;
-    }
-
-    case "tools": {
-      const next = !ctx.showTools;
-      ctx.setShowTools(next);
-      ctx.session.addSystemMessage(`Tool call display: ${next ? "on" : "off"}`);
       return true;
     }
 
