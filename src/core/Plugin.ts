@@ -14,8 +14,11 @@ export interface ToolDefinition {
 export interface AgentPlugin {
   name: string;
   onInit?: (agent: BaseAgent) => void | Promise<void>;
-  /** Return a string injected directly into the agent system prompt. */
-  getSystemPromptFragment?: () => string;
+  /**
+   * Return a string injected directly into the agent system prompt.
+   * @param context - The joined input text for the current turn, used for semantic retrieval.
+   */
+  getSystemPromptFragment?: (context?: string) => string | Promise<string>;
   /**
    * Return a string of context to inject into the current turn.
    * @param currentEvents - The raw input strings for the current turn.

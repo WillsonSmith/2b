@@ -220,9 +220,10 @@ export class BaseAgent extends EventEmitter {
     const systemPromptFragments: string[] = [];
     let pluginContext = "";
 
+    const inputContext = allInputs.join(" ");
     for (const plugin of this.plugins) {
       if (plugin.getSystemPromptFragment) {
-        const fragment = plugin.getSystemPromptFragment();
+        const fragment = await plugin.getSystemPromptFragment(inputContext);
         if (fragment) systemPromptFragments.push(fragment);
       }
       if (plugin.getContext) {

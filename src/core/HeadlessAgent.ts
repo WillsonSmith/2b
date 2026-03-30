@@ -44,7 +44,9 @@ export class HeadlessAgent {
     const fragments: string[] = [];
     const tools: ToolDefinition[] = [];
     for (const plugin of this.plugins) {
-      const fragment = plugin.getSystemPromptFragment?.();
+      const fragment = plugin.getSystemPromptFragment
+        ? await plugin.getSystemPromptFragment(task)
+        : undefined;
       if (fragment) fragments.push(fragment);
 
       if (plugin.getTools) {
