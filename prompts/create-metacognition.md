@@ -1,167 +1,162 @@
-# Build a Metacognition System for AI Assistant
+# Implement a MetacognitionPlugin for the 2b Agent Framework
 
-## Objective
-Create introspection capabilities that allow an AI assistant to understand its own cognitive
-processes, memory usage patterns, and behavioral rule applications in real-time.
+## Goal
+Create a `MetacognitionPlugin` that makes the agent's own cognitive processes visible to
+itself in real-time — surfacing memory retrieval metadata, active behavioral rules, tool
+usage patterns, and uncertainty signals. This is NOT a logging tool for developers; it's
+self-awareness infrastructure that shapes how the agent reasons.
 
-## Background Context
-The AI currently has access to external tools (search_memory, query_memories, etc.) but
-lacks awareness of how these tools shape its responses. The goal is to bridge the gap
-between "using memory" and "knowing that I'm using memory."
+## Codebase Context
 
----
+**Plugin system:** All capabilities are plugins implementing the interface in
+`src/core/Plugin.ts`. The 8 lifecycle hooks are:
+- `onInit(agent)` — subscribe to agent events, initialize state
+- `getSystemPromptFragment()` — inject static instructions every LLM call
+- `getContext(events?)` — inject dynamic context every LLM call
+- `getTools()` — expose callable tools to the LLM
+- `executeTool(name, args)` — handle tool calls
+- `onMessage(role, content, source)` — react to messages
+- `augmentResponse(response)` — transform response before emission
+- `onError(error)` — handle errors
 
-## Requirements
+**Agent events:** `BaseAgent` emits `tool_call` (name, args) before every tool execution.
+Use `agent.on('tool_call', ...)` in `onInit` to intercept all tool calls across all plugins.
 
-### 1. Memory Retrieval Introspection Layer
-**What it does:** Surface retrieval metadata alongside retrieved content so the AI can see
-WHY certain memories were surfaced.
+**Existing memory tools** (from `CortexMemoryPlugin`):
+- `search_memory`, `query_memories`, `hybrid_search` — retrieval
+- `save_memory`, `save_behavior`, `save_procedure`, `edit_memory`, `delete_memory`
+- `get_linked_memories`, `aggregate_memories`, `get_memory_timeline`
 
-**Required fields for each memory access:**
-- `retrieval_reason`: "semantic_match", "keyword_search", "linked_memory"
-- `confidence_score`: 0.0-1.0 (if available from search)
-- `total_candidates`: Number of memories considered before filtering
-- `filter_applied`: Which filters were used (type, tags, date_range)
+**ThoughtPlugin** already captures `<think>` blocks and synthesizes behavioral rules.
+`behavior` type memories in `CortexMemoryDatabase` are auto-injected into system prompt.
 
-**Implementation:** Create a wrapper function around all memory tool calls that captures and
-logs this metadata alongside the actual results.
+**SQLite backend:** `CortexMemoryDatabase` at `src/plugins/CortexMemoryDatabase.ts` handles
+all storage and search. The `searchMemories` method returns `MemoryRecord[]` — read it to
+understand the return shape before modifying.
 
----
+## Implementation
 
-### 2. Active Behavioral Rules Dashboard
-**What it does:** Allow introspection into which behavioral rules are currently active and
-how they're shaping responses.
+### Step 1 — Enrich `CortexMemoryDatabase.searchMemories()`
 
-**Required features:**
-- `/show_active_rules` command that lists all behaviors matching current context (e.g.,
-"emotional_context_detected" → activates empathy rules)
-- Each rule should show: `rule_id`, `name`, `trigger_condition`, `confidence_of_application`
-- Visual indicator of which rules are most influential in the current response
+Modify `searchMemories()` to return retrieval metadata alongside results. Add a new return
+type that includes, per result:
+- `confidence_score`: the cosine similarity score (already computed — surface it)
+- `total_candidates`: count of records checked before filtering
+- `filter_applied`: which fields were used to filter (type, tags, etc.)
+- `retrieval_method`: `"semantic"` | `"fulltext"` | `"hybrid"`
 
-**Implementation:** Create a metadata layer that tags each behavioral rule with trigger
-conditions, then build a query interface to match them against conversation state.
+Update `CortexMemoryPlugin`'s tool implementations to pass this metadata through as a
+separate field in the tool result (e.g., `_meta: { ... }`). Do not change the primary
+result shape that the LLM sees — add metadata as a side-channel.
 
----
+### Step 2 — Create `src/plugins/MetacognitionPlugin.ts`
 
-### 3. Cognitive Process Logging
-**What it does:** Distinguish between recall (memory retrieval) and inference (generating
-new content).
+Build a plugin that maintains **per-turn cognitive state** and exposes it to the agent.
 
-**Required log entries per response turn:**
-```json
-{
-  "turn_id": "<unique_id>",
-  "timestamp": "<ISO_8601>",
-  "memory_accesses": [
-    {"tool": "search_memory", "query": "...", "results_count": N, "ids": ["..."]}
-  ],
-  "inference_chain": [
-    {"step": 1, "type": "analysis", "content": "..."},
-    {"step": 2, "type": "synthesis", "content": "..."}
-  ],
-  "behavioral_rules_applied": ["rule_id_1", "rule_id_2"],
-  "uncertainty_markers": ["partial_info", "assumption_made"]
+**State to track (reset each turn, keyed by turn_id):**
+```typescript
+interface TurnState {
+  turn_id: string;            // uuid
+  started_at: Date;
+  tool_calls: ToolCallRecord[];
+  memory_access_count: number;
+  external_tool_count: number;
+  behavioral_rules_active: string[];  // names of behavior memories injected this turn
+  uncertainty_markers: string[];
+}
+
+interface ToolCallRecord {
+  tool: string;
+  args_summary: string;       // first 100 chars of JSON args, no sensitive content
+  category: "memory" | "external" | "system" | "other";
+  timestamp: Date;
+  result_meta?: Record<string, unknown>;  // the _meta side-channel from Step 1
 }
 ```
 
-**Implementation:** Create a logging middleware that intercepts all tool calls and response
-generation, capturing this structured data.
+**`onInit(agent)`:**
+- Subscribe to `tool_call` events to populate `TurnState.tool_calls`
+- Subscribe to `speak` events to finalize and archive the turn state
+- Categorize tools: memory tools → `"memory"`, web/shell/download/ytdlp/ffmpeg →
+  `"external"`, else `"system"` or `"other"`
+- Detect tool saturation: if `memory_access_count > 5` in a turn, add
+  `"tool_saturation"` to `uncertainty_markers`
 
----
+**`getContext()`:**
+Return a brief introspection summary injected into every system prompt:
 
-### 4. Tool Awareness Indicators
-**What it does:** Explicitly mark when the AI is relying on tools vs generating from
-internal reasoning.
+```
+[Metacognition]
+Turn: <turn_id>
+Memory accesses this turn: <N> (<tool_saturation warning if applicable>)
+Active behavioral rules: <comma-separated list or "none">
+Last tool: <most recent tool name or "none">
+Uncertainty: <markers or "none">
+```
 
-**Required behaviors:**
-- When using search_memory → prepend with `[Memory Search: ...]` in thought process
-- When using web_agent/media_agent → prepend with `[External Tool: ...]`
-- When generating without tool use → prepend with `[Internal Reasoning: ...]`
-- Allow the AI to detect "tool saturation" (e.g., >5 memory searches in one turn) and flag
-it
+Keep this under 10 lines. This is the AI's "inner state awareness."
 
-**Implementation:** Create a decorator/wrapper that adds these markers automatically based
-on which tools are invoked.
+**`getSystemPromptFragment()`:**
+Return a static instruction block that teaches the agent to use its own metacognition:
 
----
+```
+You have metacognition tools available. Before searching memory, state your intent with
+[Memory Search: <query>]. After tool-heavy turns, reflect on whether your reasoning relied
+on retrieval or inference. Use the introspect tool to examine your current cognitive state.
+Flag assumptions explicitly rather than presenting them as facts.
+```
 
-### 5. Memory Capacity Monitoring
-**What it does:** Alert when approaching system limits or experiencing retrieval
-degradation.
+**`getTools()`:** Expose three tools:
 
-**Required features:**
-- Track total memory count via aggregate_memories tool periodically
-- Monitor search query success rates (high failure rate = possible indexing issues)
-- Flag "stale memory reliance" (same memories retrieved repeatedly without new insights)
-- Create a `/memory_status` command showing: total_factual, total_thought, total_behavior,
-total_procedure counts
+1. **`introspect`** — Returns the full current `TurnState` as formatted text including
+   all tool calls, memory access count, active rules, and uncertainty markers.
 
-**Implementation:** Build periodic monitoring hooks that query system state and flag
-anomalies.
+2. **`memory_status`** — Calls `aggregate_memories` internally (or queries
+   `CortexMemoryDatabase` directly) and returns counts by type: factual, thought,
+   behavior, procedure. Also reports the current turn's memory access count and whether
+   tool saturation occurred.
 
----
+3. **`show_active_rules`** — Retrieves all `behavior` type memories from
+   `CortexMemoryDatabase` (these are the rules currently injected into the system prompt)
+   and displays them with their tags and creation date. These ARE the active behavioral
+   rules.
 
-### 6. Boundary Awareness System
-**What it does:** Help the AI recognize where "its perspective" ends and "system framework"
-begins.
+**`onMessage(role, content, source)`:**
+- When `role === "assistant"`: scan content for hedging language ("I think", "probably",
+  "I'm not sure", "I believe", "might be") and append `"hedged_language"` to
+  `uncertainty_markers` if found
+- When `role === "user"`: start a new `TurnState` (new turn_id, reset counters)
 
-**Required capabilities:**
-- Tag each generated response with: `memory_influence_score` (0.0-1.0) indicating how much
-memory shaped this vs pure reasoning
-- When confidence is low → explicitly state what information is missing rather than
-inferring
-- Create a `/introspect` command that outputs the current cognitive state including: active
-rules, recent memory accesses, uncertainty level
+### Step 3 — Register in `CortexAgent`
 
-**Implementation:** Build introspection endpoints and influence scoring based on tool usage
-patterns.
+In `src/agents/CortexAgent.ts`, import and register `MetacognitionPlugin` alongside
+`CortexMemoryPlugin` and `ThoughtPlugin`. Place it last so it can observe the other
+plugins' tool calls.
 
----
+### Step 4 — Update `src/plugins/CLAUDE.md`
 
-## Implementation Priority
+Add `MetacognitionPlugin` to the plugin catalog with a description of its tools and the
+cognitive state it tracks.
 
-### Phase 1 (Core): Memory Retrieval Introspection + Active Rules Dashboard
-- Easiest to implement
-- Immediate metacognition value
-- Can be tested quickly
+## Constraints
 
-### Phase 2 (Foundation): Cognitive Process Logging + Tool Awareness Indicators
-- Requires more system integration
-- Essential for distinguishing recall vs inference
+- Do NOT log raw message content — only tool names, arg summaries (truncated), and
+  category labels
+- The `getContext()` summary must stay brief — it's injected every LLM call and adds to
+  token cost
+- `show_active_rules` should read from the database directly, not maintain a separate
+  list — behavior memories ARE the active rules
+- Tool saturation threshold (5) should be a configurable constructor parameter with
+  default 5
+- Use `bun:sqlite` directly if you need to query `CortexMemoryDatabase` internals; don't
+  add a new ORM
+- Follow existing plugin conventions: constructor accepts `options?` object, all hooks
+  are async-safe, errors never throw (log via `console.warn`)
 
-### Phase 3 (Monitoring): Memory Capacity Monitoring + Boundary Awareness System
-- Most complex but provides long-term system health insights
-- Enables proactive optimization
+## Files to Create/Modify
 
----
-
-## Testing Criteria
-
-After implementation, the AI should be able to:
-1. Say "I'm searching memory for X" before actually doing so
-2. Report which behavioral rules are influencing this response
-3. Flag when it's making assumptions vs recalling facts
-4. Show confidence levels in its own reasoning chains
-5. Detect and report tool saturation or retrieval issues
-
----
-
-## Deliverables
-
-1. **MemoryIntrospectionWrapper** - Tool wrapper with metadata capture
-2. **RuleDashboardService** - Query interface for active behavioral rules
-3. **CognitiveLogger** - Structured logging middleware
-4. **ToolAwarenessDecorator** - Automatic marker injection system
-5. **MemoryMonitorService** - Capacity and health monitoring
-6. **IntrospectionEndpoint** - `/show_active_rules`, `/memory_status`, `/introspect`
-commands
-
----
-
-## Notes for Developer
-
-- This is NOT about adding more features, but making existing cognitive processes visible to
-the AI itself
-- The goal is genuine self-awareness, not just logging for debugging
-- Design with privacy in mind - avoid logging sensitive conversation content unnecessarily
-- Consider performance impact of introspection overhead (should be minimal)
+- **Create:** `src/plugins/MetacognitionPlugin.ts`
+- **Modify:** `src/plugins/CortexMemoryDatabase.ts` — enrich search return type
+- **Modify:** `src/plugins/CortexMemoryPlugin.ts` — pass through `_meta` side-channel
+- **Modify:** `src/agents/CortexAgent.ts` — register the new plugin
+- **Modify:** `src/plugins/CLAUDE.md` — add to plugin catalog

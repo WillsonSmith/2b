@@ -23,6 +23,9 @@ export class CortexMemoryPlugin implements AgentPlugin {
   /** Cached behavior memories, invalidated when save_behavior or delete_memory runs. */
   private behaviorCache: Array<{ text: string }> | null = null;
 
+  /** Side-channel metadata from the most recent memory search (keyed by tool name). */
+  public searchMetaBuffer: Map<string, Record<string, unknown>> = new Map();
+
   private readonly MAX_MEMORY_TEXT_LENGTH = 300;
 
   constructor(llmProvider: LLMProvider, name: string, dbPath?: string) {
@@ -333,7 +336,8 @@ export class CortexMemoryPlugin implements AgentPlugin {
 
   private async handleSearchMemory(args: any): Promise<string> {
     logger.info(this.name, `search_memory: "${args.query}"${args.type ? ` type=${args.type}` : ""}`);
-    const results = await this.db.search(args.query, 5, 0.4, args.type);
+    const { results, meta } = await this.db.searchWithStats(args.query, 5, 0.4, args.type);
+    this.searchMetaBuffer.set("search_memory", meta);
     logger.debug(this.name, `search_memory found ${results.length} results`);
     if (results.length === 0) return "No relevant memories found.";
     return results
@@ -445,6 +449,14 @@ export class CortexMemoryPlugin implements AgentPlugin {
     logger.info(this.name, `hybrid_search: "${args.query}"`);
     const filter: MemoryFilter = this.buildFilter(args);
     const results = await this.db.hybridSearch(args.query, filter, args.limit ?? 5, 0.4);
+    this.searchMetaBuffer.set("hybrid_search", {
+      total_candidates: results.length,
+      retrieval_method: "hybrid",
+      filter_applied: [
+        ...(filter.types ?? []).map((t) => `type=${t}`),
+        ...(filter.tags ?? []).map((t) => `tag=${t}`),
+      ],
+    });
     logger.debug(this.name, `hybrid_search found ${results.length} results`);
     if (results.length === 0) return "No memories match the given query and filters.";
     return results

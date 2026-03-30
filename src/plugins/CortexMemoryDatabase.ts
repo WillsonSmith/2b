@@ -13,6 +13,17 @@ export interface MemoryFilter {
   limit?: number;
 }
 
+export interface SearchMeta {
+  total_candidates: number;
+  retrieval_method: "semantic" | "fulltext" | "hybrid";
+  filter_applied: string[];
+}
+
+export interface SearchResultWithMeta {
+  results: Array<{ id: string; text: string; score: number; confidence_score: number }>;
+  meta: SearchMeta;
+}
+
 /** Standalone SQLite memory store with type support and memory linking. */
 export class CortexMemoryDatabase {
   private db: Database;
@@ -193,6 +204,36 @@ export class CortexMemoryDatabase {
       .filter((r) => r.score >= threshold)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
+  }
+
+  /** Search memories by embedding similarity and return results with retrieval metadata. */
+  public async searchWithStats(
+    query: string,
+    limit: number = 5,
+    threshold: number = 0.5,
+    type?: string | string[],
+  ): Promise<SearchResultWithMeta> {
+    const queryEmbedding = await this.llm.getEmbedding(query);
+
+    let totalCandidates: number;
+    if (Array.isArray(type)) {
+      const placeholders = type.map(() => "?").join(", ");
+      totalCandidates = (this.db.prepare(`SELECT COUNT(*) as count FROM memories WHERE type IN (${placeholders})`).get(...type) as { count: number }).count;
+    } else if (type) {
+      totalCandidates = (this.db.prepare(`SELECT COUNT(*) as count FROM memories WHERE type = ?`).get(type) as { count: number }).count;
+    } else {
+      totalCandidates = (this.db.prepare(`SELECT COUNT(*) as count FROM memories`).get() as { count: number }).count;
+    }
+
+    const results = this.searchWithEmbedding(queryEmbedding, limit, threshold, type);
+    const filterApplied = type
+      ? Array.isArray(type) ? type.map((t) => `type=${t}`) : [`type=${type}`]
+      : [];
+
+    return {
+      results: results.map((r) => ({ ...r, confidence_score: r.score })),
+      meta: { total_candidates: totalCandidates, retrieval_method: "semantic", filter_applied: filterApplied },
+    };
   }
 
   /** Filter memories by metadata. Returns results ordered by recency. */
