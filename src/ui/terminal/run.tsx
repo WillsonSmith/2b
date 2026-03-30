@@ -115,7 +115,7 @@ agent.registerPlugin(
   }),
 );
 agent.registerPlugin(minimalToolsPlugin);
-agent.registerPlugin(new MemoryPlugin(llm));
+agent.registerPlugin(new MemoryPlugin(llm, { cortexMemory: agent.memoryPlugin }));
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
