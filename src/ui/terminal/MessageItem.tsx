@@ -1,13 +1,57 @@
+import { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import type { ChatMessage } from "../types.ts";
+
+interface ThinkingBoxProps {
+  thought: string;
+  isInProgress: boolean;
+}
+
+function ThinkingBox({ thought, isInProgress }: ThinkingBoxProps) {
+  const [expanded, setExpanded] = useState(true);
+
+  useEffect(() => {
+    if (!isInProgress) {
+      setExpanded(false);
+    }
+  }, [isInProgress]);
+
+  const lineCount = thought.split("\n").length;
+
+  if (!expanded) {
+    return (
+      <Box marginLeft={2} marginBottom={1}>
+        <Text color="gray" dimColor>
+          {"▶ Thinking ("}
+          {lineCount}
+          {" lines)"}
+        </Text>
+      </Box>
+    );
+  }
+
+  return (
+    <Box
+      flexDirection="column"
+      marginLeft={2}
+      marginBottom={1}
+      borderStyle="single"
+      borderColor="gray"
+      paddingX={1}
+    >
+      <Text color="gray" dimColor>
+        {thought}
+      </Text>
+    </Box>
+  );
+}
 
 interface MessageItemProps {
   message: ChatMessage;
   showReasoning?: boolean;
-  showTools?: boolean;
 }
 
-export function MessageItem({ message, showReasoning = true, showTools = true }: MessageItemProps) {
+export function MessageItem({ message, showReasoning = true }: MessageItemProps) {
   // System messages — inline notifications from slash commands
   if (message.role === "system") {
     return (
@@ -20,6 +64,7 @@ export function MessageItem({ message, showReasoning = true, showTools = true }:
   }
 
   const isUser = message.role === "user";
+  const thinkingInProgress = message.status === "streaming" && message.content.length === 0;
 
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -28,28 +73,9 @@ export function MessageItem({ message, showReasoning = true, showTools = true }:
         {isUser ? "You" : "2b"}
       </Text>
 
-      {/* Thought block (reasoning) */}
+      {/* Thought block (reasoning) — collapsible */}
       {showReasoning && message.thought && (
-        <Box marginLeft={2} marginBottom={1}>
-          <Text color="gray" dimColor>
-            {"⟨think⟩ "}
-            {message.thought.length > 200
-              ? message.thought.slice(0, 200) + "…"
-              : message.thought}
-          </Text>
-        </Box>
-      )}
-
-      {/* Tool calls */}
-      {showTools && message.toolCalls.length > 0 && (
-        <Box flexDirection="column" marginLeft={2} marginBottom={1}>
-          {message.toolCalls.map((tc, i) => (
-            <Text key={i} color="yellow">
-              {"⚙ "}
-              {tc.name}
-            </Text>
-          ))}
-        </Box>
+        <ThinkingBox thought={message.thought} isInProgress={thinkingInProgress} />
       )}
 
       {/* Message content */}
