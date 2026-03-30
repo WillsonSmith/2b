@@ -141,14 +141,27 @@ export class MetacognitionPlugin implements AgentPlugin {
       ? " (TOOL SATURATION)"
       : "";
 
-    return [
+    const parts = [
       "[Metacognition]",
       `Turn: ${t.turn_id.slice(0, 8)}`,
       `Memory accesses this turn: ${t.memory_access_count}${saturationWarning}`,
       `Active behavioral rules: ${rules}`,
       `Last tool: ${lastTool}`,
       `Uncertainty: ${markers}`,
-    ].join("\n");
+    ];
+
+    if (t.uncertainty_markers.includes("tool_saturation")) {
+      parts.push(
+        "DIRECTIVE: Memory search threshold exceeded. Do not call search_memory or hybrid_search again this turn. Synthesize from what is already retrieved.",
+      );
+    }
+    if (t.uncertainty_markers.includes("hedged_language")) {
+      parts.push(
+        "DIRECTIVE: You hedged your last response. Retrieve a specific memory that resolves the uncertainty, or explicitly state the information is not in memory.",
+      );
+    }
+
+    return parts.join("\n");
   }
 
   getTools(): ToolDefinition[] {
