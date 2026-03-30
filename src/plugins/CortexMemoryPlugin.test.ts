@@ -132,19 +132,19 @@ describe("save_behavior", () => {
   test("invalidates behavior cache so next system prompt reload fetches fresh data", async () => {
     const plugin = makePlugin();
     // Prime the cache
-    plugin.getSystemPromptFragment();
+    await plugin.getSystemPromptFragment();
     // Save a behavior — should invalidate cache
     await plugin.executeTool("save_behavior", { rule: "Always respond concisely" });
     // Next system prompt call should include the new behavior
-    const prompt = plugin.getSystemPromptFragment();
+    const prompt = await plugin.getSystemPromptFragment();
     expect(prompt).toContain("Always respond concisely");
   });
 
   test("injects behavior into system prompt fragment", async () => {
     const plugin = makePlugin();
     await plugin.executeTool("save_behavior", { rule: "Use bullet points" });
-    const prompt = plugin.getSystemPromptFragment();
-    expect(prompt).toContain("Learned Behaviors");
+    const prompt = await plugin.getSystemPromptFragment();
+    expect(prompt).toContain("Behaviors");
     expect(prompt).toContain("Use bullet points");
   });
 
@@ -153,6 +153,41 @@ describe("save_behavior", () => {
     const huge = "b".repeat(10_001);
     const result = await plugin.executeTool("save_behavior", { rule: huge });
     expect(result).toContain("too long");
+  });
+
+  test("saves core behavior with 'core' tag when core: true", async () => {
+    const plugin = makePlugin();
+    const result = (await plugin.executeTool("save_behavior", { rule: "Always use markdown", core: true })) as string;
+    expect(result).toContain("core: true");
+    const memories = plugin.db.queryMemories({ types: ["behavior"], tags: ["core"] });
+    expect(memories).toHaveLength(1);
+    expect(memories[0]!.text).toBe("Always use markdown");
+  });
+
+  test("core behaviors always appear in prompt regardless of context", async () => {
+    const plugin = makePlugin();
+    await plugin.executeTool("save_behavior", { rule: "Always use markdown", core: true });
+    // No context provided — should still show core behavior
+    const prompt = await plugin.getSystemPromptFragment();
+    expect(prompt).toContain("## Core Behaviors");
+    expect(prompt).toContain("Always use markdown");
+  });
+
+  test("core behaviors are not duplicated in contextual section", async () => {
+    // All embeddings are identical (sim=1.0), so without deduplication the core
+    // behavior would appear in both sections.
+    const plugin = makePlugin();
+    await plugin.executeTool("save_behavior", { rule: "Core rule", core: true });
+    await plugin.executeTool("save_behavior", { rule: "Contextual rule", core: false });
+    const prompt = await plugin.getSystemPromptFragment("some user input");
+    // Core rule must appear exactly once
+    const coreCount = (prompt.match(/Core rule/g) ?? []).length;
+    expect(coreCount).toBe(1);
+    // Contextual rule should be present
+    expect(prompt).toContain("Contextual rule");
+    // Sections are labeled correctly
+    expect(prompt).toContain("## Core Behaviors");
+    expect(prompt).toContain("## Contextually Active Behaviors");
   });
 });
 
@@ -245,13 +280,13 @@ describe("delete_memory", () => {
     expect(memories).toHaveLength(1);
 
     // Prime the cache
-    plugin.getSystemPromptFragment();
+    await plugin.getSystemPromptFragment();
 
     // Delete the behavior
     await plugin.executeTool("delete_memory", { id: memories[0].id });
 
     // Cache should be invalidated — system prompt should no longer show the rule
-    const prompt = plugin.getSystemPromptFragment();
+    const prompt = await plugin.getSystemPromptFragment();
     expect(prompt).not.toContain("Speak formally");
   });
 
