@@ -1,10 +1,9 @@
 import { randomUUID } from "crypto";
-import { readdirSync, statSync, existsSync, readFileSync } from "node:fs";
-import { join, resolve, relative } from "node:path";
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import type { BaseAgent } from "../core/BaseAgent.ts";
 import type { Message } from "../core/types.ts";
 import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
+import { SourceReaderPlugin } from "./SourceReaderPlugin.ts";
 
 const MEMORY_TOOLS = new Set([
   "search_memory", "query_memories", "hybrid_search",
@@ -20,10 +19,12 @@ const EXTERNAL_TOOLS = new Set([
   "ffmpeg_extract_frames", "ffmpeg_screenshot", "ffmpeg_crop", "ffmpeg_speed", "ffmpeg_rotate",
 ]);
 
+const SOURCE_TOOLS = new Set(["read_source_file", "list_source_dir", "grep_source"]);
+
 const SYSTEM_TOOLS = new Set([
   "introspect", "memory_status", "show_active_rules",
   "list_registered_plugins", "list_available_tools", "get_system_prompt",
-  "read_source_file", "list_source_dir", "grep_source",
+  ...SOURCE_TOOLS,
 ]);
 
 interface ToolCallRecord {
@@ -55,7 +56,7 @@ export class MetacognitionPlugin implements AgentPlugin {
   name = "Metacognition";
   private currentTurn: TurnState;
   private readonly saturationThreshold: number;
-  private readonly sourceRoot: string;
+  private readonly sourceReader: SourceReaderPlugin;
   private agentRef: BaseAgent | null = null;
 
   constructor(
@@ -63,7 +64,7 @@ export class MetacognitionPlugin implements AgentPlugin {
     options?: { toolSaturationThreshold?: number; sourceRoot?: string },
   ) {
     this.saturationThreshold = options?.toolSaturationThreshold ?? 5;
-    this.sourceRoot = resolve(options?.sourceRoot ?? process.cwd());
+    this.sourceReader = new SourceReaderPlugin({ sourceRoot: options?.sourceRoot });
     this.currentTurn = this.newTurn();
   }
 
@@ -181,54 +182,8 @@ export class MetacognitionPlugin implements AgentPlugin {
           "Returns the full assembled system prompt from the most recent LLM call, showing exactly what instructions the model received.",
         parameters: { type: "object", properties: {} },
       },
-      // --- Source code reading ---
-      {
-        name: "read_source_file",
-        description:
-          "Reads a source file from the agent's codebase. Path is relative to the project root (e.g. 'src/plugins/MetacognitionPlugin.ts').",
-        parameters: {
-          type: "object",
-          properties: {
-            path: { type: "string", description: "Path relative to the project root" },
-          },
-          required: ["path"],
-        },
-      },
-      {
-        name: "list_source_dir",
-        description:
-          "Lists files and subdirectories at a path relative to the project root. Defaults to the project root if path is omitted.",
-        parameters: {
-          type: "object",
-          properties: {
-            path: {
-              type: "string",
-              description: "Directory path relative to the project root (default: project root)",
-            },
-          },
-        },
-      },
-      {
-        name: "grep_source",
-        description:
-          "Searches the agent's source code for a pattern using ripgrep. Returns matching lines with file paths and line numbers.",
-        parameters: {
-          type: "object",
-          properties: {
-            pattern: { type: "string", description: "Regex or literal pattern to search for" },
-            path: {
-              type: "string",
-              description:
-                "Directory or file to search within, relative to project root (default: src/)",
-            },
-            glob: {
-              type: "string",
-              description: "File glob filter (e.g. '*.ts', default: '*.ts')",
-            },
-          },
-          required: ["pattern"],
-        },
-      },
+      // --- Source code reading (delegated to SourceReaderPlugin) ---
+      ...this.sourceReader.getTools(),
     ];
   }
 
@@ -240,9 +195,7 @@ export class MetacognitionPlugin implements AgentPlugin {
       if (name === "list_registered_plugins") return this.handleListRegisteredPlugins();
       if (name === "list_available_tools") return this.handleListAvailableTools();
       if (name === "get_system_prompt") return this.handleGetSystemPrompt();
-      if (name === "read_source_file") return await this.handleReadSourceFile(args);
-      if (name === "list_source_dir") return this.handleListSourceDir(args);
-      if (name === "grep_source") return await this.handleGrepSource(args);
+      if (SOURCE_TOOLS.has(name)) return await this.sourceReader.executeTool(name, args);
     } catch (e) {
       console.warn(`[MetacognitionPlugin] Tool error (${name}):`, e);
       return `Tool error: ${e instanceof Error ? e.message : String(e)}`;
@@ -271,8 +224,6 @@ export class MetacognitionPlugin implements AgentPlugin {
       }
     }
   }
-
-  // ---- Cognitive state handlers ----
 
   private handleIntrospect(): string {
     const t = this.currentTurn;
@@ -332,8 +283,6 @@ export class MetacognitionPlugin implements AgentPlugin {
     }
   }
 
-  // ---- Runtime self-inspection handlers ----
-
   private handleListRegisteredPlugins(): string {
     if (!this.agentRef) return "Agent not initialised yet.";
     const plugins = this.agentRef.getRegisteredPlugins();
@@ -359,74 +308,5 @@ export class MetacognitionPlugin implements AgentPlugin {
     const prompt = this.agentRef.getLastSystemPrompt();
     if (!prompt) return "No system prompt recorded yet (agent hasn't completed a turn).";
     return `System prompt (${prompt.length} chars):\n\n${prompt}`;
-  }
-
-  // ---- Source code reading handlers ----
-
-  /** Resolve a user-supplied relative path safely within sourceRoot. Returns null if unsafe. */
-  private resolveSafe(userPath: string): string | null {
-    const abs = resolve(this.sourceRoot, userPath);
-    if (!abs.startsWith(this.sourceRoot)) return null;
-    return abs;
-  }
-
-  private async handleReadSourceFile(args: Record<string, unknown>): Promise<string> {
-    const userPath = String(args.path ?? "");
-    if (!userPath) return "path is required.";
-    const abs = this.resolveSafe(userPath);
-    if (!abs) return `Path '${userPath}' is outside the project root.`;
-    if (!existsSync(abs)) return `File not found: ${userPath}`;
-    const stat = statSync(abs);
-    if (stat.isDirectory()) return `'${userPath}' is a directory. Use list_source_dir instead.`;
-    if (stat.size > 500_000) return `File too large (${stat.size} bytes). Max 500 KB.`;
-    const content = readFileSync(abs, "utf8");
-    return `// ${userPath} (${stat.size} bytes)\n${content}`;
-  }
-
-  private handleListSourceDir(args: Record<string, unknown>): string {
-    const userPath = String(args.path ?? "");
-    const abs = this.resolveSafe(userPath || ".");
-    if (!abs) return `Path '${userPath}' is outside the project root.`;
-    if (!existsSync(abs)) return `Directory not found: ${userPath || "(project root)"}`;
-    const stat = statSync(abs);
-    if (!stat.isDirectory()) return `'${userPath}' is a file. Use read_source_file instead.`;
-
-    const entries = readdirSync(abs);
-    const lines = entries
-      .map((entry) => {
-        const full = join(abs, entry);
-        const isDir = statSync(full).isDirectory();
-        const relPath = relative(this.sourceRoot, full);
-        return isDir ? `  ${entry}/  (${relPath})` : `  ${entry}  (${relPath})`;
-      })
-      .sort();
-
-    const displayPath = userPath || "(project root)";
-    return [`${displayPath} — ${entries.length} entries:`, ...lines].join("\n");
-  }
-
-  private async handleGrepSource(args: Record<string, unknown>): Promise<string> {
-    const pattern = String(args.pattern ?? "");
-    if (!pattern) return "pattern is required.";
-    const userPath = String(args.path ?? "src");
-    const glob = String(args.glob ?? "*.ts");
-
-    const abs = this.resolveSafe(userPath);
-    if (!abs) return `Path '${userPath}' is outside the project root.`;
-    if (!existsSync(abs)) return `Path not found: ${userPath}`;
-
-    try {
-      const result =
-        await Bun.$`rg ${pattern} ${abs} --glob ${glob} --line-number --no-heading --max-count 5 --max-filesize 500K`.text();
-      if (!result.trim()) return `No matches for '${pattern}' in ${userPath}`;
-      // Make paths relative to sourceRoot for readability
-      const lines = result
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => line.replace(abs + "/", "").replace(this.sourceRoot + "/", ""));
-      return `Matches for '${pattern}' in ${userPath} (glob: ${glob}):\n${lines.join("\n")}`;
-    } catch {
-      return `No matches for '${pattern}' in ${userPath}`;
-    }
   }
 }

@@ -12,7 +12,8 @@ import { createMediaAgent } from "./sub-agents/createMediaAgent.ts";
 import { createWebAgent } from "./sub-agents/createWebAgent.ts";
 import { createSystemAgent } from "./sub-agents/createSystemAgent.ts";
 import { createInfoAgent } from "./sub-agents/createInfoAgent.ts";
-import { createFileSystemAgent } from "./sub-agents/createIoAgent.ts";
+import { createFileSystemAgent } from "./sub-agents/createFileSystemAgent.ts";
+import { createCodeReaderAgent } from "./sub-agents/createCodeReaderAgent.ts";
 
 // ── Inline tools ─────────────────────────────────────────────────────────────
 
@@ -153,6 +154,18 @@ export function createAgent(
   //     absoluteTimeoutMs: 30_000,
   //   }),
   // );
+  const sourceRoot = new URL("../..", import.meta.url).pathname;
+  agent.registerPlugin(
+    new SubAgentPlugin({
+      toolName: "explore_codebase",
+      description:
+        "Ask questions about the agent's own source code and get synthesized explanations. Use this to understand how the agent works, trace data flow, or look up implementation details. Example: 'How does tool_call flow through the system?' or 'What does MetacognitionPlugin track?'",
+      agent: createCodeReaderAgent({ sourceRoot }),
+      inactivityTimeoutMs: 30_000,
+      absoluteTimeoutMs: 60_000,
+    }),
+  );
+
   agent.registerPlugin(minimalToolsPlugin);
   agent.registerPlugin(new MemoryPlugin(llm));
   agent.addInputSource(input);
