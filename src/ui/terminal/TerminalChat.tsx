@@ -23,12 +23,11 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
   const [streamingMessage, setStreamingMessage] = useState<ChatMessage | null>(null);
 
   const [agentState, setAgentState] = useState<AgentState>("idle");
-  const [activeToolCall, setActiveToolCall] = useState<string | undefined>();
+  const [activeToolCalls, setActiveToolCalls] = useState<string[]>([]);
   const [input, setInput] = useState("");
 
   // Toggles — only affect the streaming message and new messages
   const [showReasoning, setShowReasoning] = useState(true);
-  const [showTools, setShowTools] = useState(true);
   const [currentModel, setCurrentModel] = useState(model);
 
   // Wire up ChatSession events
@@ -46,18 +45,20 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
       if (msg.status === "complete" || msg.status === "error") {
         setCompletedMessages((prev) => [...prev, msg]);
         setStreamingMessage(null);
-        setActiveToolCall(undefined);
+        setActiveToolCalls([]);
       } else {
         setStreamingMessage({ ...msg });
         if (msg.toolCalls.length > 0) {
-          setActiveToolCall(msg.toolCalls[msg.toolCalls.length - 1]?.name);
+          // Only the last tool call is currently running; earlier ones have already completed.
+          const lastName = msg.toolCalls[msg.toolCalls.length - 1]!.name;
+          setActiveToolCalls([lastName]);
         }
       }
     };
 
     const onStateChange = (state: AgentState) => {
       setAgentState(state);
-      if (state === "idle") setActiveToolCall(undefined);
+      if (state === "idle") setActiveToolCalls([]);
     };
 
     session.on("message", onMessage);
@@ -79,8 +80,6 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
         session,
         showReasoning,
         setShowReasoning,
-        showTools,
-        setShowTools,
         currentModel,
         setCurrentModel,
         onModelChange: onModelChange ?? (() => {}),
@@ -91,7 +90,7 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
         session.send(text);
       }
     },
-    [session, showReasoning, showTools, currentModel, onModelChange, systemPrompt],
+    [session, showReasoning, currentModel, onModelChange, systemPrompt],
   );
 
   // Ctrl+C → exit, Ctrl+X → interrupt current response
@@ -109,7 +108,7 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      {/* Completed messages — painted once and never re-rendered */}
+      {/* Completed messages — painted once, never re-rendered */}
       <Static items={completedMessages}>
         {(msg) => <MessageItem key={msg.id} message={msg} />}
       </Static>
@@ -119,12 +118,11 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
         <MessageItem
           message={streamingMessage}
           showReasoning={showReasoning}
-          showTools={showTools}
         />
       )}
 
       {/* Status + input */}
-      <StatusBar state={agentState} activeToolCall={activeToolCall} model={currentModel} />
+      <StatusBar state={agentState} activeToolCalls={activeToolCalls} model={currentModel} />
       <InputBar
         value={input}
         onChange={setInput}
