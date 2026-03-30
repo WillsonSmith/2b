@@ -107,7 +107,10 @@ export class MetacognitionPlugin implements AgentPlugin {
           this.currentTurn.uncertainty_markers.push("tool_saturation");
         }
         const meta = this.memoryPlugin.searchMetaBuffer.get(name);
-        if (meta) record.result_meta = meta;
+        if (meta) {
+          record.result_meta = meta;
+          this.memoryPlugin.searchMetaBuffer.delete(name);
+        }
       } else if (category === "external") {
         this.currentTurn.external_tool_count++;
       }

@@ -1,5 +1,5 @@
 import { readdirSync, statSync, existsSync, readFileSync } from "node:fs";
-import { join, resolve, relative } from "node:path";
+import { join, resolve, relative, sep } from "node:path";
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 
 export class SourceReaderPlugin implements AgentPlugin {
@@ -79,7 +79,7 @@ export class SourceReaderPlugin implements AgentPlugin {
   /** Resolve a user-supplied relative path safely within sourceRoot. Returns null if outside. */
   private resolveSafe(userPath: string): string | null {
     const abs = resolve(this.sourceRoot, userPath);
-    if (!abs.startsWith(this.sourceRoot)) return null;
+    if (abs !== this.sourceRoot && !abs.startsWith(this.sourceRoot + sep)) return null;
     return abs;
   }
 
