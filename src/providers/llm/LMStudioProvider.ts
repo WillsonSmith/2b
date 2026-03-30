@@ -287,6 +287,14 @@ export class LMStudioProvider implements LLMProvider {
     };
   }
 
+  public getModel(): string {
+    return this.model;
+  }
+
+  public setModel(model: string): void {
+    this.model = model;
+  }
+
   public async getEmbedding(text: string): Promise<number[]> {
     const model = await this.client.embedding.model(this.embeddingModel, {
       verbose: false,
