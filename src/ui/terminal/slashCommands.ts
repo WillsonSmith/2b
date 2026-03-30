@@ -13,7 +13,7 @@ export interface SlashCommandContext {
 const HELP_TEXT = `Available slash commands:
   /help              — show this list
   /clear             — clear the chat display
-  /reasoning         — toggle reasoning/thinking display (also ctrl+t)
+  /reasoning         — toggle reasoning/thinking display
   /model [name]      — show current model or switch to a new one
   /retry             — resend the last user message
   /copy              — copy the last response to clipboard

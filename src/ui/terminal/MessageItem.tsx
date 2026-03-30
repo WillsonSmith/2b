@@ -62,7 +62,8 @@ export function MessageItem({ message, showReasoning = true }: MessageItemProps)
   }
 
   const isUser = message.role === "user";
-  const thinkingInProgress = message.status === "streaming" && message.content.length === 0;
+  const displayContent = message.content.trimStart();
+  const thinkingInProgress = message.status === "streaming" && displayContent.length === 0;
 
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -84,7 +85,7 @@ export function MessageItem({ message, showReasoning = true }: MessageItemProps)
           <Text color="red">Error — something went wrong.</Text>
         ) : (
           <Text>
-            {message.content}
+            {displayContent}
             {message.status === "streaming" && (
               <Text color="cyan">▌</Text>
             )}
