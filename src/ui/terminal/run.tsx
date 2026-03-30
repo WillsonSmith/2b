@@ -22,7 +22,7 @@ import { createInfoAgent } from "../../agents/sub-agents/createInfoAgent.ts";
 import type { AgentPlugin, ToolDefinition } from "../../core/Plugin.ts";
 import { ChatSession } from "../ChatSession.ts";
 import { TerminalChat } from "./TerminalChat.tsx";
-import { createFileSystemAgent } from "../../agents/sub-agents/createIoAgent.ts";
+import { createFileSystemAgent } from "../../agents/sub-agents/createFileSystemAgent.ts";
 
 // ── Parse CLI args ────────────────────────────────────────────────────────────
 

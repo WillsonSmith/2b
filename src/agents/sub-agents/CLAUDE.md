@@ -23,7 +23,8 @@ The factory handles all plugin construction. Callers just pass `llm` and optiona
 |---------|-----------|---------|
 | `createMediaAgent` | `MediaAgent` | `YtDlpPlugin`, `FFmpegPlugin`, `ImageVisionPlugin` |
 | `createWebAgent` | `WebAgent` | `WebSearchPlugin`, `WebReaderPlugin`, `WikipediaPlugin`, `RSSPlugin` |
-| `createSystemAgent` | `SystemAgent` | `ShellPlugin`, `FileIOPlugin`, `ClipboardPlugin`, `CodeSandboxPlugin` |
+| `createFileSystemAgent` | `FileSystemAgent` | `FileSystemPlugin` |
+| `createSystemAgent` | `SystemAgent` | `ShellPlugin`, `FileSystemPlugin`, `DownloadPlugin`, `ClipboardPlugin`, `CodeSandboxPlugin` |
 | `createInfoAgent` | `InfoAgent` | `TMDBPlugin`, `WeatherPlugin`, `NotesPlugin` |
 
 ## Options Pattern
