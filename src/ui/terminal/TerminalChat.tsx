@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Box, Static, useInput, useApp } from "ink";
+import { Box, useInput, useApp } from "ink";
 import type { ChatSession } from "../ChatSession.ts";
 import type { ChatMessage, AgentState } from "../types.ts";
 import { MessageItem } from "./MessageItem.tsx";
@@ -92,7 +92,7 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
     [session, showReasoning, currentModel, onModelChange, systemPrompt],
   );
 
-  // Ctrl+C → exit, Ctrl+X → interrupt, Ctrl+T → toggle thinking display
+  // Ctrl+C → exit, Ctrl+X → interrupt current response
   useInput((inp, key) => {
     if (key.ctrl && inp === "c") {
       session.interrupt();
@@ -101,19 +101,16 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
     if (key.ctrl && inp === "x") {
       session.interrupt();
     }
-    if (key.ctrl && inp === "t") {
-      setShowReasoning((prev) => !prev);
-    }
   });
 
   const isThinking = agentState === "thinking";
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      {/* Completed messages — painted once and never re-rendered */}
-      <Static items={completedMessages}>
-        {(msg) => <MessageItem key={msg.id} message={msg} />}
-      </Static>
+      {/* Completed messages */}
+      {completedMessages.map((msg) => (
+        <MessageItem key={msg.id} message={msg} showReasoning={showReasoning} />
+      ))}
 
       {/* Live streaming message */}
       {streamingMessage && (
