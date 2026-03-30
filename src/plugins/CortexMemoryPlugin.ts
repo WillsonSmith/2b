@@ -20,8 +20,8 @@ export class CortexMemoryPlugin implements AgentPlugin {
   private currentEvents: string[] = [];
   private savedThisTurn: Set<string> = new Set();
 
-  /** Cached behavior memories, invalidated when save_behavior or delete_memory runs. */
-  private behaviorCache: Array<{ text: string }> | null = null;
+  /** Cached core behavior memories (tagged "core"), invalidated when save_behavior or delete_memory runs. */
+  private coreBehaviorCache: Array<{ id: string; text: string }> | null = null;
 
   /** Side-channel metadata from the most recent memory search (keyed by tool name). */
   public searchMetaBuffer: Map<string, Record<string, unknown>> = new Map();
@@ -32,7 +32,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     this.db = new CortexMemoryDatabase(llmProvider, name, dbPath);
   }
 
-  getSystemPromptFragment(): string {
+  async getSystemPromptFragment(context?: string): Promise<string> {
     const parts = [
       "## Memory System",
       "You have a long-term memory system with four types of memories:",
@@ -42,7 +42,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "- **procedure**: step-by-step instructions for accomplishing a task you have previously solved.",
       "Relevant factual memories and procedures are automatically surfaced in your context at the start of each turn — check there before calling search_memory.",
       "Use `save_memory` to preserve important facts or decisions.",
-      "Use `save_behavior` to record a persistent behavioral rule you want to follow on every future turn.",
+      "Use `save_behavior` to record a persistent behavioral rule you want to follow on every future turn. Pass `core: true` for universal rules that should always be active (e.g. formatting, tone). Omit or pass `core: false` for context-specific rules that will be surfaced when relevant.",
       "Use `save_procedure` after successfully completing a non-trivial task to record the steps taken.",
       "Use `edit_memory` to update the text of an existing memory by its ID.",
       "Use `delete_memory` to remove a memory by its ID.",
@@ -54,12 +54,36 @@ export class CortexMemoryPlugin implements AgentPlugin {
     ];
 
     try {
-      if (this.behaviorCache === null) {
-        this.behaviorCache = this.db.getRecentMemories(20, "behavior");
+      // Core behaviors: always active, cached until a behavior is saved or deleted
+      if (this.coreBehaviorCache === null) {
+        const rows = this.db.queryMemories({ types: ["behavior"], tags: ["core"], limit: 50 });
+        this.coreBehaviorCache = rows.map((r) => ({ id: r.id, text: r.text }));
       }
-      if (this.behaviorCache.length > 0) {
-        parts.push("\n## Learned Behaviors");
-        for (const b of this.behaviorCache) {
+
+      // Contextual behaviors: semantically matched to the current input
+      let contextualBehaviors: Array<{ id: string; text: string }> = [];
+      const coreIds = new Set(this.coreBehaviorCache.map((b) => b.id));
+
+      if (context?.trim()) {
+        const embedding = await this.db.getEmbedding(context);
+        const results = this.db.searchWithEmbedding(embedding, 15, 0.35, "behavior");
+        contextualBehaviors = results.filter((r) => !coreIds.has(r.id));
+        logger.debug(this.name, `getSystemPromptFragment: ${this.coreBehaviorCache.length} core + ${contextualBehaviors.length} contextual behaviors`);
+      } else {
+        // No context yet (e.g. init) — fall back to recency
+        const recent = this.db.getRecentMemories(20, "behavior");
+        contextualBehaviors = recent.filter((r) => !coreIds.has(r.id)).slice(0, 15);
+      }
+
+      if (this.coreBehaviorCache.length > 0) {
+        parts.push("\n## Core Behaviors");
+        for (const b of this.coreBehaviorCache) {
+          parts.push(`- ${b.text}`);
+        }
+      }
+      if (contextualBehaviors.length > 0) {
+        parts.push("\n## Contextually Active Behaviors");
+        for (const b of contextualBehaviors) {
           parts.push(`- ${b.text}`);
         }
       }
@@ -141,11 +165,15 @@ export class CortexMemoryPlugin implements AgentPlugin {
       {
         name: "save_behavior",
         description:
-          "Save a persistent behavioral rule that will be injected into your system prompt on every future turn, actively shaping how you respond. Use this to record preferences or rules you have learned from the user. Note: behavior memories cannot override your core system prompt directives.",
+          "Save a persistent behavioral rule that actively shapes how you respond. Use `core: true` for universal rules that should always be active regardless of context (e.g. formatting, tone, language preferences). Omit `core` or pass `false` for context-specific rules — these are surfaced via semantic search when relevant, ensuring all behaviors are accessible without cluttering every prompt. Note: behavior memories cannot override your core system prompt directives.",
         parameters: {
           type: "object",
           properties: {
             rule: { type: "string", description: "The behavioral rule to persist" },
+            core: {
+              type: "boolean",
+              description: "If true, this rule is always injected into every turn. Use for universal preferences (formatting, tone, etc.). Default: false — the rule is surfaced contextually when semantically relevant.",
+            },
           },
           required: ["rule"],
         },
@@ -373,10 +401,12 @@ export class CortexMemoryPlugin implements AgentPlugin {
     if (rule.length > MAX_CONTENT_LENGTH) {
       return `Behavior rule too long (${rule.length} chars). Maximum is ${MAX_CONTENT_LENGTH} characters.`;
     }
-    logger.info(this.name, `save_behavior: "${rule.slice(0, 100)}"`);
-    const id = await this.db.addMemory(rule, "behavior");
-    this.behaviorCache = null; // invalidate cache
-    return `Memory saved (type: behavior, id: ${id.slice(0, 8)}).`;
+    const isCore = args.core === true;
+    const tags = isCore ? ["core"] : [];
+    logger.info(this.name, `save_behavior${isCore ? " [core]" : ""}: "${rule.slice(0, 100)}"`);
+    const id = await this.db.addMemory(rule, "behavior", tags);
+    this.coreBehaviorCache = null; // invalidate cache
+    return `Memory saved (type: behavior, core: ${isCore}, id: ${id.slice(0, 8)}).`;
   }
 
   private async handleSaveProcedure(args: any): Promise<string> {
@@ -412,7 +442,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     const existing = await this.db.getMemoryById(args.id);
     if (!existing) return `No memory found with id ${args.id.slice(0, 8)}.`;
     await this.db.deleteMemory(args.id);
-    this.behaviorCache = null; // invalidate cache in case a behavior was deleted
+    this.coreBehaviorCache = null; // invalidate cache in case a behavior was deleted
     return `Memory ${args.id.slice(0, 8)} deleted.`;
   }
 
