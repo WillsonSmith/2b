@@ -92,7 +92,7 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
     [session, showReasoning, currentModel, onModelChange, systemPrompt],
   );
 
-  // Ctrl+C → exit, Ctrl+X → interrupt current response
+  // Ctrl+C → exit, Ctrl+X → interrupt, Ctrl+T → toggle thinking display
   useInput((inp, key) => {
     if (key.ctrl && inp === "c") {
       session.interrupt();
@@ -100,6 +100,9 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
     }
     if (key.ctrl && inp === "x") {
       session.interrupt();
+    }
+    if (key.ctrl && inp === "t") {
+      setShowReasoning((prev) => !prev);
     }
   });
 
