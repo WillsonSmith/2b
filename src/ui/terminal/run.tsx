@@ -16,13 +16,11 @@ import { MemoryPlugin } from "../../plugins/MemoryPlugin.ts";
 import { SubAgentPlugin } from "../../plugins/SubAgentPlugin.ts";
 import { AutoApprovePermissionManager } from "../../core/PermissionManager.ts";
 import { createMediaAgent } from "../../agents/sub-agents/createMediaAgent.ts";
-import { createWebAgent } from "../../agents/sub-agents/createWebAgent.ts";
-import { createSystemAgent } from "../../agents/sub-agents/createSystemAgent.ts";
-import { createInfoAgent } from "../../agents/sub-agents/createInfoAgent.ts";
 import type { AgentPlugin, ToolDefinition } from "../../core/Plugin.ts";
 import { ChatSession } from "../ChatSession.ts";
 import { TerminalChat } from "./TerminalChat.tsx";
 import { createFileSystemAgent } from "../../agents/sub-agents/createFileSystemAgent.ts";
+import { createCodeReaderAgent } from "../../agents/sub-agents/createCodeReaderAgent.ts";
 
 // ── Parse CLI args ────────────────────────────────────────────────────────────
 
@@ -105,35 +103,17 @@ agent.registerPlugin(
     absoluteTimeoutMs: 10_000,
   }),
 );
-// agent.registerPlugin(
-//   new SubAgentPlugin({
-//     toolName: "web_agent",
-//     description: "Handles web research: searching the web and reading web page content.",
-//     agent: createWebAgent(llm, { permissionManager }),
-//     inactivityTimeoutMs: 60_000,
-//     absoluteTimeoutMs: 120_000,
-//   }),
-// );
-// agent.registerPlugin(
-//   new SubAgentPlugin({
-//     toolName: "system_agent",
-//     description:
-//       "Handles system operations: running shell commands, reading/writing files, clipboard access, and executing sandboxed code.",
-//     agent: createSystemAgent(llm, { permissionManager }),
-//     inactivityTimeoutMs: 30_000,
-//     absoluteTimeoutMs: 120_000,
-//   }),
-// );
-// agent.registerPlugin(
-//   new SubAgentPlugin({
-//     toolName: "info_agent",
-//     description:
-//       "Handles information lookup: movies via TMDB, weather conditions, and personal notes management.",
-//     agent: createInfoAgent(llm, { permissionManager }),
-//     inactivityTimeoutMs: 15_000,
-//     absoluteTimeoutMs: 30_000,
-//   }),
-// );
+const sourceRoot = new URL("../..", import.meta.url).pathname;
+agent.registerPlugin(
+  new SubAgentPlugin({
+    toolName: "explore_codebase",
+    description:
+      "Ask questions about the agent's own source code and get synthesized explanations. Use this to understand how the agent works, trace data flow, or look up implementation details. Example: 'How does tool_call flow through the system?' or 'What does MetacognitionPlugin track?'",
+    agent: createCodeReaderAgent({ sourceRoot }),
+    inactivityTimeoutMs: 30_000,
+    absoluteTimeoutMs: 60_000,
+  }),
+);
 agent.registerPlugin(minimalToolsPlugin);
 agent.registerPlugin(new MemoryPlugin(llm));
 
