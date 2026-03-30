@@ -117,6 +117,13 @@ export class CortexMemoryPlugin implements AgentPlugin {
       if (procedureResults.length > 0) {
         parts.push(`Relevant procedure:\n${procedureResults[0]!.text}`);
       }
+      const recentThoughts = this.db.getRecentMemories(2, "thought");
+      if (recentThoughts.length > 0) {
+        parts.push(
+          `Recent thoughts:\n${recentThoughts.map((t) => `- ${t.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH)}`).join("\n")}`,
+        );
+      }
+
       return parts.join("\n\n");
     } catch {
       return "";
