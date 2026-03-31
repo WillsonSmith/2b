@@ -10,6 +10,7 @@ export interface AgentEventMap {
   log: [message: string];
   speak: [response: string];
   tool_call: [name: string, args: Record<string, unknown>];
+  tool_call_blocked: [name: string, args: Record<string, unknown>, reason: string];
 }
 
 export type Message = {

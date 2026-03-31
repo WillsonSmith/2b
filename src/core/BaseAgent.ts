@@ -267,6 +267,15 @@ export class BaseAgent extends EventEmitter {
                 });
                 if (!allowed) return { error: "Permission denied by user." };
               }
+              for (const vetoPlugin of this.plugins) {
+                if (vetoPlugin.onBeforeToolCall) {
+                  const verdict = vetoPlugin.onBeforeToolCall(toolName, args as Record<string, unknown>);
+                  if (!verdict.allow) {
+                    this.emit("tool_call_blocked", toolName, args as Record<string, unknown>, verdict.reason);
+                    return verdict.reason;
+                  }
+                }
+              }
               this.emit("tool_call", toolName, args);
               return plugin.executeTool!(toolName, args);
             };
