@@ -269,10 +269,14 @@ export class BaseAgent extends EventEmitter {
               }
               for (const vetoPlugin of this.plugins) {
                 if (vetoPlugin.onBeforeToolCall) {
-                  const verdict = vetoPlugin.onBeforeToolCall(toolName, args as Record<string, unknown>);
-                  if (!verdict.allow) {
-                    this.emit("tool_call_blocked", toolName, args as Record<string, unknown>, verdict.reason);
-                    return verdict.reason;
+                  try {
+                    const verdict = vetoPlugin.onBeforeToolCall(toolName, args as Record<string, unknown>);
+                    if (!verdict.allow) {
+                      this.emit("tool_call_blocked", toolName, args as Record<string, unknown>, verdict.reason);
+                      return verdict.reason;
+                    }
+                  } catch (e) {
+                    logger.error("BaseAgent", `onBeforeToolCall threw in ${vetoPlugin.name}:`, e);
                   }
                 }
               }
