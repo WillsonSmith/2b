@@ -7,23 +7,29 @@ import {
   unlink,
   mkdir,
   stat as fsStat,
+  lstat as fsLstat,
+  realpath as fsRealpath,
   appendFile as fsAppendFile,
 } from "node:fs/promises";
 
 const MAX_READ_BYTES = 1 * 1024 * 1024; // 1 MB
-const BASE_DIR = process.cwd();
-
-function validatePath(path: string): string {
-  const resolved = resolve(BASE_DIR, path);
-  const rel = relative(BASE_DIR, resolved);
-  if (rel.startsWith("..") || isAbsolute(rel)) {
-    throw new Error("Path must be within the working directory.");
-  }
-  return resolved;
-}
 
 export class FileSystemPlugin implements AgentPlugin {
   name = "FileSystem";
+  private readonly baseDir: string;
+
+  constructor() {
+    this.baseDir = process.cwd();
+  }
+
+  private validatePath(path: string): string {
+    const resolved = resolve(this.baseDir, path);
+    const rel = relative(this.baseDir, resolved);
+    if (rel.startsWith("..") || isAbsolute(rel)) {
+      throw new Error("Path must be within the working directory.");
+    }
+    return resolved;
+  }
 
   getSystemPromptFragment(): string {
     return [
@@ -44,6 +50,7 @@ export class FileSystemPlugin implements AgentPlugin {
 
   getTools(): ToolDefinition[] {
     return [
+      // Read-only tools (no permission field — approved implicitly)
       {
         name: "read_file",
         description:
@@ -67,6 +74,57 @@ export class FileSystemPlugin implements AgentPlugin {
           required: ["path"],
         },
       },
+      {
+        name: "list_directory",
+        description:
+          "List the contents of a directory. Returns each entry's name, type (file/directory/symlink), and size for files. Defaults to the working directory.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description:
+                "Path to the directory, relative to the working directory. Omit to list the working directory.",
+            },
+          },
+          required: [],
+        },
+      },
+      {
+        name: "stat_file",
+        description:
+          "Get metadata for a file or directory: type (file/directory/other), size in bytes, and last-modified timestamp.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description: "Path to the file or directory, relative to the working directory.",
+            },
+          },
+          required: ["path"],
+        },
+      },
+      {
+        name: "find_files",
+        description:
+          "Search for files matching a glob pattern within the working directory. Use ** to match any number of path segments (e.g. '**/*.ts', 'src/**/*.json', '*.md').",
+        parameters: {
+          type: "object",
+          properties: {
+            pattern: {
+              type: "string",
+              description: "Glob pattern to match against file paths.",
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results to return. Omit to return all matches.",
+            },
+          },
+          required: ["pattern"],
+        },
+      },
+      // Mutating tools (permission: "per_call" — user approves each invocation)
       {
         name: "write_file",
         permission: "per_call" as const,
@@ -105,22 +163,6 @@ export class FileSystemPlugin implements AgentPlugin {
             },
           },
           required: ["path", "content"],
-        },
-      },
-      {
-        name: "list_directory",
-        description:
-          "List the contents of a directory. Returns each entry's name, type (file/directory/symlink), and size for files. Defaults to the working directory.",
-        parameters: {
-          type: "object",
-          properties: {
-            path: {
-              type: "string",
-              description:
-                "Path to the directory, relative to the working directory. Omit to list the working directory.",
-            },
-          },
-          required: [],
         },
       },
       {
@@ -194,36 +236,6 @@ export class FileSystemPlugin implements AgentPlugin {
           required: ["path"],
         },
       },
-      {
-        name: "stat_file",
-        description:
-          "Get metadata for a file or directory: type (file/directory/other), size in bytes, and last-modified timestamp.",
-        parameters: {
-          type: "object",
-          properties: {
-            path: {
-              type: "string",
-              description: "Path to the file or directory, relative to the working directory.",
-            },
-          },
-          required: ["path"],
-        },
-      },
-      {
-        name: "find_files",
-        description:
-          "Search for files matching a glob pattern within the working directory. Use ** to match any number of path segments (e.g. '**/*.ts', 'src/**/*.json', '*.md').",
-        parameters: {
-          type: "object",
-          properties: {
-            pattern: {
-              type: "string",
-              description: "Glob pattern to match against file paths.",
-            },
-          },
-          required: ["pattern"],
-        },
-      },
     ];
   }
 
@@ -252,7 +264,7 @@ export class FileSystemPlugin implements AgentPlugin {
       case "stat_file":
         return this.statFile(args.path as string);
       case "find_files":
-        return this.findFiles(args.pattern as string);
+        return this.findFiles(args.pattern as string, args.limit as number | undefined);
       default:
         return undefined;
     }
@@ -263,14 +275,17 @@ export class FileSystemPlugin implements AgentPlugin {
     offset?: number,
     limit?: number,
   ): Promise<{ path: string; content: string; totalLines: number; returnedLines: number; size: number }> {
-    const resolved = validatePath(path);
+    const resolved = this.validatePath(path);
     const file = Bun.file(resolved);
     const size = file.size;
-    if (size > MAX_READ_BYTES) {
+
+    // Only block when no pagination is requested — pagination makes large files accessible
+    if (offset === undefined && limit === undefined && size > MAX_READ_BYTES) {
       throw new Error(
-        `File is ${size} bytes, which exceeds the 1 MB read limit. Use offset and limit to read specific sections.`,
+        `File is ${size} bytes, which exceeds the 1 MB read limit. Use offset and limit to page through it.`,
       );
     }
+
     const raw = await file.text();
     const lines = raw.split("\n");
     const totalLines = lines.length;
@@ -279,7 +294,7 @@ export class FileSystemPlugin implements AgentPlugin {
     const sliced = limit !== undefined ? lines.slice(start, start + limit) : lines.slice(start);
 
     return {
-      path: resolved,
+      path: relative(this.baseDir, resolved),
       content: sliced.join("\n"),
       totalLines,
       returnedLines: sliced.length,
@@ -288,30 +303,31 @@ export class FileSystemPlugin implements AgentPlugin {
   }
 
   private async writeFile(path: string, content: string): Promise<{ path: string; size: number }> {
-    const resolved = validatePath(path);
+    const resolved = this.validatePath(path);
     await mkdir(dirname(resolved), { recursive: true });
     const size = await Bun.write(resolved, content);
-    return { path: resolved, size };
+    return { path: relative(this.baseDir, resolved), size };
   }
 
-  private async appendFile(path: string, content: string): Promise<{ path: string }> {
-    const resolved = validatePath(path);
+  private async appendFile(path: string, content: string): Promise<{ path: string; size: number }> {
+    const resolved = this.validatePath(path);
     await mkdir(dirname(resolved), { recursive: true });
     await fsAppendFile(resolved, content);
-    return { path: resolved };
+    const size = Bun.file(resolved).size;
+    return { path: relative(this.baseDir, resolved), size };
   }
 
   private async listDirectory(
     path?: string,
   ): Promise<{ path: string; entries: { name: string; type: "file" | "directory" | "symlink"; size?: number }[] }> {
-    const resolved = validatePath(path ?? ".");
+    const resolved = this.validatePath(path ?? ".");
     const dirents = await readdir(resolved, { withFileTypes: true });
 
     const entries = await Promise.all(
       dirents.map(async (entry) => {
         const entryPath = join(resolved, entry.name);
         if (entry.isFile()) {
-          const size = Bun.file(entryPath).size;
+          const { size } = await fsStat(entryPath);
           return { name: entry.name, type: "file" as const, size };
         }
         if (entry.isDirectory()) {
@@ -325,57 +341,72 @@ export class FileSystemPlugin implements AgentPlugin {
     );
 
     return {
-      path: resolved,
+      path: relative(this.baseDir, resolved) || ".",
       entries: entries.filter((e): e is NonNullable<typeof e> => e !== null),
     };
   }
 
   private async moveFile(source: string, destination: string): Promise<{ from: string; to: string }> {
-    const from = validatePath(source);
-    const to = validatePath(destination);
+    const from = this.validatePath(source);
+    const to = this.validatePath(destination);
     await mkdir(dirname(to), { recursive: true });
     await fsRename(from, to);
-    return { from, to };
+    return { from: relative(this.baseDir, from), to: relative(this.baseDir, to) };
   }
 
   private async copyFile(source: string, destination: string): Promise<{ from: string; to: string }> {
-    const from = validatePath(source);
-    const to = validatePath(destination);
+    const from = this.validatePath(source);
+    const to = this.validatePath(destination);
     await mkdir(dirname(to), { recursive: true });
     await fsCopyFile(from, to);
-    return { from, to };
+    return { from: relative(this.baseDir, from), to: relative(this.baseDir, to) };
   }
 
   private async deleteFile(path: string): Promise<{ path: string }> {
-    const resolved = validatePath(path);
+    const resolved = this.validatePath(path);
+    // Verify that symlink targets also reside within baseDir before deleting
+    const lstatResult = await fsLstat(resolved);
+    if (lstatResult.isSymbolicLink()) {
+      const realTarget = await fsRealpath(resolved);
+      const rel = relative(this.baseDir, realTarget);
+      if (rel.startsWith("..") || isAbsolute(rel)) {
+        throw new Error("Refusing to delete: symlink target is outside the working directory.");
+      }
+    }
     await unlink(resolved);
-    return { path: resolved };
+    return { path: relative(this.baseDir, resolved) };
   }
 
   private async makeDirectory(path: string): Promise<{ path: string }> {
-    const resolved = validatePath(path);
+    const resolved = this.validatePath(path);
     await mkdir(resolved, { recursive: true });
-    return { path: resolved };
+    return { path: relative(this.baseDir, resolved) };
   }
 
   private async statFile(
     path: string,
   ): Promise<{ path: string; type: "file" | "directory" | "other"; size: number; modifiedAt: string }> {
-    const resolved = validatePath(path);
+    const resolved = this.validatePath(path);
     const s = await fsStat(resolved);
     return {
-      path: resolved,
+      path: relative(this.baseDir, resolved),
       type: s.isFile() ? "file" : s.isDirectory() ? "directory" : "other",
       size: s.size,
       modifiedAt: s.mtime.toISOString(),
     };
   }
 
-  private async findFiles(pattern: string): Promise<{ pattern: string; matches: string[] }> {
+  private async findFiles(
+    pattern: string,
+    limit?: number,
+  ): Promise<{ pattern: string; matches: string[]; truncated?: boolean }> {
     const glob = new Bun.Glob(pattern);
     const matches: string[] = [];
-    for await (const file of glob.scan({ cwd: BASE_DIR, onlyFiles: false, dot: true })) {
+    for await (const file of glob.scan({ cwd: this.baseDir, onlyFiles: true, dot: true })) {
       matches.push(file);
+      if (limit !== undefined && matches.length >= limit) {
+        return { pattern, matches: matches.sort(), truncated: true };
+      }
     }
     return { pattern, matches: matches.sort() };
   }
