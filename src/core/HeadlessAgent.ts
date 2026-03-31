@@ -21,7 +21,7 @@ export interface HeadlessAgentOptions {
  * task input verbatim, as context is injected into the system prompt.
  */
 export class HeadlessAgent {
-  private toolCallHandler?: (event: "start" | "end", name: string, args: Record<string, unknown>) => void;
+  private toolCallHandler?: (name: string, args: Record<string, unknown>) => void;
 
   constructor(
     private readonly llm: LLMProvider,
@@ -30,7 +30,7 @@ export class HeadlessAgent {
     private readonly options: HeadlessAgentOptions = {},
   ) {}
 
-  setToolCallHandler(fn: (event: "start" | "end", name: string, args: Record<string, unknown>) => void): void {
+  setToolCallHandler(fn: (name: string, args: Record<string, unknown>) => void): void {
     this.toolCallHandler = fn;
   }
 
@@ -65,9 +65,8 @@ export class HeadlessAgent {
                 });
                 if (!allowed) return { error: "Permission denied by user." };
               }
-              this.toolCallHandler?.("start", toolName, args as Record<string, unknown>);
+              this.toolCallHandler?.(toolName, args as Record<string, unknown>);
               const result = await plugin.executeTool!(toolName, args as Record<string, unknown>);
-              this.toolCallHandler?.("end", toolName, args as Record<string, unknown>);
               return result;
             };
           }

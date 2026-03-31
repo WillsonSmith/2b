@@ -1,7 +1,10 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
-import type { BaseAgent } from "../core/BaseAgent.ts";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
-import { CortexMemoryDatabase, type MemoryFilter } from "./CortexMemoryDatabase.ts";
+import {
+  CortexMemoryDatabase,
+  type MemoryFilter,
+  type SearchMeta,
+} from "./CortexMemoryDatabase.ts";
 import { logger } from "../logger.ts";
 
 /** Maximum character length enforced on user-supplied memory content fields. */
@@ -24,7 +27,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
   private coreBehaviorCache: Array<{ id: string; text: string }> | null = null;
 
   /** Side-channel metadata from the most recent memory search (keyed by tool name). */
-  public searchMetaBuffer: Map<string, Record<string, unknown>> = new Map();
+  public searchMetaBuffer: Map<string, SearchMeta> = new Map();
 
   private readonly MAX_MEMORY_TEXT_LENGTH = 300;
 
@@ -56,7 +59,11 @@ export class CortexMemoryPlugin implements AgentPlugin {
     try {
       // Core behaviors: always active, cached until a behavior is saved or deleted
       if (this.coreBehaviorCache === null) {
-        const rows = this.db.queryMemories({ types: ["behavior"], tags: ["core"], limit: 50 });
+        const rows = this.db.queryMemories({
+          types: ["behavior"],
+          tags: ["core"],
+          limit: 50,
+        });
         this.coreBehaviorCache = rows.map((r) => ({ id: r.id, text: r.text }));
       }
 
@@ -66,29 +73,43 @@ export class CortexMemoryPlugin implements AgentPlugin {
 
       if (context?.trim()) {
         const embedding = await this.db.getEmbedding(context);
-        const results = this.db.searchWithEmbedding(embedding, 15, 0.35, "behavior");
+        const results = this.db.searchWithEmbedding(
+          embedding,
+          15,
+          0.35,
+          "behavior",
+        );
         contextualBehaviors = results.filter((r) => !coreIds.has(r.id));
-        logger.debug(this.name, `getSystemPromptFragment: ${this.coreBehaviorCache.length} core + ${contextualBehaviors.length} contextual behaviors`);
+        logger.debug(
+          this.name,
+          `getSystemPromptFragment: ${this.coreBehaviorCache.length} core + ${contextualBehaviors.length} contextual behaviors`,
+        );
       } else {
         // No context yet (e.g. init) — fall back to recency
         const recent = this.db.getRecentMemories(20, "behavior");
-        contextualBehaviors = recent.filter((r) => !coreIds.has(r.id)).slice(0, 15);
+        contextualBehaviors = recent
+          .filter((r) => !coreIds.has(r.id))
+          .slice(0, 15);
       }
 
       if (this.coreBehaviorCache.length > 0) {
         parts.push("\n## Core Behaviors");
         for (const b of this.coreBehaviorCache) {
-          parts.push(`- ${b.text}`);
+          parts.push(`- ${b.text.trim()}`);
         }
       }
       if (contextualBehaviors.length > 0) {
         parts.push("\n## Contextually Active Behaviors");
         for (const b of contextualBehaviors) {
-          parts.push(`- ${b.text}`);
+          parts.push(`- ${b.text.trim()}`);
         }
       }
     } catch (e) {
-      logger.error(this.name, "Failed to load behavior memories for system prompt:", e);
+      logger.error(
+        this.name,
+        "Failed to load behavior memories for system prompt:",
+        e,
+      );
     }
 
     return parts.join("\n");
@@ -101,26 +122,34 @@ export class CortexMemoryPlugin implements AgentPlugin {
       const query = currentEvents?.join(" ") ?? "";
       if (!query.trim()) return "";
 
-      logger.debug(this.name, `getContext() searching: "${query.slice(0, 80)}…"`);
+      logger.debug(
+        this.name,
+        `getContext() searching: "${query.slice(0, 80)}…"`,
+      );
       const embedding = await this.db.getEmbedding(query);
       const [factualResults, procedureResults] = [
         this.db.searchWithEmbedding(embedding, 3, 0.5, ["factual"]),
         this.db.searchWithEmbedding(embedding, 1, 0.65, ["procedure"]),
       ];
-      logger.debug(this.name, `getContext() found ${factualResults.length} memories, ${procedureResults.length} procedures`);
+      logger.debug(
+        this.name,
+        `getContext() found ${factualResults.length} memories, ${procedureResults.length} procedures`,
+      );
 
       const parts: string[] = [];
       if (factualResults.length > 0) {
-        const entries = factualResults.map((r) => `- [${r.id.slice(0, 8)}] ${r.text}`).join("\n");
+        const entries = factualResults
+          .map((r) => `- [${r.id.slice(0, 8)}] ${r.text.trim()}`)
+          .join("\n");
         parts.push(`Relevant memories:\n${entries}`);
       }
       if (procedureResults.length > 0) {
-        parts.push(`Relevant procedure:\n${procedureResults[0]!.text}`);
+        parts.push(`Relevant procedure:\n${procedureResults[0]!.text.trim()}`);
       }
       const recentThoughts = this.db.getRecentMemories(2, "thought");
       if (recentThoughts.length > 0) {
         parts.push(
-          `Recent thoughts:\n${recentThoughts.map((t) => `- ${t.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH)}`).join("\n")}`,
+          `Recent thoughts:\n${recentThoughts.map((t) => `- ${t.text.trim().slice(0, this.MAX_MEMORY_TEXT_LENGTH)}`).join("\n")}`,
         );
       }
 
@@ -134,7 +163,8 @@ export class CortexMemoryPlugin implements AgentPlugin {
     return [
       {
         name: "search_memory",
-        description: "Search long-term memory by semantic similarity. Optionally filter by type.",
+        description:
+          "Search long-term memory by semantic similarity. Optionally filter by type.",
         parameters: {
           type: "object",
           properties: {
@@ -154,7 +184,10 @@ export class CortexMemoryPlugin implements AgentPlugin {
         parameters: {
           type: "object",
           properties: {
-            content: { type: "string", description: "The memory content to save" },
+            content: {
+              type: "string",
+              description: "The memory content to save",
+            },
             type: {
               type: "string",
               enum: ["factual", "thought", "behavior", "procedure"],
@@ -176,10 +209,14 @@ export class CortexMemoryPlugin implements AgentPlugin {
         parameters: {
           type: "object",
           properties: {
-            rule: { type: "string", description: "The behavioral rule to persist" },
+            rule: {
+              type: "string",
+              description: "The behavioral rule to persist",
+            },
             core: {
               type: "boolean",
-              description: "If true, this rule is always injected into every turn. Use for universal preferences (formatting, tone, etc.). Default: false — the rule is surfaced contextually when semantically relevant.",
+              description:
+                "If true, this rule is always injected into every turn. Use for universal preferences (formatting, tone, etc.). Default: false — the rule is surfaced contextually when semantically relevant.",
             },
           },
           required: ["rule"],
@@ -192,20 +229,32 @@ export class CortexMemoryPlugin implements AgentPlugin {
         parameters: {
           type: "object",
           properties: {
-            goal: { type: "string", description: "A short description of what the procedure accomplishes, e.g. 'Clip a segment from a Twitch VOD'" },
-            steps: { type: "string", description: "Numbered step-by-step instructions describing exactly what was done" },
+            goal: {
+              type: "string",
+              description:
+                "A short description of what the procedure accomplishes, e.g. 'Clip a segment from a Twitch VOD'",
+            },
+            steps: {
+              type: "string",
+              description:
+                "Numbered step-by-step instructions describing exactly what was done",
+            },
           },
           required: ["goal", "steps"],
         },
       },
       {
         name: "edit_memory",
-        description: "Edit the text content of an existing memory by its ID. The embedding will be updated automatically.",
+        description:
+          "Edit the text content of an existing memory by its ID. The embedding will be updated automatically.",
         parameters: {
           type: "object",
           properties: {
             id: { type: "string", description: "The memory ID to edit" },
-            content: { type: "string", description: "The new text content for the memory" },
+            content: {
+              type: "string",
+              description: "The new text content for the memory",
+            },
           },
           required: ["id", "content"],
         },
@@ -227,7 +276,10 @@ export class CortexMemoryPlugin implements AgentPlugin {
         parameters: {
           type: "object",
           properties: {
-            id: { type: "string", description: "The memory ID to look up links for" },
+            id: {
+              type: "string",
+              description: "The memory ID to look up links for",
+            },
           },
           required: ["id"],
         },
@@ -241,7 +293,10 @@ export class CortexMemoryPlugin implements AgentPlugin {
           properties: {
             types: {
               type: "array",
-              items: { type: "string", enum: ["factual", "thought", "behavior", "procedure"] },
+              items: {
+                type: "string",
+                enum: ["factual", "thought", "behavior", "procedure"],
+              },
               description: "Filter by memory types",
             },
             tags: {
@@ -278,7 +333,10 @@ export class CortexMemoryPlugin implements AgentPlugin {
             query: { type: "string", description: "The semantic search query" },
             types: {
               type: "array",
-              items: { type: "string", enum: ["factual", "thought", "behavior", "procedure"] },
+              items: {
+                type: "string",
+                enum: ["factual", "thought", "behavior", "procedure"],
+              },
               description: "Filter by memory types",
             },
             tags: {
@@ -320,7 +378,8 @@ export class CortexMemoryPlugin implements AgentPlugin {
             },
             filter: {
               type: "object",
-              description: "Optional filter (same shape as query_memories params)",
+              description:
+                "Optional filter (same shape as query_memories params)",
             },
           },
           required: ["group_by"],
@@ -328,7 +387,8 @@ export class CortexMemoryPlugin implements AgentPlugin {
       },
       {
         name: "get_memory_timeline",
-        description: "Retrieve memories in chronological order within an optional date range.",
+        description:
+          "Retrieve memories in chronological order within an optional date range.",
         parameters: {
           type: "object",
           properties: {
@@ -355,14 +415,18 @@ export class CortexMemoryPlugin implements AgentPlugin {
       if (name === "search_memory") return await this.handleSearchMemory(args);
       if (name === "save_memory") return await this.handleSaveMemory(args);
       if (name === "save_behavior") return await this.handleSaveBehavior(args);
-      if (name === "save_procedure") return await this.handleSaveProcedure(args);
+      if (name === "save_procedure")
+        return await this.handleSaveProcedure(args);
       if (name === "edit_memory") return await this.handleEditMemory(args);
       if (name === "delete_memory") return await this.handleDeleteMemory(args);
-      if (name === "get_linked_memories") return await this.handleGetLinkedMemories(args);
+      if (name === "get_linked_memories")
+        return await this.handleGetLinkedMemories(args);
       if (name === "query_memories") return this.handleQueryMemories(args);
       if (name === "hybrid_search") return await this.handleHybridSearch(args);
-      if (name === "aggregate_memories") return this.handleAggregateMemories(args);
-      if (name === "get_memory_timeline") return this.handleGetMemoryTimeline(args);
+      if (name === "aggregate_memories")
+        return this.handleAggregateMemories(args);
+      if (name === "get_memory_timeline")
+        return this.handleGetMemoryTimeline(args);
     } catch (e) {
       logger.error(this.name, `Tool error (${name}):`, e);
       return `Tool error: ${e instanceof Error ? e.message : String(e)}`;
@@ -370,16 +434,26 @@ export class CortexMemoryPlugin implements AgentPlugin {
   }
 
   private async handleSearchMemory(args: any): Promise<string> {
-    logger.info(this.name, `search_memory: "${args.query}"${args.type ? ` type=${args.type}` : ""}`);
-    const { results, meta } = await this.db.searchWithStats(args.query, 5, 0.4, args.type);
+    logger.info(
+      this.name,
+      `search_memory: "${args.query}"${args.type ? ` type=${args.type}` : ""}`,
+    );
+    const { results, meta } = await this.db.searchWithStats(
+      args.query,
+      5,
+      0.4,
+      args.type,
+    );
     this.searchMetaBuffer.set("search_memory", meta);
     logger.debug(this.name, `search_memory found ${results.length} results`);
     if (results.length === 0) return "No relevant memories found.";
     return results
       .map((r) => {
-        const text = r.text.length > this.MAX_MEMORY_TEXT_LENGTH
-          ? r.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
-          : r.text;
+        const raw = r.text.trim();
+        const text =
+          raw.length > this.MAX_MEMORY_TEXT_LENGTH
+            ? raw.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
+            : raw;
         return `[${r.id.slice(0, 8)}] (score: ${r.score.toFixed(2)}) ${text}`;
       })
       .join("\n");
@@ -390,17 +464,27 @@ export class CortexMemoryPlugin implements AgentPlugin {
     if (content.length > MAX_CONTENT_LENGTH) {
       return `Memory content too long (${content.length} chars). Maximum is ${MAX_CONTENT_LENGTH} characters.`;
     }
-    logger.info(this.name, `save_memory type=${args.type ?? "factual"}: "${content.slice(0, 100)}"`);
-    const id = await this.db.addMemory(content, args.type ?? "factual", args.tags ?? []);
+    logger.info(
+      this.name,
+      `save_memory type=${args.type ?? "factual"}: "${content.slice(0, 100)}"`,
+    );
+    const id = await this.db.addMemory(
+      content,
+      args.type ?? "factual",
+      args.tags ?? [],
+    );
     this.savedThisTurn.add(id);
     logger.info(this.name, `save_memory SUCCESS id=${id.slice(0, 8)}`);
     // Link to top 3 similar existing memories
     const similar = await this.db.search(content, 3, 0.5);
-    logger.debug(this.name, `save_memory linking to ${similar.filter((s) => s.id !== id).length} similar memories`);
+    logger.debug(
+      this.name,
+      `save_memory linking to ${similar.filter((s) => s.id !== id).length} similar memories`,
+    );
     for (const s of similar) {
       if (s.id !== id) await this.db.linkMemories(id, s.id);
     }
-    return `Memory saved (type: ${args.type ?? "factual"}, id: ${id.slice(0, 8)}).`;
+    return `Memory saved (type: ${args.type ?? "factual"}, id: ${id}).`;
   }
 
   private async handleSaveBehavior(args: any): Promise<string> {
@@ -410,10 +494,13 @@ export class CortexMemoryPlugin implements AgentPlugin {
     }
     const isCore = args.core === true;
     const tags = isCore ? ["core"] : [];
-    logger.info(this.name, `save_behavior${isCore ? " [core]" : ""}: "${rule.slice(0, 100)}"`);
+    logger.info(
+      this.name,
+      `save_behavior${isCore ? " [core]" : ""}: "${rule.slice(0, 100)}"`,
+    );
     const id = await this.db.addMemory(rule, "behavior", tags);
     this.coreBehaviorCache = null; // invalidate cache
-    return `Memory saved (type: behavior, core: ${isCore}, id: ${id.slice(0, 8)}).`;
+    return `Memory saved (type: behavior, core: ${isCore}, id: ${id}).`;
   }
 
   private async handleSaveProcedure(args: any): Promise<string> {
@@ -425,7 +512,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     }
     logger.info(this.name, `save_procedure: "${goal.slice(0, 100)}"`);
     const id = await this.db.addMemory(combined, "procedure");
-    return `Memory saved (type: procedure, id: ${id.slice(0, 8)}).`;
+    return `Memory saved (type: procedure, id: ${id}).`;
   }
 
   private async handleEditMemory(args: any): Promise<string> {
@@ -433,7 +520,10 @@ export class CortexMemoryPlugin implements AgentPlugin {
     if (content.length > MAX_CONTENT_LENGTH) {
       return `Memory content too long (${content.length} chars). Maximum is ${MAX_CONTENT_LENGTH} characters.`;
     }
-    logger.info(this.name, `edit_memory id=${args.id.slice(0, 8)}: "${content.slice(0, 100)}"`);
+    logger.info(
+      this.name,
+      `edit_memory id=${args.id.slice(0, 8)}: "${content.slice(0, 100)}"`,
+    );
     const existing = await this.db.getMemoryById(args.id);
     if (!existing) return `No memory found with id ${args.id.slice(0, 8)}.`;
     await this.db.updateMemoryText(args.id, content);
@@ -461,7 +551,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     const linked = await this.db.getLinkedMemories(args.id);
     logger.debug(this.name, `get_linked_memories found ${linked.length} links`);
     if (linked.length === 0) return "No linked memories found.";
-    return linked.map((m) => `[${m.id.slice(0, 8)}] ${m.text}`).join("\n");
+    return linked.map((m) => `[${m.id.slice(0, 8)}] ${m.text.trim()}`).join("\n");
   }
 
   private handleQueryMemories(args: any): string {
@@ -472,9 +562,11 @@ export class CortexMemoryPlugin implements AgentPlugin {
     if (results.length === 0) return "No memories match the given filter.";
     return results
       .map((r) => {
-        const text = r.text.length > this.MAX_MEMORY_TEXT_LENGTH
-          ? r.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
-          : r.text;
+        const raw = r.text.trim();
+        const text =
+          raw.length > this.MAX_MEMORY_TEXT_LENGTH
+            ? raw.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
+            : raw;
         const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
         const date = new Date(r.timestamp).toISOString().slice(0, 10);
         return `[${r.id.slice(0, 8)}] (${r.type}, ${date}${tagsStr}) ${text}`;
@@ -485,7 +577,12 @@ export class CortexMemoryPlugin implements AgentPlugin {
   private async handleHybridSearch(args: any): Promise<string> {
     logger.info(this.name, `hybrid_search: "${args.query}"`);
     const filter: MemoryFilter = this.buildFilter(args);
-    const results = await this.db.hybridSearch(args.query, filter, args.limit ?? 5, 0.4);
+    const results = await this.db.hybridSearch(
+      args.query,
+      filter,
+      args.limit ?? 5,
+      0.4,
+    );
     this.searchMetaBuffer.set("hybrid_search", {
       total_candidates: results.length,
       retrieval_method: "hybrid",
@@ -495,12 +592,15 @@ export class CortexMemoryPlugin implements AgentPlugin {
       ],
     });
     logger.debug(this.name, `hybrid_search found ${results.length} results`);
-    if (results.length === 0) return "No memories match the given query and filters.";
+    if (results.length === 0)
+      return "No memories match the given query and filters.";
     return results
       .map((r) => {
-        const text = r.text.length > this.MAX_MEMORY_TEXT_LENGTH
-          ? r.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
-          : r.text;
+        const raw = r.text.trim();
+        const text =
+          raw.length > this.MAX_MEMORY_TEXT_LENGTH
+            ? raw.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
+            : raw;
         const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
         const date = new Date(r.timestamp).toISOString().slice(0, 10);
         return `[${r.id.slice(0, 8)}] (score: ${r.score.toFixed(2)}, ${r.type}, ${date}${tagsStr}) ${text}`;
@@ -515,7 +615,10 @@ export class CortexMemoryPlugin implements AgentPlugin {
       filter = this.buildFilter(args.filter);
     }
     const results = this.db.aggregateMemories(args.group_by, filter);
-    logger.debug(this.name, `aggregate_memories found ${results.length} groups`);
+    logger.debug(
+      this.name,
+      `aggregate_memories found ${results.length} groups`,
+    );
     if (results.length === 0) return "No memories found.";
     const header = `${"Group".padEnd(30)} Count`;
     const divider = "-".repeat(36);
@@ -524,19 +627,31 @@ export class CortexMemoryPlugin implements AgentPlugin {
   }
 
   private handleGetMemoryTimeline(args: any): string {
-    logger.info(this.name, `get_memory_timeline start=${args.start} end=${args.end}`);
+    logger.info(
+      this.name,
+      `get_memory_timeline start=${args.start} end=${args.end}`,
+    );
     const start = this.parseDateArg(args.start);
     const end = this.parseDateArg(args.end);
     const results = this.db.getMemoryTimeline(start, end, args.limit ?? 20);
-    logger.debug(this.name, `get_memory_timeline found ${results.length} memories`);
-    if (results.length === 0) return "No memories found in the given time range.";
+    logger.debug(
+      this.name,
+      `get_memory_timeline found ${results.length} memories`,
+    );
+    if (results.length === 0)
+      return "No memories found in the given time range.";
     return results
       .map((r) => {
-        const text = r.text.length > this.MAX_MEMORY_TEXT_LENGTH
-          ? r.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
-          : r.text;
+        const raw = r.text.trim();
+        const text =
+          raw.length > this.MAX_MEMORY_TEXT_LENGTH
+            ? raw.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
+            : raw;
         const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
-        const date = new Date(r.timestamp).toISOString().replace("T", " ").slice(0, 19);
+        const date = new Date(r.timestamp)
+          .toISOString()
+          .replace("T", " ")
+          .slice(0, 19);
         return `[${r.id.slice(0, 8)}] (${r.type}, ${date}${tagsStr}) ${text}`;
       })
       .join("\n");
@@ -581,9 +696,15 @@ export class CortexMemoryPlugin implements AgentPlugin {
     // Autonomous conflict resolution
     try {
       const conflictQuery = this.currentEvents.join(" ") + " " + content;
-      logger.debug(this.name, "onMessage: running autonomous conflict resolution");
+      logger.debug(
+        this.name,
+        "onMessage: running autonomous conflict resolution",
+      );
       const candidates = await this.db.search(conflictQuery, 5, 0.85);
-      logger.debug(this.name, `onMessage: found ${candidates.length} conflict candidates`);
+      logger.debug(
+        this.name,
+        `onMessage: found ${candidates.length} conflict candidates`,
+      );
       const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
 
       for (const candidate of candidates) {
@@ -591,10 +712,16 @@ export class CortexMemoryPlugin implements AgentPlugin {
         const mem = await this.db.getMemoryById(candidate.id);
         if (!mem) continue;
         if (mem.timestamp >= twoHoursAgo) {
-          logger.info(this.name, `Deleting recent conflicting memory id=${candidate.id.slice(0, 8)}`);
+          logger.info(
+            this.name,
+            `Deleting recent conflicting memory id=${candidate.id.slice(0, 8)}`,
+          );
           await this.db.deleteMemory(candidate.id);
         } else {
-          logger.info(this.name, `Marking memory superseded id=${candidate.id.slice(0, 8)}`);
+          logger.info(
+            this.name,
+            `Marking memory superseded id=${candidate.id.slice(0, 8)}`,
+          );
           const superseded = `[SUPERSEDED] User has since changed this position: ${mem.text}`;
           await this.db.updateMemoryText(candidate.id, superseded);
         }
