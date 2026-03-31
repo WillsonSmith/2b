@@ -276,7 +276,7 @@ describe("show_corrections tool", () => {
 // ── Phase 3: Correction effectiveness tracking ───────────────────────────────
 
 describe("checkCorrectionEffectiveness", () => {
-  test("marks correction ineffective when pattern recurs within 3 turns of correction", async () => {
+  test("marks correction ineffective when pattern recurs after correction", async () => {
     const { plugin } = makeMetaPlugin();
     const correctionDate = new Date(Date.now() - 1000);
     (plugin as any).correctionHistory = [{

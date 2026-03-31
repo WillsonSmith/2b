@@ -718,7 +718,6 @@ export class MetacognitionPlugin implements AgentPlugin {
 
   private async checkCorrectionEffectiveness(): Promise<void> {
     const EFFECTIVE_TURNS = 10;
-    const INEFFECTIVE_TURNS = 3;
     const STALE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
     for (const correction of this.correctionHistory) {
@@ -731,10 +730,10 @@ export class MetacognitionPlugin implements AgentPlugin {
 
       const recurred = this.patternRecurredIn(correction.trigger, turnsSince);
 
-      if (recurred && turnsSince.length <= INEFFECTIVE_TURNS) {
+      if (recurred) {
         correction.effectiveness = "ineffective";
         await this.strengthenCorrectiveRule(correction);
-      } else if (!recurred && turnsSince.length >= EFFECTIVE_TURNS) {
+      } else if (turnsSince.length >= EFFECTIVE_TURNS) {
         correction.effectiveness = "effective";
         const ageMs = Date.now() - correction.applied_at.getTime();
         if (ageMs > STALE_MS) {
