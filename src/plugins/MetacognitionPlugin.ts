@@ -59,6 +59,7 @@ interface CorrectionRecord {
   behavior_memory_id: string;
   applied_at: Date;
   turns_observed: number;
+  effectiveness: "pending" | "effective" | "ineffective";
 }
 
 function categorize(tool: string): ToolCallRecord["category"] {
@@ -497,6 +498,24 @@ export class MetacognitionPlugin implements AgentPlugin {
       );
     }
 
+    // ── Correction effectiveness ────────────────────────────────────────────────
+    if (this.correctionHistory.length > 0) {
+      sections.push("\n## Correction Effectiveness");
+      const counts = { pending: 0, effective: 0, ineffective: 0 };
+      for (const c of this.correctionHistory) counts[c.effectiveness]++;
+      sections.push(
+        `Total corrections: ${this.correctionHistory.length} — ` +
+          `${counts.effective} effective, ${counts.ineffective} ineffective, ${counts.pending} pending`,
+      );
+      const ineffective = this.correctionHistory.filter((c) => c.effectiveness === "ineffective");
+      if (ineffective.length > 0) {
+        sections.push("Ineffective corrections (rule strengthened):");
+        for (const c of ineffective) {
+          sections.push(`  [${c.trigger}] ${c.rule_saved.slice(0, 80)}`);
+        }
+      }
+    }
+
     // ── Suggestions ────────────────────────────────────────────────────────────
     sections.push("\n## Suggestions");
     const suggestions: string[] = [];
@@ -563,12 +582,15 @@ export class MetacognitionPlugin implements AgentPlugin {
     if (this.correctionHistory.length === 0) {
       return "No self-corrections have been applied yet.";
     }
+    const counts = { pending: 0, effective: 0, ineffective: 0 };
+    for (const c of this.correctionHistory) counts[c.effectiveness]++;
     return [
-      `Self-correction history (${this.correctionHistory.length} total):`,
+      `Self-correction history (${this.correctionHistory.length} total — ` +
+        `${counts.effective} effective, ${counts.ineffective} ineffective, ${counts.pending} pending):`,
       ...this.correctionHistory.slice(-20).map((c) => {
         const date = c.applied_at.toISOString().slice(0, 16).replace("T", " ");
         return (
-          `[${c.id.slice(0, 8)}] (${date}) trigger=${c.trigger} turns_observed=${c.turns_observed}\n` +
+          `[${c.id.slice(0, 8)}] (${date}) trigger=${c.trigger} effectiveness=${c.effectiveness}\n` +
           `  rule: ${c.rule_saved.slice(0, 120)}\n` +
           `  behavior_id: ${c.behavior_memory_id.slice(0, 8)}`
         );
@@ -577,6 +599,8 @@ export class MetacognitionPlugin implements AgentPlugin {
   }
 
   private async maybeAutoCorrect(): Promise<void> {
+    await this.checkCorrectionEffectiveness();
+
     const window = this.turnHistory.slice(-PATTERN_WINDOW);
     if (window.length < PATTERN_THRESHOLD) return;
 
@@ -658,12 +682,89 @@ export class MetacognitionPlugin implements AgentPlugin {
         behavior_memory_id: behaviorMemoryId,
         applied_at: new Date(),
         turns_observed: turnsObserved,
+        effectiveness: "pending",
       });
       if (this.correctionHistory.length > CORRECTION_HISTORY_LIMIT) {
         this.correctionHistory.shift();
       }
     } catch {
       // non-critical — corrections are best-effort
+    }
+  }
+
+  private patternRecurredIn(
+    trigger: CorrectionRecord["trigger"],
+    turns: TurnState[],
+  ): boolean {
+    return turns.some((t) => {
+      if (trigger === "saturation") {
+        return t.uncertainty_markers.includes("tool_saturation");
+      }
+      if (trigger === "redundancy") {
+        const seen = new Set<string>();
+        for (const tc of t.tool_calls) {
+          if (seen.has(tc.tool)) return true;
+          seen.add(tc.tool);
+        }
+        return false;
+      }
+      // hedged_no_search
+      return (
+        t.uncertainty_markers.includes("hedged_language") &&
+        t.memory_access_count === 0
+      );
+    });
+  }
+
+  private async checkCorrectionEffectiveness(): Promise<void> {
+    const EFFECTIVE_TURNS = 10;
+    const INEFFECTIVE_TURNS = 3;
+    const STALE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+    for (const correction of this.correctionHistory) {
+      if (correction.effectiveness !== "pending") continue;
+
+      const turnsSince = this.turnHistory.filter(
+        (t) => (t.ended_at ?? t.started_at) > correction.applied_at,
+      );
+      if (turnsSince.length === 0) continue;
+
+      const recurred = this.patternRecurredIn(correction.trigger, turnsSince);
+
+      if (recurred && turnsSince.length <= INEFFECTIVE_TURNS) {
+        correction.effectiveness = "ineffective";
+        await this.strengthenCorrectiveRule(correction);
+      } else if (!recurred && turnsSince.length >= EFFECTIVE_TURNS) {
+        correction.effectiveness = "effective";
+        const ageMs = Date.now() - correction.applied_at.getTime();
+        if (ageMs > STALE_MS) {
+          await this.maybePruneCorrection(correction);
+        }
+      }
+    }
+  }
+
+  private async strengthenCorrectiveRule(correction: CorrectionRecord): Promise<void> {
+    try {
+      const strengthened =
+        `CRITICAL (pattern persisted after correction): ${correction.rule_saved}`;
+      await this.memoryPlugin.executeTool!("edit_memory", {
+        id: correction.behavior_memory_id,
+        content: strengthened,
+      });
+      correction.rule_saved = strengthened;
+    } catch {
+      // non-critical
+    }
+  }
+
+  private async maybePruneCorrection(correction: CorrectionRecord): Promise<void> {
+    try {
+      await this.memoryPlugin.executeTool!("delete_memory", {
+        id: correction.behavior_memory_id,
+      });
+    } catch {
+      // non-critical
     }
   }
 }
