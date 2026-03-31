@@ -48,6 +48,18 @@ interface TurnState {
 }
 
 const TURN_HISTORY_LIMIT = 20;
+const CORRECTION_HISTORY_LIMIT = 50;
+const PATTERN_WINDOW = 5;
+const PATTERN_THRESHOLD = 3;
+
+interface CorrectionRecord {
+  id: string;
+  trigger: "saturation" | "redundancy" | "hedged_no_search";
+  rule_saved: string;
+  behavior_memory_id: string;
+  applied_at: Date;
+  turns_observed: number;
+}
 
 function categorize(tool: string): ToolCallRecord["category"] {
   if (MEMORY_TOOLS.has(tool)) return "memory";
@@ -60,6 +72,7 @@ export class MetacognitionPlugin implements AgentPlugin {
   name = "Metacognition";
   private currentTurn: TurnState;
   private turnHistory: TurnState[] = [];
+  private correctionHistory: CorrectionRecord[] = [];
   private readonly saturationThreshold: number;
   private readonly sourceReader: SourceReaderPlugin;
   private agentRef: BaseAgent | null = null;
@@ -151,9 +164,16 @@ export class MetacognitionPlugin implements AgentPlugin {
     ];
 
     if (t.uncertainty_markers.includes("tool_saturation")) {
-      parts.push(
-        "DIRECTIVE: Memory search threshold exceeded. Do not call search_memory or hybrid_search again this turn. Synthesize from what is already retrieved.",
-      );
+      const prevTurnAlsoSaturated = this.turnHistory.at(-1)?.uncertainty_markers.includes("tool_saturation") ?? false;
+      if (prevTurnAlsoSaturated) {
+        parts.push(
+          "HARD STOP: Memory search threshold has been exceeded across multiple consecutive turns. You MUST NOT call search_memory, hybrid_search, or query_memories this turn. Synthesize entirely from already-retrieved context.",
+        );
+      } else {
+        parts.push(
+          "DIRECTIVE: Memory search threshold exceeded. Do not call search_memory or hybrid_search again this turn. Synthesize from what is already retrieved.",
+        );
+      }
     }
     if (t.uncertainty_markers.includes("hedged_language")) {
       parts.push(
@@ -213,6 +233,13 @@ export class MetacognitionPlugin implements AgentPlugin {
           "Use this to understand your own cognitive inefficiencies in concrete, measurable terms.",
         parameters: { type: "object", properties: {} },
       },
+      // --- Self-correction ---
+      {
+        name: "show_corrections",
+        description:
+          "Shows the history of self-corrections the agent has autonomously applied, including what pattern triggered each correction and what behavioral rule was saved as a result.",
+        parameters: { type: "object", properties: {} },
+      },
       // --- Source code reading (delegated to SourceReaderPlugin) ---
       ...this.sourceReader.getTools(),
     ];
@@ -227,6 +254,7 @@ export class MetacognitionPlugin implements AgentPlugin {
       if (name === "list_available_tools") return this.handleListAvailableTools();
       if (name === "get_system_prompt") return this.handleGetSystemPrompt();
       if (name === "efficiency_report") return this.handleEfficiencyReport();
+      if (name === "show_corrections") return this.handleShowCorrections();
       if (SOURCE_TOOLS.has(name)) return await this.sourceReader.executeTool(name, args);
     } catch (e) {
       console.warn(`[MetacognitionPlugin] Tool error (${name}):`, e);
@@ -262,6 +290,8 @@ export class MetacognitionPlugin implements AgentPlugin {
       ) {
         this.currentTurn.uncertainty_markers.push("hedged_language");
       }
+      // Run pattern detection after each assistant response (non-blocking)
+      this.maybeAutoCorrect().catch(() => {});
     }
   }
 
@@ -275,6 +305,14 @@ export class MetacognitionPlugin implements AgentPlugin {
           )
         : ["  (none)"];
 
+    const recentCorrections = this.correctionHistory.slice(-3);
+    const correctionLines =
+      recentCorrections.length > 0
+        ? recentCorrections.map(
+            (c) => `  [${c.trigger}] ${c.rule_saved.slice(0, 80)} (${c.applied_at.toISOString().slice(0, 10)})`,
+          )
+        : ["  (none)"];
+
     return [
       `Turn ID: ${t.turn_id}`,
       `Started: ${t.started_at.toISOString()}`,
@@ -285,6 +323,9 @@ export class MetacognitionPlugin implements AgentPlugin {
       "",
       `Tool calls this turn (${t.tool_calls.length}):`,
       ...toolLines,
+      "",
+      `Recent self-corrections (${this.correctionHistory.length} total):`,
+      ...correctionLines,
     ].join("\n");
   }
 
@@ -494,5 +535,113 @@ export class MetacognitionPlugin implements AgentPlugin {
     const prompt = this.agentRef.getLastSystemPrompt();
     if (!prompt) return "No system prompt recorded yet (agent hasn't completed a turn).";
     return `System prompt (${prompt.length} chars):\n\n${prompt}`;
+  }
+
+  private handleShowCorrections(): string {
+    if (this.correctionHistory.length === 0) {
+      return "No self-corrections have been applied yet.";
+    }
+    return [
+      `Self-correction history (${this.correctionHistory.length} total):`,
+      ...this.correctionHistory.slice(-20).map((c) => {
+        const date = c.applied_at.toISOString().slice(0, 16).replace("T", " ");
+        return (
+          `[${c.id.slice(0, 8)}] (${date}) trigger=${c.trigger} turns_observed=${c.turns_observed}\n` +
+          `  rule: ${c.rule_saved.slice(0, 120)}\n` +
+          `  behavior_id: ${c.behavior_memory_id.slice(0, 8)}`
+        );
+      }),
+    ].join("\n");
+  }
+
+  private async maybeAutoCorrect(): Promise<void> {
+    const window = this.turnHistory.slice(-PATTERN_WINDOW);
+    if (window.length < PATTERN_THRESHOLD) return;
+
+    // Saturation pattern: too many memory searches per turn, repeatedly
+    const saturationCount = window.filter((t) =>
+      t.uncertainty_markers.includes("tool_saturation"),
+    ).length;
+    if (saturationCount >= PATTERN_THRESHOLD) {
+      await this.saveCorrectiveRule(
+        "saturation",
+        `Before calling search_memory, hybrid_search, or query_memories, check whether the current turn context already contains the answer. If memory_access_count exceeds ${this.saturationThreshold}, synthesize from what is already retrieved rather than re-searching.`,
+        window.length,
+      );
+    }
+
+    // Redundancy pattern: same tool called multiple times in the same turn, repeatedly
+    const redundancyCount = window.filter((t) => {
+      const seen = new Set<string>();
+      for (const tc of t.tool_calls) {
+        if (seen.has(tc.tool)) return true;
+        seen.add(tc.tool);
+      }
+      return false;
+    }).length;
+    if (redundancyCount >= PATTERN_THRESHOLD) {
+      await this.saveCorrectiveRule(
+        "redundancy",
+        "Retrieve information once per turn. Check whether the first tool result was sufficient before calling the same tool again with the same or similar arguments.",
+        window.length,
+      );
+    }
+
+    // Hedged-no-search pattern: hedging without consulting memory, repeatedly
+    const hedgedNoSearchCount = window.filter(
+      (t) =>
+        t.uncertainty_markers.includes("hedged_language") &&
+        t.memory_access_count === 0,
+    ).length;
+    if (hedgedNoSearchCount >= PATTERN_THRESHOLD) {
+      await this.saveCorrectiveRule(
+        "hedged_no_search",
+        "When uncertain about a fact, search memory before hedging. Expressing uncertainty without first checking memory means potentially available information is going unused.",
+        window.length,
+      );
+    }
+  }
+
+  private async saveCorrectiveRule(
+    trigger: CorrectionRecord["trigger"],
+    rule: string,
+    turnsObserved: number,
+  ): Promise<void> {
+    try {
+      // Deduplication: skip if we already saved a correction for this trigger recently
+      const recentlySaved = this.correctionHistory
+        .slice(-10)
+        .some((c) => c.trigger === trigger);
+      if (recentlySaved) return;
+
+      // Also skip if a behavior with this tag already exists in the DB
+      const existing = this.memoryPlugin.db.queryMemories({
+        types: ["behavior"],
+        tags: ["metacognition-correction"],
+        contains: trigger,
+        limit: 1,
+      });
+      if (existing.length > 0) return;
+
+      const behaviorMemoryId = await this.memoryPlugin.db.addMemory(
+        rule,
+        "behavior",
+        ["metacognition-correction", trigger],
+      );
+
+      this.correctionHistory.push({
+        id: randomUUID(),
+        trigger,
+        rule_saved: rule,
+        behavior_memory_id: behaviorMemoryId,
+        applied_at: new Date(),
+        turns_observed: turnsObserved,
+      });
+      if (this.correctionHistory.length > CORRECTION_HISTORY_LIMIT) {
+        this.correctionHistory.shift();
+      }
+    } catch {
+      // non-critical — corrections are best-effort
+    }
   }
 }
