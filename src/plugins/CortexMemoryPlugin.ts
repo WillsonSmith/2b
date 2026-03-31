@@ -484,7 +484,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     for (const s of similar) {
       if (s.id !== id) await this.db.linkMemories(id, s.id);
     }
-    return `Memory saved (type: ${args.type ?? "factual"}, id: ${id.slice(0, 8)}).`;
+    return `Memory saved (type: ${args.type ?? "factual"}, id: ${id}).`;
   }
 
   private async handleSaveBehavior(args: any): Promise<string> {
@@ -500,7 +500,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     );
     const id = await this.db.addMemory(rule, "behavior", tags);
     this.coreBehaviorCache = null; // invalidate cache
-    return `Memory saved (type: behavior, core: ${isCore}, id: ${id.slice(0, 8)}).`;
+    return `Memory saved (type: behavior, core: ${isCore}, id: ${id}).`;
   }
 
   private async handleSaveProcedure(args: any): Promise<string> {
@@ -512,7 +512,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     }
     logger.info(this.name, `save_procedure: "${goal.slice(0, 100)}"`);
     const id = await this.db.addMemory(combined, "procedure");
-    return `Memory saved (type: procedure, id: ${id.slice(0, 8)}).`;
+    return `Memory saved (type: procedure, id: ${id}).`;
   }
 
   private async handleEditMemory(args: any): Promise<string> {
