@@ -3,6 +3,7 @@ import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import {
   CortexMemoryDatabase,
   type MemoryFilter,
+  type SearchMeta,
 } from "./CortexMemoryDatabase.ts";
 import { logger } from "../logger.ts";
 
@@ -26,7 +27,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
   private coreBehaviorCache: Array<{ id: string; text: string }> | null = null;
 
   /** Side-channel metadata from the most recent memory search (keyed by tool name). */
-  public searchMetaBuffer: Map<string, Record<string, unknown>> = new Map();
+  public searchMetaBuffer: Map<string, SearchMeta> = new Map();
 
   private readonly MAX_MEMORY_TEXT_LENGTH = 300;
 
@@ -94,13 +95,13 @@ export class CortexMemoryPlugin implements AgentPlugin {
       if (this.coreBehaviorCache.length > 0) {
         parts.push("\n## Core Behaviors");
         for (const b of this.coreBehaviorCache) {
-          parts.push(`- ${b.text}`);
+          parts.push(`- ${b.text.trim()}`);
         }
       }
       if (contextualBehaviors.length > 0) {
         parts.push("\n## Contextually Active Behaviors");
         for (const b of contextualBehaviors) {
-          parts.push(`- ${b.text}`);
+          parts.push(`- ${b.text.trim()}`);
         }
       }
     } catch (e) {
@@ -138,17 +139,17 @@ export class CortexMemoryPlugin implements AgentPlugin {
       const parts: string[] = [];
       if (factualResults.length > 0) {
         const entries = factualResults
-          .map((r) => `- [${r.id.slice(0, 8)}] ${r.text}`)
+          .map((r) => `- [${r.id.slice(0, 8)}] ${r.text.trim()}`)
           .join("\n");
         parts.push(`Relevant memories:\n${entries}`);
       }
       if (procedureResults.length > 0) {
-        parts.push(`Relevant procedure:\n${procedureResults[0]!.text}`);
+        parts.push(`Relevant procedure:\n${procedureResults[0]!.text.trim()}`);
       }
       const recentThoughts = this.db.getRecentMemories(2, "thought");
       if (recentThoughts.length > 0) {
         parts.push(
-          `Recent thoughts:\n${recentThoughts.map((t) => `- ${t.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH)}`).join("\n")}`,
+          `Recent thoughts:\n${recentThoughts.map((t) => `- ${t.text.trim().slice(0, this.MAX_MEMORY_TEXT_LENGTH)}`).join("\n")}`,
         );
       }
 
@@ -448,10 +449,11 @@ export class CortexMemoryPlugin implements AgentPlugin {
     if (results.length === 0) return "No relevant memories found.";
     return results
       .map((r) => {
+        const raw = r.text.trim();
         const text =
-          r.text.length > this.MAX_MEMORY_TEXT_LENGTH
-            ? r.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
-            : r.text;
+          raw.length > this.MAX_MEMORY_TEXT_LENGTH
+            ? raw.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
+            : raw;
         return `[${r.id.slice(0, 8)}] (score: ${r.score.toFixed(2)}) ${text}`;
       })
       .join("\n");
@@ -549,7 +551,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     const linked = await this.db.getLinkedMemories(args.id);
     logger.debug(this.name, `get_linked_memories found ${linked.length} links`);
     if (linked.length === 0) return "No linked memories found.";
-    return linked.map((m) => `[${m.id.slice(0, 8)}] ${m.text}`).join("\n");
+    return linked.map((m) => `[${m.id.slice(0, 8)}] ${m.text.trim()}`).join("\n");
   }
 
   private handleQueryMemories(args: any): string {
@@ -560,10 +562,11 @@ export class CortexMemoryPlugin implements AgentPlugin {
     if (results.length === 0) return "No memories match the given filter.";
     return results
       .map((r) => {
+        const raw = r.text.trim();
         const text =
-          r.text.length > this.MAX_MEMORY_TEXT_LENGTH
-            ? r.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
-            : r.text;
+          raw.length > this.MAX_MEMORY_TEXT_LENGTH
+            ? raw.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
+            : raw;
         const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
         const date = new Date(r.timestamp).toISOString().slice(0, 10);
         return `[${r.id.slice(0, 8)}] (${r.type}, ${date}${tagsStr}) ${text}`;
@@ -593,10 +596,11 @@ export class CortexMemoryPlugin implements AgentPlugin {
       return "No memories match the given query and filters.";
     return results
       .map((r) => {
+        const raw = r.text.trim();
         const text =
-          r.text.length > this.MAX_MEMORY_TEXT_LENGTH
-            ? r.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
-            : r.text;
+          raw.length > this.MAX_MEMORY_TEXT_LENGTH
+            ? raw.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
+            : raw;
         const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
         const date = new Date(r.timestamp).toISOString().slice(0, 10);
         return `[${r.id.slice(0, 8)}] (score: ${r.score.toFixed(2)}, ${r.type}, ${date}${tagsStr}) ${text}`;
@@ -638,10 +642,11 @@ export class CortexMemoryPlugin implements AgentPlugin {
       return "No memories found in the given time range.";
     return results
       .map((r) => {
+        const raw = r.text.trim();
         const text =
-          r.text.length > this.MAX_MEMORY_TEXT_LENGTH
-            ? r.text.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
-            : r.text;
+          raw.length > this.MAX_MEMORY_TEXT_LENGTH
+            ? raw.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
+            : raw;
         const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
         const date = new Date(r.timestamp)
           .toISOString()
