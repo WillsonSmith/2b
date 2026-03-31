@@ -21,6 +21,7 @@ import { ChatSession } from "../ChatSession.ts";
 import { TerminalChat } from "./TerminalChat.tsx";
 import { createFileSystemAgent } from "../../agents/sub-agents/createFileSystemAgent.ts";
 import { createCodeReaderAgent } from "../../agents/sub-agents/createCodeReaderAgent.ts";
+import { createInfoAgent } from "../../agents/sub-agents/createInfoAgent.ts";
 
 // ── Parse CLI args ────────────────────────────────────────────────────────────
 
@@ -93,6 +94,16 @@ agent.registerPlugin(
     agent: createMediaAgent(llm, { permissionManager }),
   }),
 );
+
+agent.registerPlugin(
+  new SubAgentPlugin({
+    toolName: "info_agent",
+    description:
+      "Handles information gathering tasks including searching TMDB for movie information, looking up the weather, and creating notes.",
+    agent: createInfoAgent(llm, { permissionManager }),
+  }),
+);
+
 agent.registerPlugin(
   new SubAgentPlugin({
     toolName: "file_system_agent",
