@@ -73,6 +73,7 @@ export class MetacognitionPlugin implements AgentPlugin {
   private currentTurn: TurnState;
   private turnHistory: TurnState[] = [];
   private correctionHistory: CorrectionRecord[] = [];
+  private readonly blockedTools = new Set<string>();
   private readonly saturationThreshold: number;
   private readonly sourceReader: SourceReaderPlugin;
   private agentRef: BaseAgent | null = null;
@@ -118,6 +119,9 @@ export class MetacognitionPlugin implements AgentPlugin {
           !this.currentTurn.uncertainty_markers.includes("tool_saturation")
         ) {
           this.currentTurn.uncertainty_markers.push("tool_saturation");
+          this.blockedTools.add("search_memory");
+          this.blockedTools.add("hybrid_search");
+          this.blockedTools.add("query_memories");
         }
         const meta = this.memoryPlugin.searchMetaBuffer.get(name);
         if (meta) {
@@ -273,6 +277,7 @@ export class MetacognitionPlugin implements AgentPlugin {
         }
       }
       this.currentTurn = this.newTurn();
+      this.blockedTools.clear();
       try {
         const behaviors = this.memoryPlugin.db.getRecentMemories(20, "behavior");
         this.currentTurn.behavioral_rules_active = behaviors.map((b) =>
@@ -293,6 +298,23 @@ export class MetacognitionPlugin implements AgentPlugin {
       // Run pattern detection after each assistant response (non-blocking)
       this.maybeAutoCorrect().catch(() => {});
     }
+  }
+
+  onBeforeToolCall(
+    name: string,
+    _args: Record<string, unknown>,
+  ): { allow: true } | { allow: false; reason: string } {
+    if (this.blockedTools.has(name)) {
+      return {
+        allow: false,
+        reason:
+          `[Metacognition] '${name}' is blocked this turn. Memory access count ` +
+          `(${this.currentTurn.memory_access_count}) exceeded saturation threshold ` +
+          `(${this.saturationThreshold}). Synthesize from already-retrieved context ` +
+          `rather than issuing another memory search.`,
+      };
+    }
+    return { allow: true };
   }
 
   private handleIntrospect(): string {

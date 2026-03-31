@@ -34,6 +34,15 @@ export interface AgentPlugin {
   getMessages?: (limit?: number) => Message[] | Promise<Message[]>;
   onError?: (error: Error) => void;
   /**
+   * Called before a tool's implementation is invoked. Return `{ allow: true }` to proceed
+   * normally, or `{ allow: false, reason }` to block the call. The reason string is returned
+   * to the LLM as the tool result so it can adapt its behaviour.
+   */
+  onBeforeToolCall?: (
+    name: string,
+    args: Record<string, unknown>,
+  ) => { allow: true } | { allow: false; reason: string };
+  /**
    * Called after the LLM produces a response but before it is emitted as "speak".
    * Return a modified string to replace the response, or the original string to leave it unchanged.
    * Useful for routing to a vision model, a larger synthesis model, etc.
