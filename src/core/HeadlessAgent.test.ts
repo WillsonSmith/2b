@@ -138,7 +138,7 @@ describe("HeadlessAgent.ask()", () => {
     expect(result).toBe("approved-result");
   });
 
-  test("onToolCallStart and onToolCallEnd events fire for each tool execution", async () => {
+  test("toolCallHandler fires once per tool execution with correct name and args", async () => {
     const llm = makeLLM("done");
     const executeTool = mock(async () => "r");
     const plugin: AgentPlugin = {
@@ -148,17 +148,15 @@ describe("HeadlessAgent.ask()", () => {
     };
     const agent = new HeadlessAgent(llm, [plugin], "base");
 
-    const events: Array<{ event: string; name: string }> = [];
-    agent.setToolCallHandler((event, name) => events.push({ event, name }));
+    const events: Array<{ name: string; args: Record<string, unknown> }> = [];
+    agent.setToolCallHandler((name, args) => events.push({ name, args }));
 
     await agent.ask("task");
     const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
     await tools[0].implementation!({});
 
-    expect(events).toEqual([
-      { event: "start", name: "t" },
-      { event: "end", name: "t" },
-    ]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({ name: "t", args: {} });
   });
 
   test("plugin lifecycle: onInit is NOT called by HeadlessAgent", async () => {
