@@ -532,17 +532,23 @@ export class MetacognitionPlugin implements AgentPlugin {
     // ── Correction effectiveness ────────────────────────────────────────────────
     if (this.correctionHistory.length > 0) {
       sections.push("\n## Correction Effectiveness");
-      const counts = { pending: 0, effective: 0, ineffective: 0 };
+      const counts = { pending: 0, effective: 0, ineffective: 0, effective_after_strengthen: 0, failed: 0 };
       for (const c of this.correctionHistory) counts[c.effectiveness]++;
       sections.push(
         `Total corrections: ${this.correctionHistory.length} — ` +
-          `${counts.effective} effective, ${counts.ineffective} ineffective, ${counts.pending} pending`,
+          `${counts.effective + counts.effective_after_strengthen} effective, ` +
+          `${counts.ineffective} ineffective (CRITICAL, under observation), ` +
+          `${counts.failed} failed (cleared for retry), ` +
+          `${counts.pending} pending`,
       );
       const ineffective = this.correctionHistory.filter((c) => c.effectiveness === "ineffective");
       if (ineffective.length > 0) {
-        sections.push("Ineffective corrections (rule strengthened):");
+        sections.push("Ineffective corrections (CRITICAL rule active, second observation window running):");
         for (const c of ineffective) {
-          sections.push(`  [${c.trigger}] ${c.rule_saved.slice(0, 80)}`);
+          const since = c.strengthened_at
+            ? ` since ${c.strengthened_at.toISOString().slice(0, 10)}`
+            : "";
+          sections.push(`  [${c.trigger}]${since} ${c.rule_saved.slice(0, 80)}`);
         }
       }
     }
@@ -613,15 +619,21 @@ export class MetacognitionPlugin implements AgentPlugin {
     if (this.correctionHistory.length === 0) {
       return "No self-corrections have been applied yet.";
     }
-    const counts = { pending: 0, effective: 0, ineffective: 0 };
+    const counts = { pending: 0, effective: 0, ineffective: 0, effective_after_strengthen: 0, failed: 0 };
     for (const c of this.correctionHistory) counts[c.effectiveness]++;
     return [
       `Self-correction history (${this.correctionHistory.length} total — ` +
-        `${counts.effective} effective, ${counts.ineffective} ineffective, ${counts.pending} pending):`,
+        `${counts.effective + counts.effective_after_strengthen} effective, ` +
+        `${counts.ineffective} ineffective (CRITICAL), ` +
+        `${counts.failed} failed (cleared), ` +
+        `${counts.pending} pending):`,
       ...this.correctionHistory.slice(-20).map((c) => {
         const date = c.applied_at.toISOString().slice(0, 16).replace("T", " ");
+        const strengthenNote = c.strengthened_at
+          ? ` [strengthened ${c.strengthened_at.toISOString().slice(0, 10)}]`
+          : "";
         return (
-          `[${c.id.slice(0, 8)}] (${date}) trigger=${c.trigger} effectiveness=${c.effectiveness}\n` +
+          `[${c.id.slice(0, 8)}] (${date}) trigger=${c.trigger} effectiveness=${c.effectiveness}${strengthenNote}\n` +
           `  rule: ${c.rule_saved.slice(0, 120)}\n` +
           `  behavior_id: ${c.behavior_memory_id.slice(0, 8)}`
         );
