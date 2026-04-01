@@ -29,7 +29,7 @@ User → Orchestrator (CortexAgent)
            ├── media_agent  → HeadlessAgent [YtDlp, FFmpeg, ImageVision]
            ├── web_agent    → HeadlessAgent [WebSearch, WebReader]
            ├── system_agent → HeadlessAgent [Shell, FileIO, Clipboard, CodeSandbox]
-           ├── info_agent   → HeadlessAgent [TMDB, Weather, Notes]
+           ├── info_agent   → HeadlessAgent [TMDB, Weather, Wikipedia]
            ├── MinimalTools (get_current_time, echo)
            └── MemoryPlugin
 ```
