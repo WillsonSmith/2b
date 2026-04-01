@@ -647,12 +647,13 @@ export class MetacognitionPlugin implements AgentPlugin {
       );
     }
 
-    // Redundancy pattern: same tool called multiple times in the same turn, repeatedly
+    // Redundancy pattern: same tool+args called multiple times in the same turn, repeatedly
     const redundancyCount = window.filter((t) => {
       const seen = new Set<string>();
       for (const tc of t.tool_calls) {
-        if (seen.has(tc.tool)) return true;
-        seen.add(tc.tool);
+        const key = `${tc.tool}:${tc.args_summary.slice(0, 50)}`;
+        if (seen.has(key)) return true;
+        seen.add(key);
       }
       return false;
     }).length;
@@ -741,8 +742,9 @@ export class MetacognitionPlugin implements AgentPlugin {
       if (trigger === "redundancy") {
         const seen = new Set<string>();
         for (const tc of t.tool_calls) {
-          if (seen.has(tc.tool)) return true;
-          seen.add(tc.tool);
+          const key = `${tc.tool}:${tc.args_summary.slice(0, 50)}`;
+          if (seen.has(key)) return true;
+          seen.add(key);
         }
         return false;
       }
