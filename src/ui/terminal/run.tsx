@@ -110,6 +110,7 @@ agent.registerPlugin(
     description:
       "Handles file system operations: reading, writing, and managing directories.",
     agent: createFileSystemAgent(llm, { permissionManager }),
+    inactivityTimeoutMs: 10_000,
   }),
 );
 const sourceRoot = new URL("../..", import.meta.url).pathname;
