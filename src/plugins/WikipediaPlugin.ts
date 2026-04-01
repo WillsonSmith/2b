@@ -11,17 +11,14 @@ const DEFAULT_LINKS_LIMIT = 20;
 const MAX_LINKS_LIMIT = 50;
 const CACHE_TTL_MS = 30_000;
 
-interface MobileSectionEntry {
-  id: number;
-  toclevel?: number;
-  line?: string;
-  anchor?: string;
-  text?: string;
-}
-
-interface MobileSectionsResponse {
-  lead: { sections: MobileSectionEntry[] };
-  remaining: { sections: MobileSectionEntry[] };
+// One entry from the article's table of contents.
+// `index` is the value to pass as `section=` in the action API and to
+// wikipedia_get_section / wikipedia_get_links.
+interface TocEntry {
+  index: number;
+  toclevel: number;
+  line: string;
+  anchor: string;
 }
 
 interface WikiLink {
@@ -53,12 +50,17 @@ function cleanSectionText(html: string): string {
     .trim();
 }
 
-// Extracts internal Wikipedia links from raw HTML using a regex over the
-// title attribute. The inner-text capture ([^<]+) only matches plain text
-// directly inside the <a> tag — links whose visible text is wrapped in a
-// child element (e.g. <a title="Foo"><b>Bold</b></a>) will be silently
-// skipped. This is an acceptable trade-off for the Wikipedia mobile API,
-// where most anchors contain plain text.
+// Extracts internal Wikipedia links from rendered article HTML using the
+// title attribute on anchor elements. The inner-text capture ([^<]+) only
+// matches plain text directly inside the <a> tag — links whose visible text
+// is wrapped in a child element (e.g. <a title="Foo"><b>Bold</b></a>) will
+// be silently skipped. This is an acceptable trade-off for Wikipedia HTML.
+//
+// Links whose title contains ":" are excluded — this filters out namespace-
+// prefixed links (File:, Category:, Wikipedia:, Special:, edit links whose
+// title reads "Edit section: …", etc.). The known trade-off is that
+// legitimate article titles containing colons (e.g. subtitled works) will
+// also be excluded.
 function extractLinks(html: string): WikiLink[] {
   const pattern = /<a[^>]+title="([^"]+)"[^>]*>([^<]+)<\/a>/g;
   const seen = new Set<string>();
@@ -67,6 +69,7 @@ function extractLinks(html: string): WikiLink[] {
   while ((match = pattern.exec(html)) !== null) {
     const title = match[1]!;
     const text = match[2]!.trim();
+    if (title.includes(":")) continue;
     if (!seen.has(title)) {
       seen.add(title);
       links.push({ text, title });
@@ -78,13 +81,21 @@ function extractLinks(html: string): WikiLink[] {
 export class WikipediaPlugin implements AgentPlugin {
   name = "WikipediaPlugin";
 
-  private readonly sectionCache = new Map<
-    string,
-    { data: MobileSectionsResponse; expiresAt: number }
-  >();
+  // Cache for table-of-contents data, keyed by normalised article title.
+  private readonly tocCache = new Map<string, { data: TocEntry[]; expiresAt: number }>();
+  // Cache for individual section HTML, keyed by "normalised_title:sectionIndex".
+  private readonly sectionHtmlCache = new Map<string, { html: string; expiresAt: number }>();
 
   getSystemPromptFragment(): string {
-    return "You have access to Wikipedia. Use `wikipedia_search` to find articles, `wikipedia_get_article` for a short summary, `wikipedia_list_sections` to see an article's table of contents, `wikipedia_get_section` to read any specific section, and `wikipedia_get_links` to find articles that a page links to so you can follow up on related topics. For long articles, always list sections first and fetch only the sections you need.";
+    return [
+      "You have access to Wikipedia via these tools:",
+      "- `wikipedia_search`: find an article by topic. Use this only to locate a new article, not to look up content you already have.",
+      "- `wikipedia_get_article`: short summary of an article (first paragraph only).",
+      "- `wikipedia_list_sections`: get the table of contents for an article. Call this ONCE per article — you do not need to call it again before each section fetch.",
+      "- `wikipedia_get_section`: read one section by its index from the table of contents. Fetch sections sequentially; do not re-list sections between fetches.",
+      "- `wikipedia_get_links`: extract links from an article. Only use this when the user explicitly asks to explore or follow linked articles.",
+      "Once you have listed sections and fetched the ones you need, respond to the user — do not keep searching or re-listing.",
+    ].join("\n");
   }
 
   getTools(): ToolDefinition[] {
@@ -126,7 +137,7 @@ export class WikipediaPlugin implements AgentPlugin {
       {
         name: "wikipedia_list_sections",
         description:
-          "Get the table of contents for a Wikipedia article — section titles, indices, and depth levels. Call this before wikipedia_get_section to find which sections are relevant.",
+          "Get the table of contents for a Wikipedia article — section titles, indices, and depth levels. Call this once per article to plan which sections to fetch. Do not call it again for the same article.",
         parameters: {
           type: "object",
           properties: {
@@ -165,7 +176,7 @@ export class WikipediaPlugin implements AgentPlugin {
       {
         name: "wikipedia_get_links",
         description:
-          "Extract internal Wikipedia links from an article or a specific section. Returns link text and article titles usable directly with wikipedia_get_article. Use this to discover and follow related topics.",
+          "Extract internal Wikipedia links from an article or a specific section. Returns link text and article titles usable directly with wikipedia_get_article. Only use this when the user explicitly asks to explore or follow linked articles.",
         parameters: {
           type: "object",
           properties: {
@@ -190,6 +201,7 @@ export class WikipediaPlugin implements AgentPlugin {
   }
 
   async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+    logger.debug("WikipediaPlugin", `tool called: ${name}`, args);
     if (name === "wikipedia_search") {
       return this.search(args.query as string, args.limit as number | undefined);
     }
@@ -236,6 +248,7 @@ export class WikipediaPlugin implements AgentPlugin {
 
     const data = await res.json();
     const results = data?.query?.search ?? [];
+    logger.debug("WikipediaPlugin", `search returned ${results.length} results`);
 
     return results.map((r: { title: string; snippet: string; wordcount: number }) => ({
       title: r.title,
@@ -252,6 +265,7 @@ export class WikipediaPlugin implements AgentPlugin {
       headers: { "User-Agent": USER_AGENT },
     });
     if (res.status === 404) {
+      logger.debug("WikipediaPlugin", `article not found: "${title}"`);
       return { error: `Article not found: "${title}". Try searching first.` };
     }
     if (!res.ok) {
@@ -259,6 +273,10 @@ export class WikipediaPlugin implements AgentPlugin {
     }
 
     const data = await res.json();
+    logger.debug(
+      "WikipediaPlugin",
+      `article summary returned: "${data.title}" (${data.extract?.length ?? 0} chars)`,
+    );
     return {
       title: data.title,
       description: data.description,
@@ -267,50 +285,120 @@ export class WikipediaPlugin implements AgentPlugin {
     };
   }
 
-  private async fetchSections(title: string): Promise<MobileSectionsResponse> {
-    const encodedTitle = encodeURIComponent(title.replace(/ /g, "_"));
-    const cached = this.sectionCache.get(encodedTitle);
+  // Fetches the table of contents via action=parse&prop=sections.
+  // Results are cached per normalised title for CACHE_TTL_MS.
+  private async fetchToc(title: string): Promise<TocEntry[]> {
+    const cacheKey = title.replace(/ /g, "_");
+    const cached = this.tocCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
+      logger.debug("WikipediaPlugin", `TOC cache hit: "${title}"`);
       return cached.data;
     }
 
-    logger.debug("WikipediaPlugin", `fetching sections: ${title}`);
-    const res = await fetch(`${REST_BASE}/page/mobile-sections/${encodedTitle}`, {
-      headers: { "User-Agent": USER_AGENT },
+    logger.debug("WikipediaPlugin", `fetching TOC: "${title}"`);
+    const params = new URLSearchParams({
+      action: "parse",
+      page: title,
+      prop: "sections",
+      format: "json",
     });
-    if (res.status === 404) {
-      throw new NotFoundError(`Article not found: "${title}". Try searching first.`);
-    }
+    const res = await fetch(`${API_BASE}?${params}`, { headers: { "User-Agent": USER_AGENT } });
     if (!res.ok) {
-      throw new Error(`Wikipedia fetch failed: ${res.status} ${res.statusText}`);
+      logger.debug("WikipediaPlugin", `TOC fetch failed: "${title}" status=${res.status}`);
+      throw new Error(`Wikipedia API failed: ${res.status} ${res.statusText}`);
     }
 
-    const data = (await res.json()) as MobileSectionsResponse;
-    this.sectionCache.set(encodedTitle, { data, expiresAt: Date.now() + CACHE_TTL_MS });
-    return data;
+    const data = await res.json();
+    if (data.error) {
+      logger.debug("WikipediaPlugin", `TOC not found: "${title}" — ${data.error.info}`);
+      throw new NotFoundError(`Article not found: "${title}". Try searching first.`);
+    }
+
+    const entries: TocEntry[] = (data.parse?.sections ?? []).map(
+      (s: { index: string; toclevel: number; line: string; anchor: string }) => ({
+        index: Number(s.index),
+        toclevel: s.toclevel ?? 1,
+        line: s.line ?? "",
+        anchor: s.anchor ?? "",
+      }),
+    );
+
+    logger.debug("WikipediaPlugin", `TOC fetched: "${title}" (${entries.length} sections)`);
+    this.tocCache.set(cacheKey, { data: entries, expiresAt: Date.now() + CACHE_TTL_MS });
+    return entries;
+  }
+
+  // Fetches the rendered HTML for one section via action=parse&prop=text&section=N.
+  // section=0 is the lead/introduction; higher indices match those from fetchToc.
+  // Results are cached per "normalised_title:sectionIndex" for CACHE_TTL_MS.
+  private async fetchSectionHtml(title: string, sectionIndex: number): Promise<string> {
+    const cacheKey = `${title.replace(/ /g, "_")}:${sectionIndex}`;
+    const cached = this.sectionHtmlCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      logger.debug("WikipediaPlugin", `section HTML cache hit: "${title}" §${sectionIndex}`);
+      return cached.html;
+    }
+
+    logger.debug("WikipediaPlugin", `fetching section HTML: "${title}" §${sectionIndex}`);
+    const params = new URLSearchParams({
+      action: "parse",
+      page: title,
+      prop: "text",
+      section: String(sectionIndex),
+      format: "json",
+    });
+    const res = await fetch(`${API_BASE}?${params}`, { headers: { "User-Agent": USER_AGENT } });
+    if (!res.ok) {
+      logger.debug(
+        "WikipediaPlugin",
+        `section HTML fetch failed: "${title}" §${sectionIndex} status=${res.status}`,
+      );
+      throw new Error(`Wikipedia API failed: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    if (data.error) {
+      logger.debug(
+        "WikipediaPlugin",
+        `section HTML not found: "${title}" §${sectionIndex} — ${data.error.info}`,
+      );
+      throw new NotFoundError(`Article not found: "${title}". Try searching first.`);
+    }
+
+    const html: string = data.parse?.text?.["*"] ?? "";
+    logger.debug(
+      "WikipediaPlugin",
+      `section HTML fetched: "${title}" §${sectionIndex} (${html.length} bytes)`,
+    );
+    this.sectionHtmlCache.set(cacheKey, { html, expiresAt: Date.now() + CACHE_TTL_MS });
+    return html;
   }
 
   private async listSections(title: string): Promise<unknown> {
-    let data: MobileSectionsResponse;
+    let entries: TocEntry[];
     try {
-      data = await this.fetchSections(title);
+      entries = await this.fetchToc(title);
     } catch (e) {
-      if (e instanceof NotFoundError) return { error: e.message };
+      if (e instanceof NotFoundError) return { error: (e as Error).message };
       throw e;
     }
 
-    // `index` mirrors the API's `id` field (not positional array index).
+    // `index` mirrors the API's section index (not positional array index).
     // Pass these values directly to wikipedia_get_section / wikipedia_get_links.
     const sections = [
       { index: 0, toclevel: 1, title: "Introduction", anchor: "Introduction" },
-      ...data.remaining.sections.map((s) => ({
-        index: s.id,
-        toclevel: s.toclevel ?? 1,
-        title: s.line ?? "",
-        anchor: s.anchor ?? "",
+      ...entries.map((s) => ({
+        index: s.index,
+        toclevel: s.toclevel,
+        title: s.line,
+        anchor: s.anchor,
       })),
     ];
 
+    logger.debug(
+      "WikipediaPlugin",
+      `list_sections returning ${sections.length} sections for "${title}"`,
+    );
     return { title, sections, section_count: sections.length };
   }
 
@@ -319,30 +407,40 @@ export class WikipediaPlugin implements AgentPlugin {
     section_index: number,
     max_chars?: number,
   ): Promise<unknown> {
-    let data: MobileSectionsResponse;
+    let html: string;
+    let sectionTitle = "Introduction";
+
     try {
-      data = await this.fetchSections(title);
+      if (section_index !== 0) {
+        const entries = await this.fetchToc(title);
+        const entry = entries.find((s) => s.index === section_index);
+        if (!entry) {
+          logger.debug(
+            "WikipediaPlugin",
+            `get_section: index ${section_index} not found in "${title}"`,
+          );
+          return {
+            error: `Section index ${section_index} not found. Call wikipedia_list_sections first to see valid indices.`,
+          };
+        }
+        sectionTitle = entry.line;
+      }
+      html = await this.fetchSectionHtml(title, section_index);
     } catch (e) {
-      if (e instanceof NotFoundError) return { error: e.message };
+      if (e instanceof NotFoundError) return { error: (e as Error).message };
       throw e;
     }
 
-    const allSections = allSectionsOf(data);
-    const section = allSections.find((s) => s.id === section_index);
-
-    if (!section) {
-      return {
-        error: `Section index ${section_index} not found. Call wikipedia_list_sections first to see valid indices.`,
-      };
-    }
-
-    const sectionTitle = section_index === 0 ? "Introduction" : (section.line ?? "");
-    const cleaned = cleanSectionText(section.text ?? "");
+    const cleaned = cleanSectionText(html);
     const total_chars = cleaned.length;
     const cap = Math.min(Math.max(1, max_chars ?? DEFAULT_SECTION_CHARS), MAX_SECTION_CHARS);
     const truncated = cleaned.length > cap;
     const content = truncated ? cleaned.slice(0, cap) : cleaned;
 
+    logger.debug(
+      "WikipediaPlugin",
+      `get_section: "${title}" §${section_index} "${sectionTitle}" — ${total_chars} chars${truncated ? ` (truncated to ${cap})` : ""}`,
+    );
     return { title, section_title: sectionTitle, section_index, content, total_chars, truncated };
   }
 
@@ -351,50 +449,83 @@ export class WikipediaPlugin implements AgentPlugin {
     section_index?: number,
     limit?: number,
   ): Promise<unknown> {
-    let data: MobileSectionsResponse;
-    try {
-      data = await this.fetchSections(title);
-    } catch (e) {
-      if (e instanceof NotFoundError) return { error: e.message };
-      throw e;
-    }
-
     const clampedLimit = Math.min(Math.max(1, limit ?? DEFAULT_LINKS_LIMIT), MAX_LINKS_LIMIT);
 
-    if (section_index !== undefined) {
-      const allSections = allSectionsOf(data);
-      const section = allSections.find((s) => s.id === section_index);
-      if (!section) {
+    try {
+      if (section_index !== undefined) {
+        let sectionTitle = "Introduction";
+        if (section_index !== 0) {
+          const entries = await this.fetchToc(title);
+          const entry = entries.find((s) => s.index === section_index);
+          if (!entry) {
+            logger.debug(
+              "WikipediaPlugin",
+              `get_links: index ${section_index} not found in "${title}"`,
+            );
+            return {
+              error: `Section index ${section_index} not found. Call wikipedia_list_sections first to see valid indices.`,
+            };
+          }
+          sectionTitle = entry.line;
+        }
+        const html = await this.fetchSectionHtml(title, section_index);
+        const links = extractLinks(html);
+        logger.debug(
+          "WikipediaPlugin",
+          `get_links: "${title}" §${section_index} "${sectionTitle}" — ${links.length} links (returning ${Math.min(links.length, clampedLimit)})`,
+        );
         return {
-          error: `Section index ${section_index} not found. Call wikipedia_list_sections first to see valid indices.`,
+          article_title: title,
+          section_title: sectionTitle,
+          links: links.slice(0, clampedLimit),
+          total_links: links.length,
         };
       }
-      const sectionTitle = section_index === 0 ? "Introduction" : (section.line ?? "");
-      const links = extractLinks(section.text ?? "");
+
+      // Full article: use action=query&prop=links — returns all wikilinks without
+      // fetching the full HTML of every section. text=title since this API
+      // doesn't return display text.
+      logger.debug("WikipediaPlugin", `fetching full article links: "${title}"`);
+      const params = new URLSearchParams({
+        action: "query",
+        titles: title,
+        prop: "links",
+        pllimit: "500",
+        plnamespace: "0",
+        format: "json",
+      });
+      const res = await fetch(`${API_BASE}?${params}`, { headers: { "User-Agent": USER_AGENT } });
+      if (!res.ok) throw new Error(`Wikipedia API failed: ${res.status} ${res.statusText}`);
+      const data = await res.json();
+      if (data.error) throw new NotFoundError(`Article not found: "${title}". Try searching first.`);
+
+      const pages: Record<string, { missing?: string; links?: { title: string }[] }> =
+        data.query?.pages ?? {};
+      const page = Object.values(pages)[0];
+      if (!page || "missing" in page) {
+        throw new NotFoundError(`Article not found: "${title}". Try searching first.`);
+      }
+
+      const links: WikiLink[] = (page.links ?? []).map((l) => ({
+        text: l.title,
+        title: l.title,
+      }));
+
+      logger.debug(
+        "WikipediaPlugin",
+        `get_links: "${title}" full article — ${links.length} links (returning ${Math.min(links.length, clampedLimit)})`,
+      );
       return {
         article_title: title,
-        section_title: sectionTitle,
+        section_title: null,
         links: links.slice(0, clampedLimit),
         total_links: links.length,
       };
+    } catch (e) {
+      if (e instanceof NotFoundError) return { error: (e as Error).message };
+      throw e;
     }
-
-    // Full article: concatenate all section HTML then extract (deduplicates across sections)
-    const allSections = allSectionsOf(data);
-    const combinedHtml = allSections.map((s) => s.text ?? "").join("\n");
-    const links = extractLinks(combinedHtml);
-    return {
-      article_title: title,
-      section_title: null,
-      links: links.slice(0, clampedLimit),
-      total_links: links.length,
-    };
   }
 }
 
 class NotFoundError extends Error {}
-
-function allSectionsOf(data: MobileSectionsResponse): MobileSectionEntry[] {
-  const lead = data.lead.sections[0];
-  return lead ? [lead, ...data.remaining.sections] : data.remaining.sections;
-}
