@@ -295,7 +295,9 @@ export class LMStudioProvider implements LLMProvider {
     this.model = model;
   }
 
-  // ~4 chars/token average; 1800 tokens leaves safe headroom below the 2048-token limit
+  // ~4 chars/token average; 1800 tokens leaves safe headroom below the 2048-token limit.
+  // CortexMemoryDatabase.CHUNK_SIZE_CHARS (6000) must stay below this value so chunks
+  // are never silently truncated here.
   private static readonly MAX_EMBEDDING_CHARS = 7200;
 
   public async getEmbedding(text: string): Promise<number[]> {
