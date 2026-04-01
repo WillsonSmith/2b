@@ -3,7 +3,6 @@ import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import type { BaseAgent } from "../core/BaseAgent.ts";
 import type { Message } from "../core/types.ts";
 import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
-import { SourceReaderPlugin } from "./SourceReaderPlugin.ts";
 
 const MEMORY_TOOLS = new Set([
   "search_memory", "query_memories", "hybrid_search",
@@ -19,13 +18,10 @@ const EXTERNAL_TOOLS = new Set([
   "ffmpeg_extract_frames", "ffmpeg_screenshot", "ffmpeg_crop", "ffmpeg_speed", "ffmpeg_rotate",
 ]);
 
-const SOURCE_TOOLS = new Set(["read_source_file", "list_source_dir", "grep_source"]);
-
 const SYSTEM_TOOLS = new Set([
   "introspect", "memory_status", "show_active_rules",
   "list_registered_plugins", "list_available_tools", "get_system_prompt",
   "efficiency_report",
-  ...SOURCE_TOOLS,
 ]);
 
 interface ToolCallRecord {
@@ -76,15 +72,13 @@ export class MetacognitionPlugin implements AgentPlugin {
   private correctionHistory: CorrectionRecord[] = [];
   private readonly blockedTools = new Set<string>();
   private readonly saturationThreshold: number;
-  private readonly sourceReader: SourceReaderPlugin;
   private agentRef: BaseAgent | null = null;
 
   constructor(
     private memoryPlugin: CortexMemoryPlugin,
-    options?: { toolSaturationThreshold?: number; sourceRoot?: string },
+    options?: { toolSaturationThreshold?: number },
   ) {
     this.saturationThreshold = options?.toolSaturationThreshold ?? 5;
-    this.sourceReader = new SourceReaderPlugin({ sourceRoot: options?.sourceRoot });
     this.currentTurn = this.newTurn();
   }
 
@@ -245,8 +239,6 @@ export class MetacognitionPlugin implements AgentPlugin {
           "Shows the history of self-corrections the agent has autonomously applied, including what pattern triggered each correction and what behavioral rule was saved as a result.",
         parameters: { type: "object", properties: {} },
       },
-      // --- Source code reading (delegated to SourceReaderPlugin) ---
-      ...this.sourceReader.getTools(),
     ];
   }
 
@@ -260,7 +252,6 @@ export class MetacognitionPlugin implements AgentPlugin {
       if (name === "get_system_prompt") return this.handleGetSystemPrompt();
       if (name === "efficiency_report") return this.handleEfficiencyReport();
       if (name === "show_corrections") return this.handleShowCorrections();
-      if (SOURCE_TOOLS.has(name)) return await this.sourceReader.executeTool(name, args);
     } catch (e) {
       console.warn(`[MetacognitionPlugin] Tool error (${name}):`, e);
       return `Tool error: ${e instanceof Error ? e.message : String(e)}`;
