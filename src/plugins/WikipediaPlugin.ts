@@ -224,7 +224,6 @@ export class WikipediaPlugin implements AgentPlugin {
       srsearch: query,
       srlimit: String(clampedLimit),
       format: "json",
-      origin: "*",
     });
 
     logger.debug("WikipediaPlugin", `searching: ${query}`);
@@ -300,6 +299,8 @@ export class WikipediaPlugin implements AgentPlugin {
       throw e;
     }
 
+    // `index` mirrors the API's `id` field (not positional array index).
+    // Pass these values directly to wikipedia_get_section / wikipedia_get_links.
     const sections = [
       { index: 0, toclevel: 1, title: "Introduction", anchor: "Introduction" },
       ...data.remaining.sections.map((s) => ({
@@ -326,7 +327,7 @@ export class WikipediaPlugin implements AgentPlugin {
       throw e;
     }
 
-    const allSections = [data.lead.sections[0], ...data.remaining.sections];
+    const allSections = allSectionsOf(data);
     const section = allSections.find((s) => s.id === section_index);
 
     if (!section) {
@@ -361,7 +362,7 @@ export class WikipediaPlugin implements AgentPlugin {
     const clampedLimit = Math.min(Math.max(1, limit ?? DEFAULT_LINKS_LIMIT), MAX_LINKS_LIMIT);
 
     if (section_index !== undefined) {
-      const allSections = [data.lead.sections[0], ...data.remaining.sections];
+      const allSections = allSectionsOf(data);
       const section = allSections.find((s) => s.id === section_index);
       if (!section) {
         return {
@@ -379,7 +380,7 @@ export class WikipediaPlugin implements AgentPlugin {
     }
 
     // Full article: concatenate all section HTML then extract (deduplicates across sections)
-    const allSections = [data.lead.sections[0], ...data.remaining.sections];
+    const allSections = allSectionsOf(data);
     const combinedHtml = allSections.map((s) => s.text ?? "").join("\n");
     const links = extractLinks(combinedHtml);
     return {
@@ -392,3 +393,8 @@ export class WikipediaPlugin implements AgentPlugin {
 }
 
 class NotFoundError extends Error {}
+
+function allSectionsOf(data: MobileSectionsResponse): MobileSectionEntry[] {
+  const lead = data.lead.sections[0];
+  return lead ? [lead, ...data.remaining.sections] : data.remaining.sections;
+}
