@@ -653,14 +653,20 @@ export class MetacognitionPlugin implements AgentPlugin {
         .some((c) => c.trigger === trigger);
       if (recentlySaved) return;
 
-      // Also skip if a behavior with this tag already exists in the DB
+      // Also skip if an active (non-failed) correction for this trigger already exists in the DB
       const existing = this.memoryPlugin.db.queryMemories({
         types: ["behavior"],
         tags: ["metacognition-correction"],
         contains: trigger,
         limit: 1,
       });
-      if (existing.length > 0) return;
+      if (existing.length > 0) {
+        const isActive = this.correctionHistory.some(
+          (c) => c.behavior_memory_id === existing[0]!.id && c.effectiveness !== "failed",
+        );
+        if (isActive) return;
+        // Otherwise the DB record is stale/orphaned — fall through and allow save
+      }
 
       const behaviorMemoryId = await this.memoryPlugin.db.addMemory(
         rule,
@@ -676,6 +682,7 @@ export class MetacognitionPlugin implements AgentPlugin {
         applied_at: new Date(),
         turns_observed: turnsObserved,
         effectiveness: "pending",
+        post_strengthen_count: 0,
       });
       if (this.correctionHistory.length > CORRECTION_HISTORY_LIMIT) {
         this.correctionHistory.shift();
@@ -800,6 +807,7 @@ export class MetacognitionPlugin implements AgentPlugin {
       await this.memoryPlugin.executeTool!("delete_memory", {
         id: correction.behavior_memory_id,
       });
+      this.correctionHistory = this.correctionHistory.filter((c) => c.id !== correction.id);
     } catch {
       // non-critical
     }
