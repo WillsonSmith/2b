@@ -7,7 +7,7 @@ function truncateArgs(args: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(args)) {
     if (typeof v === "string" && v.length > MAX_ARG_VALUE_LENGTH) {
-      out[k] = `${v.slice(0, MAX_ARG_VALUE_LENGTH)}… [${v.length - MAX_ARG_VALUE_LENGTH} chars]`;
+      out[k] = `${v.slice(0, MAX_ARG_VALUE_LENGTH)}… [truncated, ${v.length} total chars]`;
     } else {
       out[k] = v;
     }
