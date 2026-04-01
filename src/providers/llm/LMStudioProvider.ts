@@ -295,11 +295,18 @@ export class LMStudioProvider implements LLMProvider {
     this.model = model;
   }
 
+  // ~4 chars/token average; 1800 tokens leaves safe headroom below the 2048-token limit
+  private static readonly MAX_EMBEDDING_CHARS = 7200;
+
   public async getEmbedding(text: string): Promise<number[]> {
+    const input =
+      text.length > LMStudioProvider.MAX_EMBEDDING_CHARS
+        ? text.slice(0, LMStudioProvider.MAX_EMBEDDING_CHARS)
+        : text;
     const model = await this.client.embedding.model(this.embeddingModel, {
       verbose: false,
     });
-    const { embedding } = await model.embed(text);
+    const { embedding } = await model.embed(input);
     return embedding;
   }
 }
