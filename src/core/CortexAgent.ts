@@ -30,8 +30,7 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
     this.memoryPlugin = new CortexMemoryPlugin(llm, cortexName, config.memoryDbPath);
     const thoughtPlugin = new ThoughtPlugin(this.memoryPlugin, synthesisProvider ?? null);
 
-    const sourceRoot = new URL("../..", import.meta.url).pathname;
-    const metacognitionPlugin = new MetacognitionPlugin(this.memoryPlugin, { sourceRoot });
+    const metacognitionPlugin = new MetacognitionPlugin(this.memoryPlugin);
 
     this.inner.registerPlugin(this.memoryPlugin);
     this.inner.registerPlugin(thoughtPlugin);

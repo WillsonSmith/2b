@@ -26,6 +26,12 @@ export function createFileSystemAgent(
       "- Use delete_file only when explicitly instructed — deletions are permanent.",
       "- All paths are relative to the working directory. Do not attempt to access paths outside it.",
       "- Return structured results: always include the resolved path and any relevant metadata (size, line count, etc.).",
+      "",
+      "Notes:",
+      "- Store notes as markdown files under notes/ (e.g. notes/my-note.md). Create the directory if it does not exist.",
+      "- To list notes: use list_directory on the notes/ directory.",
+      "- To read a note: use read_file on the relevant notes/*.md file.",
+      "- To delete a note: use delete_file on the relevant notes/*.md file.",
     ].join("\n"),
     {
       agentName: "FileSystemAgent",

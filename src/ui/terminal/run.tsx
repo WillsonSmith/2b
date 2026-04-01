@@ -87,7 +87,7 @@ agent.registerPlugin(
   new SubAgentPlugin({
     toolName: "media_agent",
     description:
-      "Handles media tasks: downloading videos, trimming clips, converting formats, extracting audio, and analyzing images.",
+      "Use for any task involving video or audio: downloading clips from YouTube or Twitch, trimming or converting video files, extracting audio tracks, or analyzing the content of an image.",
     agent: createMediaAgent(llm, { permissionManager }),
   }),
 );
@@ -96,7 +96,7 @@ agent.registerPlugin(
   new SubAgentPlugin({
     toolName: "info_agent",
     description:
-      "Handles information gathering tasks including searching TMDB for movie information, looking up the weather, and creating notes.",
+      "Use for factual lookups only: movie and TV show details via TMDB, current weather for a location, or searching and reading Wikipedia articles. Does not write files or manage notes.",
     agent: createInfoAgent(llm, { permissionManager }),
   }),
 );
@@ -105,7 +105,7 @@ agent.registerPlugin(
   new SubAgentPlugin({
     toolName: "file_system_agent",
     description:
-      "Handles file system operations: reading, writing, and managing directories.",
+      "Use for reading, writing, moving, copying, or deleting files and directories on the local filesystem. Also use this to create notes — write them as markdown files (e.g. notes/my-note.md).",
     agent: createFileSystemAgent(llm, { permissionManager }),
     // No absoluteTimeoutMs — FileSystemPlugin enforces per-op timeouts internally.
     // An absolute cap would kill legitimate long-running sequences (e.g. writing many files).
@@ -116,7 +116,7 @@ agent.registerPlugin(
   new SubAgentPlugin({
     toolName: "explore_codebase",
     description:
-      "Ask questions about the agent's own source code and get synthesized explanations. Use this to understand how the agent works, trace data flow, or look up implementation details. Example: 'How does tool_call flow through the system?' or 'What does MetacognitionPlugin track?'",
+      "Use when the user asks how this agent works, wants to trace a data flow, understand a plugin, or look up implementation details in this agent's own source code. Scoped only to this agent's source — not for exploring other projects or general coding tasks.",
     agent: createCodeReaderAgent({ sourceRoot }),
     inactivityTimeoutMs: 30_000,
     absoluteTimeoutMs: 60_000,
