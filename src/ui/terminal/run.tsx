@@ -14,7 +14,7 @@ import { CortexAgent } from "../../core/CortexAgent.ts";
 import { LMStudioProvider } from "../../providers/llm/LMStudioProvider.ts";
 import { MemoryPlugin } from "../../plugins/MemoryPlugin.ts";
 import { SubAgentPlugin } from "../../plugins/SubAgentPlugin.ts";
-import { AutoApprovePermissionManager } from "../../core/PermissionManager.ts";
+import { InkPermissionManager } from "./InkPermissionManager.ts";
 import { createMediaAgent } from "../../agents/sub-agents/createMediaAgent.ts";
 import type { AgentPlugin, ToolDefinition } from "../../core/Plugin.ts";
 import { ChatSession } from "../ChatSession.ts";
@@ -70,10 +70,7 @@ const llm = new LMStudioProvider(model, lmStudioUrl, {
   toolCallingStrategy: "native",
 });
 
-// AutoApprovePermissionManager is used here because InteractivePermissionManager
-// reads from stdin, which conflicts with Ink's input handling.
-// TODO: replace with an Ink-native permission dialog.
-const permissionManager = new AutoApprovePermissionManager();
+const permissionManager = new InkPermissionManager();
 
 const systemPrompt =
   "You are a helpful assistant with access to tools. Think carefully before responding.\n\nWhen delegating to a sub-agent, always include in the task field all relevant context the sub-agent needs: usernames, URLs, IDs, dates, and any specific facts from memory. Sub-agents have no access to your memory or conversation history.";
@@ -142,5 +139,6 @@ render(
     model={model}
     systemPrompt={systemPrompt}
     onModelChange={(newModel) => llm.setModel(newModel)}
+    permissionManager={permissionManager}
   />,
 );
