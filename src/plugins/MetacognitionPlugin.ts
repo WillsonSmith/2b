@@ -55,7 +55,9 @@ interface CorrectionRecord {
   behavior_memory_id: string;
   applied_at: Date;
   turns_observed: number;
-  effectiveness: "pending" | "effective" | "ineffective";
+  effectiveness: "pending" | "effective" | "ineffective" | "effective_after_strengthen" | "failed";
+  strengthened_at?: Date;
+  post_strengthen_count: number;
 }
 
 function categorize(tool: string): ToolCallRecord["category"] {
