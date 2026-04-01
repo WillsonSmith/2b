@@ -242,6 +242,84 @@ describe("CortexMemoryDatabase - WHERE clause builder (via queryMemories)", () =
   });
 });
 
+describe("CortexMemoryDatabase - chunkAndEmbed", () => {
+  // CHUNK_SIZE_CHARS = 6000, CHUNK_OVERLAP_CHARS = 800, stride = 5200
+
+  test("short text (≤6000 chars) calls getEmbedding exactly once with the original text", async () => {
+    const { db, getEmbedding } = makeDB();
+    getEmbedding.mockClear?.();
+    await db.addMemory("short text", "factual");
+    expect(getEmbedding.mock.calls.length).toBe(1);
+    expect(getEmbedding.mock.calls[0]?.[0]).toBe("short text");
+  });
+
+  test("text exactly at 6000 chars calls getEmbedding once (boundary, no chunking)", async () => {
+    const { db, getEmbedding } = makeDB();
+    getEmbedding.mockClear?.();
+    await db.addMemory("x".repeat(6000), "factual");
+    expect(getEmbedding.mock.calls.length).toBe(1);
+  });
+
+  test("text at 6001 chars triggers chunking (2 getEmbedding calls)", async () => {
+    const { db, getEmbedding } = makeDB();
+    getEmbedding.mockClear?.();
+    await db.addMemory("x".repeat(6001), "factual");
+    expect(getEmbedding.mock.calls.length).toBe(2);
+  });
+
+  test("chunks overlap by 800 chars", async () => {
+    // Use a text where each character encodes its position so we can verify the overlap
+    const text = Array.from({ length: 6001 }, (_, i) => String.fromCharCode(97 + (i % 26))).join("");
+    const captured: string[] = [];
+    const llm = { getEmbedding: mock(async (t: string) => { captured.push(t); return [0.1, 0.2, 0.3, 0.4]; }) };
+    const db = new CortexMemoryDatabase(llm, "test", ":memory:");
+    await db.addMemory(text, "factual");
+    // Last 800 chars of chunk[0] should equal first 800 chars of chunk[1]
+    expect(captured[0]!.slice(-800)).toBe(captured[1]!.slice(0, 800));
+  });
+
+  test("averaged embedding is stored — searching with the average returns score ~1", async () => {
+    // text is 6001 chars → 2 chunks; embeddings [0.0, 1.0] and [1.0, 0.0] → avg [0.5, 0.5]
+    let callCount = 0;
+    const llm = {
+      getEmbedding: mock(async (_t: string) => {
+        callCount++;
+        return callCount === 1 ? [0.0, 1.0] : [1.0, 0.0];
+      }),
+    };
+    const db = new CortexMemoryDatabase(llm, "test", ":memory:");
+    await db.addMemory("x".repeat(6001), "factual");
+    // Cosine similarity of [0.5, 0.5] against itself is 1.0
+    const avgVec = [0.5, 0.5];
+    const results = db.searchWithEmbedding(avgVec, 1, 0);
+    expect(results[0]?.score).toBeCloseTo(1.0, 5);
+  });
+
+  test("three-chunk text calls getEmbedding 3 times", async () => {
+    // stride = 5200; need length > 5200*2 = 10400 to get a third chunk
+    const { db, getEmbedding } = makeDB();
+    getEmbedding.mockClear?.();
+    await db.addMemory("x".repeat(10401), "factual");
+    expect(getEmbedding.mock.calls.length).toBe(3);
+  });
+
+  test("updateMemoryText uses chunked embedding for long text", async () => {
+    const { db, getEmbedding } = makeDB();
+    const id = await db.addMemory("short", "factual");
+    getEmbedding.mockClear?.();
+    await db.updateMemoryText(id, "y".repeat(6001));
+    expect(getEmbedding.mock.calls.length).toBe(2);
+  });
+
+  test("updateMemoryText calls getEmbedding once for short updated text", async () => {
+    const { db, getEmbedding } = makeDB();
+    const id = await db.addMemory("original", "factual");
+    getEmbedding.mockClear?.();
+    await db.updateMemoryText(id, "updated short text");
+    expect(getEmbedding.mock.calls.length).toBe(1);
+  });
+});
+
 describe("CortexMemoryDatabase - getRecentMemories", () => {
   test("respects the limit parameter", async () => {
     const { db } = makeDB();
