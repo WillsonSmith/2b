@@ -85,7 +85,13 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
     };
 
     permissionManager.on("permission_request", onRequest);
-    return () => { permissionManager.off("permission_request", onRequest); };
+    return () => {
+      permissionManager.off("permission_request", onRequest);
+      setPermissionQueue((q) => {
+        q.forEach((p) => p.resolve(false));
+        return [];
+      });
+    };
   }, [permissionManager]);
 
   const handlePermissionResponse = useCallback(
@@ -157,7 +163,7 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
         />
       )}
 
-      {/* Permission dialog — shown above the input bar when a write op needs approval */}
+      {/* Permission dialog — shown above the input bar when a tool needs approval */}
       {pendingPermission && (
         <PermissionDialog
           pending={pendingPermission}
