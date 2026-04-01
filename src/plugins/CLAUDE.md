@@ -35,7 +35,7 @@ Modular agent capabilities. Each plugin implements `AgentPlugin` from `../core/P
 | `RSSPlugin` | Fetch and parse RSS and Atom feeds (HTTPS only); tool: `fetch_rss_feed` (url, limit) — returns feed title, description, and items with title, link, description, pubDate, author |
 | `WebSearchPlugin` | DuckDuckGo instant answers for factual queries; tool: `web_search` |
 | `WebReaderPlugin` | Fetches and extracts readable article text from HTTPS web pages; tool: `read_webpage` |
-| `WikipediaPlugin` | Search and fetch Wikipedia articles (no API key required); tools: `wikipedia_search` (query → titles + snippets), `wikipedia_get_article` (title → full intro + URL) |
+| `WikipediaPlugin` | Search and fetch Wikipedia articles (no API key required); tools: `wikipedia_search` (query → titles + snippets), `wikipedia_get_article` (title → short summary + URL), `wikipedia_list_sections` (title → table of contents), `wikipedia_get_section` (title + section_index → plain-text section content, max_chars cap), `wikipedia_get_links` (title + optional section_index → internal Wikipedia links with article titles, for following related topics) |
 | `ShellPlugin` | Read-only shell command execution (ls, git, cat, grep, etc.); tool: `run_shell` — no shell operators, no write commands |
 | `ClipboardPlugin` | macOS clipboard read/write via pbpaste/pbcopy; tools: `read_clipboard`, `write_clipboard` |
 | `NotesPlugin` | Persistent markdown notes saved to `notes/` directory; tools: `create_note`, `list_notes`, `read_note`, `delete_note` |
