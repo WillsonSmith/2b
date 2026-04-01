@@ -226,4 +226,39 @@ describe("getEmbedding", () => {
     await provider.getEmbedding("some text");
     expect(mockEmbeddingModel.mock.calls.length).toBeGreaterThan(0);
   });
+
+  test("short text is passed to embed unchanged", async () => {
+    mockEmbedModel.embed.mockClear?.();
+    const provider = makeProvider();
+    await provider.getEmbedding("hello");
+    expect(mockEmbedModel.embed.mock.calls[0]?.[0]).toBe("hello");
+  });
+
+  test("text longer than 7200 chars is truncated to 7200 before embedding", async () => {
+    mockEmbedModel.embed.mockClear?.();
+    const provider = makeProvider();
+    const longText = "a".repeat(8000);
+    await provider.getEmbedding(longText);
+    const passedText = mockEmbedModel.embed.mock.calls[0]?.[0] as string;
+    expect(passedText.length).toBe(7200);
+    expect(passedText).toBe(longText.slice(0, 7200));
+  });
+
+  test("text at exactly 7200 chars is not truncated", async () => {
+    mockEmbedModel.embed.mockClear?.();
+    const provider = makeProvider();
+    const boundaryText = "b".repeat(7200);
+    await provider.getEmbedding(boundaryText);
+    const passedText = mockEmbedModel.embed.mock.calls[0]?.[0] as string;
+    expect(passedText.length).toBe(7200);
+  });
+
+  test("text at 7199 chars is not truncated", async () => {
+    mockEmbedModel.embed.mockClear?.();
+    const provider = makeProvider();
+    const text = "c".repeat(7199);
+    await provider.getEmbedding(text);
+    const passedText = mockEmbedModel.embed.mock.calls[0]?.[0] as string;
+    expect(passedText.length).toBe(7199);
+  });
 });
