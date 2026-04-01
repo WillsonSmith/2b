@@ -99,6 +99,44 @@ export class MetacognitionPlugin implements AgentPlugin {
   onInit(agent: BaseAgent): void {
     this.agentRef = agent;
 
+    // Reconstruct correction history from DB so effectiveness state survives restarts
+    try {
+      const CROSS_SESSION_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+      const existing = this.memoryPlugin.db.queryMemories({
+        types: ["behavior"],
+        tags: ["metacognition-correction"],
+        limit: CORRECTION_HISTORY_LIMIT,
+      });
+      for (const mem of existing) {
+        const trigger = (mem.tags as string[]).find(
+          (t) => t !== "metacognition-correction" && !t.startsWith("metacognition-correction:"),
+        );
+        if (!trigger || !["saturation", "redundancy", "hedged_no_search"].includes(trigger)) continue;
+
+        const isIneffective = (mem.tags as string[]).includes("metacognition-correction:ineffective");
+        const age = Date.now() - new Date(mem.timestamp).getTime();
+
+        if (isIneffective && age > CROSS_SESSION_STALE_MS) {
+          // Prune stale ineffective corrections from a prior session
+          this.memoryPlugin.db.deleteMemory(mem.id).catch(() => {});
+          continue;
+        }
+
+        this.correctionHistory.push({
+          id: randomUUID(),
+          trigger: trigger as CorrectionRecord["trigger"],
+          rule_saved: mem.text,
+          behavior_memory_id: mem.id,
+          applied_at: new Date(mem.timestamp),
+          turns_observed: 0,
+          effectiveness: isIneffective ? "ineffective" : "pending",
+          post_strengthen_count: isIneffective ? 1 : 0,
+        });
+      }
+    } catch {
+      // non-critical — corrections are best-effort
+    }
+
     agent.on("tool_call", (name: string, args: Record<string, unknown>) => {
       const category = categorize(name);
       const record: ToolCallRecord = {
