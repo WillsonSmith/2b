@@ -105,11 +105,12 @@ export class CortexMemoryDatabase {
 
     const embeddings = await Promise.all(chunks.map((chunk) => this.llm.getEmbedding(chunk)));
     const dim = embeddings[0].length;
+    const totalLen = chunks.reduce((s, c) => s + c.length, 0);
     const avg = new Array<number>(dim).fill(0);
-    for (const emb of embeddings) {
-      for (let i = 0; i < dim; i++) avg[i] += emb[i]!;
+    for (let c = 0; c < chunks.length; c++) {
+      const weight = chunks[c].length / totalLen;
+      for (let i = 0; i < dim; i++) avg[i] += embeddings[c][i]! * weight;
     }
-    for (let i = 0; i < dim; i++) avg[i]! /= embeddings.length;
     return avg;
   }
 

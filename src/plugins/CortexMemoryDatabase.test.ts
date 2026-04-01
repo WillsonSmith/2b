@@ -278,20 +278,24 @@ describe("CortexMemoryDatabase - chunkAndEmbed", () => {
     expect(captured[0]!.slice(-800)).toBe(captured[1]!.slice(0, 800));
   });
 
-  test("averaged embedding is stored — searching with the average returns score ~1", async () => {
-    // text is 6001 chars → 2 chunks; embeddings [0.0, 1.0] and [1.0, 0.0] → avg [0.5, 0.5]
+  test("averaged embedding is stored — searching with the weighted average returns score ~1", async () => {
+    // "x".repeat(6001) → chunk1: [0..5999] = 6000 chars, chunk2: [5200..6000] = 801 chars
+    // weighted avg weights each embedding by its chunk's share of total chars (6801)
+    const chunkEmbeddings: [number, number][] = [[0.0, 1.0], [1.0, 0.0]];
     let callCount = 0;
     const llm = {
-      getEmbedding: mock(async (_t: string) => {
-        callCount++;
-        return callCount === 1 ? [0.0, 1.0] : [1.0, 0.0];
-      }),
+      getEmbedding: mock(async (_t: string) => chunkEmbeddings[callCount++]!),
     };
     const db = new CortexMemoryDatabase(llm, "test", ":memory:");
     await db.addMemory("x".repeat(6001), "factual");
-    // Cosine similarity of [0.5, 0.5] against itself is 1.0
-    const avgVec = [0.5, 0.5];
-    const results = db.searchWithEmbedding(avgVec, 1, 0);
+    const w1 = 6000 / 6801;
+    const w2 = 801 / 6801;
+    const expectedAvg = [
+      chunkEmbeddings[0][0] * w1 + chunkEmbeddings[1][0] * w2,
+      chunkEmbeddings[0][1] * w1 + chunkEmbeddings[1][1] * w2,
+    ];
+    // Cosine similarity of the stored vector against itself is 1.0
+    const results = db.searchWithEmbedding(expectedAvg, 1, 0);
     expect(results[0]?.score).toBeCloseTo(1.0, 5);
   });
 
