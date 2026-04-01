@@ -82,6 +82,38 @@ export class CortexMemoryDatabase {
     }
   }
 
+  // ~1500 tokens per chunk with ~200-token overlap — safe under the 2048-token embedding limit
+  private static readonly CHUNK_SIZE_CHARS = 6000;
+  private static readonly CHUNK_OVERLAP_CHARS = 800;
+
+  /**
+   * Embed text that may exceed the model's context window.
+   * Splits into overlapping chunks, embeds each, and returns the averaged vector.
+   */
+  private async chunkAndEmbed(text: string): Promise<number[]> {
+    const { CHUNK_SIZE_CHARS, CHUNK_OVERLAP_CHARS } = CortexMemoryDatabase;
+    if (text.length <= CHUNK_SIZE_CHARS) {
+      return this.llm.getEmbedding(text);
+    }
+
+    const chunks: string[] = [];
+    let start = 0;
+    while (start < text.length) {
+      chunks.push(text.slice(start, start + CHUNK_SIZE_CHARS));
+      start += CHUNK_SIZE_CHARS - CHUNK_OVERLAP_CHARS;
+    }
+
+    const embeddings = await Promise.all(chunks.map((chunk) => this.llm.getEmbedding(chunk)));
+    const dim = embeddings[0].length;
+    const totalLen = chunks.reduce((s, c) => s + c.length, 0);
+    const avg = new Array<number>(dim).fill(0);
+    for (let c = 0; c < chunks.length; c++) {
+      const weight = chunks[c].length / totalLen;
+      for (let i = 0; i < dim; i++) avg[i] += embeddings[c][i]! * weight;
+    }
+    return avg;
+  }
+
   private cosSim(a: number[], b: number[]): number {
     let dot = 0, normA = 0, normB = 0;
     for (let i = 0; i < a.length; i++) {
@@ -140,7 +172,7 @@ export class CortexMemoryDatabase {
     tags: string[] = [],
   ): Promise<string> {
     logger.debug("CortexDB", `addMemory type=${type}: getting embedding for "${text.slice(0, 80)}"`);
-    const embedding = await this.llm.getEmbedding(text);
+    const embedding = await this.chunkAndEmbed(text);
     logger.debug("CortexDB", `addMemory: embedding received (dim=${embedding.length}), inserting into DB`);
     const id = randomUUID();
     this.db
@@ -421,7 +453,7 @@ export class CortexMemoryDatabase {
 
   /** Update the text of an existing memory. */
   public async updateMemoryText(id: string, newText: string): Promise<void> {
-    const embedding = await this.llm.getEmbedding(newText);
+    const embedding = await this.chunkAndEmbed(newText);
     this.db
       .prepare("UPDATE memories SET text = ?, embedding = ? WHERE id = ?")
       .run(newText, JSON.stringify(embedding), id);
