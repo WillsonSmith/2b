@@ -1,204 +1,191 @@
-import { describe, test, expect, beforeEach, mock, spyOn } from "bun:test";
+import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { WikipediaPlugin } from "./WikipediaPlugin.ts";
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Mock helpers
 // ---------------------------------------------------------------------------
 
-function makeMobileSectionsResponse(overrides?: {
-  leadText?: string;
-  sections?: Array<{ id: number; toclevel?: number; line?: string; anchor?: string; text?: string }>;
-}) {
-  return {
-    lead: {
-      sections: [
-        {
-          id: 0,
-          text: overrides?.leadText ?? "<p>Lead paragraph.</p>",
-        },
-      ],
-    },
-    remaining: {
-      sections: overrides?.sections ?? [
-        {
-          id: 1,
-          toclevel: 1,
-          line: "History",
-          anchor: "History",
-          text: '<p>History content. <a href="./NBA" title="NBA">National Basketball Association</a> was founded.</p>',
-        },
-        {
-          id: 2,
-          toclevel: 2,
-          line: "Early years",
-          anchor: "Early_years",
-          text: '<p>Early years. See also <a href="./NBA" title="NBA">NBA</a> and <a href="./Toronto" title="Toronto">Toronto</a>.</p>',
-        },
-      ],
-    },
-  };
-}
+type WikiMockOptions = {
+  tocSections?: TocSection[];
+  sectionHtml?: string | ((index: number) => string);
+  articleLinks?: { title: string }[];
+  errorCode?: string;
+};
 
-function mockFetch(response: object, status = 200) {
-  return mock(() =>
-    Promise.resolve(
-      new Response(JSON.stringify(response), {
-        status,
+type TocSection = {
+  index: string;
+  toclevel: number;
+  level: string;
+  line: string;
+  anchor: string;
+};
+
+const DEFAULT_TOC: TocSection[] = [
+  { index: "1", toclevel: 1, level: "2", line: "History", anchor: "History" },
+  { index: "2", toclevel: 2, level: "3", line: "Early years", anchor: "Early_years" },
+];
+
+const DEFAULT_SECTION_HTML = (index: number) =>
+  index === 0
+    ? '<p>Lead paragraph. <a href="/wiki/NBA" title="NBA">National Basketball Association</a> was founded.</p>'
+    : `<p>Section ${index} content. <a href="/wiki/Toronto" title="Toronto">Toronto</a>.</p>`;
+
+// Builds a fetch mock that routes responses by action API params.
+function makeWikiMock(opts: WikiMockOptions = {}) {
+  const {
+    tocSections = DEFAULT_TOC,
+    sectionHtml = DEFAULT_SECTION_HTML,
+    articleLinks = [{ title: "Toronto" }, { title: "NBA" }],
+    errorCode,
+  } = opts;
+
+  return mock((input: string | URL | Request) => {
+    const url = typeof input === "string" ? input : (input as Request).url ?? input.toString();
+    const params = new URLSearchParams(url.split("?")[1] ?? "");
+    const prop = params.get("prop");
+    const action = params.get("action");
+    const section = params.get("section");
+
+    if (errorCode) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: { code: errorCode, info: "Error." } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }
+
+    let body: object;
+    if (action === "parse" && prop === "sections") {
+      body = { parse: { title: "Test", pageid: 1, sections: tocSections } };
+    } else if (action === "parse" && prop === "text") {
+      const idx = section !== null ? Number(section) : 0;
+      const html = typeof sectionHtml === "function" ? sectionHtml(idx) : sectionHtml;
+      body = { parse: { title: "Test", pageid: 1, text: { "*": html } } };
+    } else if (action === "query" && prop === "links") {
+      body = {
+        query: { pages: { "1": { pageid: 1, ns: 0, title: "Test", links: articleLinks } } },
+      };
+    } else {
+      body = {};
+    }
+
+    return Promise.resolve(
+      new Response(JSON.stringify(body), {
+        status: 200,
         headers: { "Content-Type": "application/json" },
       }),
-    ),
+    );
+  });
+}
+
+function mockHttpError(status: number) {
+  return mock(() =>
+    Promise.resolve(new Response("", { status, headers: { "Content-Type": "application/json" } })),
   );
 }
 
 // ---------------------------------------------------------------------------
-// Pure function tests — access via the plugin by calling executeTool, or
-// test indirectly via getSection / getLinks results.
-// We expose the helpers for direct testing by re-importing the module internals
-// through executeTool round-trips.
+// cleanSectionText (via wikipedia_get_section index 0 — no TOC fetch needed)
 // ---------------------------------------------------------------------------
 
-describe("cleanSectionText (via wikipedia_get_section)", () => {
+describe("cleanSectionText (via wikipedia_get_section §0)", () => {
   let plugin: WikipediaPlugin;
-
-  beforeEach(() => {
-    plugin = new WikipediaPlugin();
-  });
+  beforeEach(() => { plugin = new WikipediaPlugin(); });
 
   test("strips HTML tags", async () => {
-    const sections = makeMobileSectionsResponse({ leadText: "<p>Hello <b>world</b>.</p>" });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_section", {
-      title: "Test",
-      section_index: 0,
-    })) as { content: string };
-    expect(result.content).toBe("Hello world.");
+    globalThis.fetch = makeWikiMock({ sectionHtml: "<p>Hello <b>world</b>.</p>" }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_section", { title: "T", section_index: 0 })) as any;
+    expect(r.content).toBe("Hello world.");
   });
 
   test("decodes HTML entities", async () => {
-    const sections = makeMobileSectionsResponse({
-      leadText: "<p>A &amp; B &lt;C&gt; &quot;D&quot; &#39;E&#39; F&nbsp;G</p>",
-    });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_section", {
-      title: "Test",
-      section_index: 0,
-    })) as { content: string };
-    expect(result.content).toBe('A & B <C> "D" \'E\' F G');
+    globalThis.fetch = makeWikiMock({
+      sectionHtml: "<p>A &amp; B &lt;C&gt; &quot;D&quot; &#39;E&#39; F&nbsp;G</p>",
+    }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_section", { title: "T", section_index: 0 })) as any;
+    expect(r.content).toBe('A & B <C> "D" \'E\' F G');
   });
 
-  test("removes citation artifacts [1], [citation needed], [note 1]", async () => {
-    const sections = makeMobileSectionsResponse({
-      leadText: "<p>Fact[1] another[citation needed] thing[note 1].</p>",
-    });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_section", {
-      title: "Test",
-      section_index: 0,
-    })) as { content: string };
-    expect(result.content).toBe("Fact another thing.");
+  test("removes citation artifacts", async () => {
+    globalThis.fetch = makeWikiMock({
+      sectionHtml: "<p>Fact[1] another[citation needed] thing[note 1].</p>",
+    }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_section", { title: "T", section_index: 0 })) as any;
+    expect(r.content).toBe("Fact another thing.");
   });
 
   test("does not strip brackets longer than 30 characters", async () => {
     const longBracket = "[" + "x".repeat(31) + "]";
-    const sections = makeMobileSectionsResponse({
-      leadText: `<p>Keep ${longBracket} this.</p>`,
-    });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_section", {
-      title: "Test",
-      section_index: 0,
-    })) as { content: string };
-    expect(result.content).toContain(longBracket);
+    globalThis.fetch = makeWikiMock({ sectionHtml: `<p>Keep ${longBracket} this.</p>` }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_section", { title: "T", section_index: 0 })) as any;
+    expect(r.content).toContain(longBracket);
   });
 
   test("collapses excess newlines", async () => {
-    const sections = makeMobileSectionsResponse({
-      leadText: "<p>Line one</p>\n\n\n\n<p>Line two</p>",
-    });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_section", {
-      title: "Test",
-      section_index: 0,
-    })) as { content: string };
-    expect(result.content).toBe("Line one\n\nLine two");
+    globalThis.fetch = makeWikiMock({
+      sectionHtml: "<p>Line one</p>\n\n\n\n<p>Line two</p>",
+    }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_section", { title: "T", section_index: 0 })) as any;
+    expect(r.content).toBe("Line one\n\nLine two");
   });
 });
 
 // ---------------------------------------------------------------------------
-// extractLinks (via wikipedia_get_links)
+// extractLinks (via wikipedia_get_links §0)
 // ---------------------------------------------------------------------------
 
-describe("extractLinks (via wikipedia_get_links)", () => {
+describe("extractLinks (via wikipedia_get_links §0)", () => {
   let plugin: WikipediaPlugin;
-
-  beforeEach(() => {
-    plugin = new WikipediaPlugin();
-  });
+  beforeEach(() => { plugin = new WikipediaPlugin(); });
 
   test("returns correct { text, title } pairs", async () => {
-    const sections = makeMobileSectionsResponse({
-      leadText:
-        '<p>The <a href="./Toronto_Raptors" title="Toronto Raptors">Raptors</a> play in <a href="./Toronto" title="Toronto">Toronto</a>.</p>',
-    });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_links", {
-      title: "Test",
-      section_index: 0,
-    })) as { links: WikiLink[] };
-    expect(result.links).toEqual([
+    globalThis.fetch = makeWikiMock({
+      sectionHtml:
+        '<p>The <a href="/wiki/Toronto_Raptors" title="Toronto Raptors">Raptors</a> play in <a href="/wiki/Toronto" title="Toronto">Toronto</a>.</p>',
+    }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_links", { title: "T", section_index: 0 })) as any;
+    expect(r.links).toEqual([
       { text: "Raptors", title: "Toronto Raptors" },
       { text: "Toronto", title: "Toronto" },
     ]);
   });
 
   test("deduplicates repeated links to the same title", async () => {
-    const sections = makeMobileSectionsResponse({
-      leadText:
-        '<p><a href="./NBA" title="NBA">NBA</a> and again <a href="./NBA" title="NBA">the NBA</a>.</p>',
-    });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_links", {
-      title: "Test",
-      section_index: 0,
-    })) as { links: WikiLink[]; total_links: number };
-    expect(result.links.length).toBe(1);
-    expect(result.total_links).toBe(1);
-    expect(result.links[0].title).toBe("NBA");
+    globalThis.fetch = makeWikiMock({
+      sectionHtml:
+        '<p><a href="/wiki/NBA" title="NBA">NBA</a> and again <a href="/wiki/NBA" title="NBA">the NBA</a>.</p>',
+    }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_links", { title: "T", section_index: 0 })) as any;
+    expect(r.links.length).toBe(1);
+    expect(r.total_links).toBe(1);
+    expect(r.links[0].title).toBe("NBA");
   });
 
   test("excludes anchors without a title attribute", async () => {
-    const sections = makeMobileSectionsResponse({
-      leadText: '<p><a href="https://example.com">External</a> and <a href="#section">Jump</a>.</p>',
-    });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_links", {
-      title: "Test",
-      section_index: 0,
-    })) as { links: WikiLink[] };
-    expect(result.links).toEqual([]);
+    globalThis.fetch = makeWikiMock({
+      sectionHtml: '<p><a href="https://example.com">External</a> and <a href="#section">Jump</a>.</p>',
+    }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_links", { title: "T", section_index: 0 })) as any;
+    expect(r.links).toEqual([]);
+  });
+
+  test("excludes namespace links (title contains ':')", async () => {
+    globalThis.fetch = makeWikiMock({
+      sectionHtml:
+        '<p><a href="/wiki/File:Photo.jpg" title="File:Photo.jpg">photo</a> ' +
+        '<a href="/wiki/Toronto" title="Toronto">Toronto</a> ' +
+        '<a href="/w/index.php?action=edit" title="Edit section: History">edit</a></p>',
+    }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_links", { title: "T", section_index: 0 })) as any;
+    expect(r.links.map((l: any) => l.title)).toEqual(["Toronto"]);
   });
 
   test("returns empty links array for section with no links", async () => {
-    const sections = makeMobileSectionsResponse({ leadText: "<p>No links here.</p>" });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_links", {
-      title: "Test",
-      section_index: 0,
-    })) as { links: WikiLink[]; total_links: number };
-    expect(result.links).toEqual([]);
-    expect(result.total_links).toBe(0);
-  });
-
-  test("full-article deduplicates across sections", async () => {
-    // NBA appears in both section 1 and section 2; Toronto only in section 2
-    const sections = makeMobileSectionsResponse();
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_links", {
-      title: "Test",
-    })) as { links: WikiLink[]; total_links: number };
-    const titles = result.links.map((l: WikiLink) => l.title);
-    expect(titles.filter((t: string) => t === "NBA").length).toBe(1);
-    expect(titles).toContain("Toronto");
+    globalThis.fetch = makeWikiMock({ sectionHtml: "<p>No links here.</p>" }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_links", { title: "T", section_index: 0 })) as any;
+    expect(r.links).toEqual([]);
+    expect(r.total_links).toBe(0);
   });
 });
 
@@ -208,44 +195,40 @@ describe("extractLinks (via wikipedia_get_links)", () => {
 
 describe("wikipedia_list_sections", () => {
   let plugin: WikipediaPlugin;
+  beforeEach(() => { plugin = new WikipediaPlugin(); });
 
-  beforeEach(() => {
-    plugin = new WikipediaPlugin();
-  });
-
-  test("returns lead at index 0 and body sections", async () => {
-    const sections = makeMobileSectionsResponse();
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_list_sections", {
-      title: "Toronto Raptors",
-    })) as { sections: Array<{ index: number; title: string; toclevel: number }> };
-    expect(result.sections[0]).toMatchObject({ index: 0, title: "Introduction", toclevel: 1 });
-    expect(result.sections[1]).toMatchObject({ index: 1, title: "History", toclevel: 1 });
-    expect(result.sections[2]).toMatchObject({ index: 2, title: "Early years", toclevel: 2 });
+  test("returns lead at index 0 and body sections from TOC", async () => {
+    globalThis.fetch = makeWikiMock() as any;
+    const r = (await plugin.executeTool("wikipedia_list_sections", { title: "Test" })) as any;
+    expect(r.sections[0]).toMatchObject({ index: 0, title: "Introduction", toclevel: 1 });
+    expect(r.sections[1]).toMatchObject({ index: 1, title: "History", toclevel: 1 });
+    expect(r.sections[2]).toMatchObject({ index: 2, title: "Early years", toclevel: 2 });
   });
 
   test("returns correct section_count", async () => {
-    const sections = makeMobileSectionsResponse();
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_list_sections", {
-      title: "Test",
-    })) as { section_count: number };
-    expect(result.section_count).toBe(3); // lead + 2 remaining
+    globalThis.fetch = makeWikiMock() as any;
+    const r = (await plugin.executeTool("wikipedia_list_sections", { title: "Test" })) as any;
+    expect(r.section_count).toBe(3); // lead + 2 body sections
   });
 
-  test("returns { error } on 404", async () => {
-    globalThis.fetch = mockFetch({ title: "Not Found" }, 404) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_list_sections", {
-      title: "Nonexistent Article",
-    })) as { error: string };
-    expect(result.error).toContain("not found");
+  test("returns { error } when article not found", async () => {
+    globalThis.fetch = makeWikiMock({ errorCode: "missingtitle" }) as any;
+    const r = (await plugin.executeTool("wikipedia_list_sections", { title: "Nonexistent" })) as any;
+    expect(r.error).toContain("not found");
   });
 
-  test("throws on non-404 HTTP error", async () => {
-    globalThis.fetch = mockFetch({}, 500) as unknown as typeof fetch;
+  test("throws on HTTP error", async () => {
+    globalThis.fetch = mockHttpError(500) as any;
     await expect(
       plugin.executeTool("wikipedia_list_sections", { title: "Test" }),
     ).rejects.toThrow();
+  });
+
+  test("returns { sections: [intro only] } for article with no sections", async () => {
+    globalThis.fetch = makeWikiMock({ tocSections: [] }) as any;
+    const r = (await plugin.executeTool("wikipedia_list_sections", { title: "Stub" })) as any;
+    expect(r.section_count).toBe(1);
+    expect(r.sections[0].title).toBe("Introduction");
   });
 });
 
@@ -255,89 +238,65 @@ describe("wikipedia_list_sections", () => {
 
 describe("wikipedia_get_section", () => {
   let plugin: WikipediaPlugin;
+  beforeEach(() => { plugin = new WikipediaPlugin(); });
 
-  beforeEach(() => {
-    plugin = new WikipediaPlugin();
+  test("index 0 returns cleaned lead content without a TOC fetch", async () => {
+    const fetchMock = makeWikiMock({ sectionHtml: "<p>Lead <b>text</b>.</p>" });
+    globalThis.fetch = fetchMock as any;
+    const r = (await plugin.executeTool("wikipedia_get_section", { title: "Test", section_index: 0 })) as any;
+    expect(r.section_title).toBe("Introduction");
+    expect(r.section_index).toBe(0);
+    expect(r.content).toBe("Lead text.");
+    // Only one fetch: fetchSectionHtml (no TOC needed for index 0)
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  test("index 0 returns lead content cleaned", async () => {
-    const sections = makeMobileSectionsResponse({ leadText: "<p>Lead <b>text</b>.</p>" });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_section", {
-      title: "Test",
-      section_index: 0,
-    })) as { section_title: string; content: string; section_index: number };
-    expect(result.section_title).toBe("Introduction");
-    expect(result.section_index).toBe(0);
-    expect(result.content).toBe("Lead text.");
-  });
-
-  test("body section index returns correct content cleaned", async () => {
-    const sections = makeMobileSectionsResponse();
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_section", {
-      title: "Test",
-      section_index: 1,
-    })) as { section_title: string; content: string };
-    expect(result.section_title).toBe("History");
-    expect(result.content).toContain("History content.");
-    expect(result.content).toContain("National Basketball Association");
-    expect(result.content).not.toContain("<");
+  test("body section returns correct title and cleaned content", async () => {
+    globalThis.fetch = makeWikiMock({ sectionHtml: "<p>History content.</p>" }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_section", { title: "Test", section_index: 1 })) as any;
+    expect(r.section_title).toBe("History");
+    expect(r.content).toContain("History content.");
+    expect(r.content).not.toContain("<");
   });
 
   test("truncates at max_chars and sets truncated: true", async () => {
-    const longText = "x".repeat(200);
-    const sections = makeMobileSectionsResponse({ leadText: `<p>${longText}</p>` });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_section", {
+    globalThis.fetch = makeWikiMock({ sectionHtml: `<p>${"x".repeat(200)}</p>` }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_section", {
       title: "Test",
       section_index: 0,
       max_chars: 50,
-    })) as { content: string; truncated: boolean; total_chars: number };
-    expect(result.truncated).toBe(true);
-    expect(result.content.length).toBe(50);
-    expect(result.total_chars).toBe(200);
+    })) as any;
+    expect(r.truncated).toBe(true);
+    expect(r.content.length).toBe(50);
+    expect(r.total_chars).toBe(200);
   });
 
   test("total_chars reflects pre-truncation length", async () => {
-    const text = "a".repeat(100);
-    const sections = makeMobileSectionsResponse({ leadText: `<p>${text}</p>` });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_section", {
+    globalThis.fetch = makeWikiMock({ sectionHtml: `<p>${"a".repeat(100)}</p>` }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_section", {
       title: "Test",
       section_index: 0,
       max_chars: 10,
-    })) as { total_chars: number };
-    expect(result.total_chars).toBe(100);
+    })) as any;
+    expect(r.total_chars).toBe(100);
   });
 
   test("no truncation when content fits within max_chars", async () => {
-    const sections = makeMobileSectionsResponse({ leadText: "<p>Short.</p>" });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_section", {
-      title: "Test",
-      section_index: 0,
-    })) as { truncated: boolean };
-    expect(result.truncated).toBe(false);
+    globalThis.fetch = makeWikiMock({ sectionHtml: "<p>Short.</p>" }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_section", { title: "Test", section_index: 0 })) as any;
+    expect(r.truncated).toBe(false);
   });
 
   test("unknown section index returns { error }", async () => {
-    const sections = makeMobileSectionsResponse();
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_section", {
-      title: "Test",
-      section_index: 99,
-    })) as { error: string };
-    expect(result.error).toContain("99");
+    globalThis.fetch = makeWikiMock() as any;
+    const r = (await plugin.executeTool("wikipedia_get_section", { title: "Test", section_index: 99 })) as any;
+    expect(r.error).toContain("99");
   });
 
-  test("returns { error } on 404", async () => {
-    globalThis.fetch = mockFetch({}, 404) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_section", {
-      title: "Nonexistent",
-      section_index: 0,
-    })) as { error: string };
-    expect(result.error).toContain("not found");
+  test("returns { error } when article not found", async () => {
+    globalThis.fetch = makeWikiMock({ errorCode: "missingtitle" }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_section", { title: "Nonexistent", section_index: 0 })) as any;
+    expect(r.error).toContain("not found");
   });
 });
 
@@ -347,67 +306,56 @@ describe("wikipedia_get_section", () => {
 
 describe("wikipedia_get_links", () => {
   let plugin: WikipediaPlugin;
+  beforeEach(() => { plugin = new WikipediaPlugin(); });
 
-  beforeEach(() => {
-    plugin = new WikipediaPlugin();
-  });
-
-  test("section_index scopes links to that section only", async () => {
-    // Section 1 has NBA. Section 2 has NBA + Toronto. Section-scoped call on 1 should only see NBA.
-    const sections = makeMobileSectionsResponse();
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_links", {
-      title: "Test",
-      section_index: 1,
-    })) as { links: WikiLink[]; section_title: string };
-    const titles = result.links.map((l: WikiLink) => l.title);
-    expect(titles).toContain("NBA");
-    expect(titles).not.toContain("Toronto");
-    expect(result.section_title).toBe("History");
+  test("section-scoped call returns links from that section only", async () => {
+    globalThis.fetch = makeWikiMock({
+      sectionHtml: (i) =>
+        i === 1
+          ? '<p><a href="/wiki/NBA" title="NBA">NBA</a>.</p>'
+          : '<p><a href="/wiki/Toronto" title="Toronto">Toronto</a>.</p>',
+    }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_links", { title: "Test", section_index: 1 })) as any;
+    expect(r.links.map((l: any) => l.title)).toContain("NBA");
+    expect(r.links.map((l: any) => l.title)).not.toContain("Toronto");
+    expect(r.section_title).toBe("History");
   });
 
   test("section_title is null for full-article calls", async () => {
-    const sections = makeMobileSectionsResponse();
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_links", {
-      title: "Test",
-    })) as { section_title: null };
-    expect(result.section_title).toBeNull();
+    globalThis.fetch = makeWikiMock() as any;
+    const r = (await plugin.executeTool("wikipedia_get_links", { title: "Test" })) as any;
+    expect(r.section_title).toBeNull();
   });
 
-  test("limit caps returned links and total_links reflects pre-limit count", async () => {
-    const manyLinks = Array.from(
-      { length: 10 },
-      (_, i) =>
-        `<a href="./${i}" title="Article ${i}">Article ${i}</a>`,
-    ).join(" ");
-    const sections = makeMobileSectionsResponse({ leadText: `<p>${manyLinks}</p>` });
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_links", {
-      title: "Test",
-      section_index: 0,
-      limit: 3,
-    })) as { links: WikiLink[]; total_links: number };
-    expect(result.links.length).toBe(3);
-    expect(result.total_links).toBe(10);
+  test("full-article call uses prop=links and returns title as both text and title", async () => {
+    globalThis.fetch = makeWikiMock({
+      articleLinks: [{ title: "NBA" }, { title: "Toronto" }],
+    }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_links", { title: "Test" })) as any;
+    expect(r.links).toEqual([
+      { text: "NBA", title: "NBA" },
+      { text: "Toronto", title: "Toronto" },
+    ]);
   });
 
-  test("section_index pointing to nonexistent section returns { error }", async () => {
-    const sections = makeMobileSectionsResponse();
-    globalThis.fetch = mockFetch(sections) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_links", {
-      title: "Test",
-      section_index: 99,
-    })) as { error: string };
-    expect(result.error).toContain("99");
+  test("limit caps returned links; total_links reflects pre-limit count", async () => {
+    const manyLinks = Array.from({ length: 10 }, (_, i) => ({ title: `Article ${i}` }));
+    globalThis.fetch = makeWikiMock({ articleLinks: manyLinks }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_links", { title: "Test", limit: 3 })) as any;
+    expect(r.links.length).toBe(3);
+    expect(r.total_links).toBe(10);
   });
 
-  test("returns { error } on 404", async () => {
-    globalThis.fetch = mockFetch({}, 404) as unknown as typeof fetch;
-    const result = (await plugin.executeTool("wikipedia_get_links", {
-      title: "Nonexistent",
-    })) as { error: string };
-    expect(result.error).toContain("not found");
+  test("unknown section index returns { error }", async () => {
+    globalThis.fetch = makeWikiMock() as any;
+    const r = (await plugin.executeTool("wikipedia_get_links", { title: "Test", section_index: 99 })) as any;
+    expect(r.error).toContain("99");
+  });
+
+  test("returns { error } when article not found", async () => {
+    globalThis.fetch = makeWikiMock({ errorCode: "missingtitle" }) as any;
+    const r = (await plugin.executeTool("wikipedia_get_links", { title: "Nonexistent" })) as any;
+    expect(r.error).toContain("not found");
   });
 });
 
@@ -415,28 +363,49 @@ describe("wikipedia_get_links", () => {
 // Cache deduplication
 // ---------------------------------------------------------------------------
 
-describe("sectionCache", () => {
-  test("two tool calls on the same title within TTL produce one fetch", async () => {
+describe("cache deduplication", () => {
+  test("two list_sections calls on the same title produce one TOC fetch", async () => {
     const plugin = new WikipediaPlugin();
-    const sections = makeMobileSectionsResponse();
-    const fetchMock = mockFetch(sections);
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const fetchMock = makeWikiMock();
+    globalThis.fetch = fetchMock as any;
 
     await plugin.executeTool("wikipedia_list_sections", { title: "Test" });
+    await plugin.executeTool("wikipedia_list_sections", { title: "Test" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("list_sections then get_section (same article) reuses TOC cache", async () => {
+    const plugin = new WikipediaPlugin();
+    const fetchMock = makeWikiMock();
+    globalThis.fetch = fetchMock as any;
+
+    await plugin.executeTool("wikipedia_list_sections", { title: "Test" });
+    // get_section §1: needs TOC (cache hit) + section HTML (new fetch) = 1 new fetch
+    await plugin.executeTool("wikipedia_get_section", { title: "Test", section_index: 1 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2); // 1 TOC + 1 section HTML
+  });
+
+  test("two get_section calls for the same section produce one section HTML fetch", async () => {
+    const plugin = new WikipediaPlugin();
+    const fetchMock = makeWikiMock();
+    globalThis.fetch = fetchMock as any;
+
+    await plugin.executeTool("wikipedia_get_section", { title: "Test", section_index: 0 });
     await plugin.executeTool("wikipedia_get_section", { title: "Test", section_index: 0 });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  test("call after TTL expiry produces a second fetch", async () => {
+  test("call after TOC cache expiry produces a new fetch", async () => {
     const plugin = new WikipediaPlugin();
-    const sections = makeMobileSectionsResponse();
-    const fetchMock = mockFetch(sections);
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const fetchMock = makeWikiMock();
+    globalThis.fetch = fetchMock as any;
 
-    // Poison the cache with an already-expired entry by setting expiresAt in the past
-    (plugin as any).sectionCache.set(encodeURIComponent("Test"), {
-      data: sections,
+    // Poison the TOC cache with an already-expired entry
+    (plugin as any).tocCache.set("Test", {
+      data: DEFAULT_TOC.map((s) => ({ index: Number(s.index), toclevel: s.toclevel, line: s.line, anchor: s.anchor })),
       expiresAt: Date.now() - 1,
     });
 
@@ -445,6 +414,3 @@ describe("sectionCache", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
-
-// Type alias used in test file
-type WikiLink = { text: string; title: string };
