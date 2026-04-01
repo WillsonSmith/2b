@@ -116,6 +116,8 @@ export function createAgent(
       description:
         "Handles file system operations: reading, writing, and managing directories.",
       agent: createFileSystemAgent(llm, { permissionManager }),
+      // No absoluteTimeoutMs — FileSystemPlugin enforces per-op timeouts internally.
+      // An absolute cap would kill legitimate long-running sequences (e.g. writing many files).
     }),
   );
   const sourceRoot = new URL("../..", import.meta.url).pathname;

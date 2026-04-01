@@ -22,10 +22,14 @@ function withTimeout<T>(
   ms: number,
   label: string,
 ): Promise<T> {
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
-  );
-  return Promise.race([promise, timeout]);
+  let id: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    id = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(id));
 }
 
 export class FileSystemPlugin implements AgentPlugin {
@@ -280,47 +284,71 @@ export class FileSystemPlugin implements AgentPlugin {
       let result: unknown;
       switch (name) {
         case "read_file":
-          result = await this.readFile(
-            args.path as string,
-            args.offset as number | undefined,
-            args.limit as number | undefined,
+          result = await withTimeout(
+            this.readFile(
+              args.path as string,
+              args.offset as number | undefined,
+              args.limit as number | undefined,
+            ),
+            FS_OP_TIMEOUT_MS,
+            "read_file",
           );
           break;
         case "write_file":
-          result = await this.writeFile(
-            args.path as string,
-            args.content as string,
+          result = await withTimeout(
+            this.writeFile(args.path as string, args.content as string),
+            FS_OP_TIMEOUT_MS,
+            "write_file",
           );
           break;
         case "append_file":
-          result = await this.appendFile(
-            args.path as string,
-            args.content as string,
+          result = await withTimeout(
+            this.appendFile(args.path as string, args.content as string),
+            FS_OP_TIMEOUT_MS,
+            "append_file",
           );
           break;
         case "list_directory":
-          result = await this.listDirectory(args.path as string | undefined);
+          result = await withTimeout(
+            this.listDirectory(args.path as string | undefined),
+            FS_OP_TIMEOUT_MS,
+            "list_directory",
+          );
           break;
         case "move_file":
-          result = await this.moveFile(
-            args.source as string,
-            args.destination as string,
+          result = await withTimeout(
+            this.moveFile(args.source as string, args.destination as string),
+            FS_OP_TIMEOUT_MS,
+            "move_file",
           );
           break;
         case "copy_file":
-          result = await this.copyFile(
-            args.source as string,
-            args.destination as string,
+          result = await withTimeout(
+            this.copyFile(args.source as string, args.destination as string),
+            FS_OP_TIMEOUT_MS,
+            "copy_file",
           );
           break;
         case "delete_file":
-          result = await this.deleteFile(args.path as string);
+          result = await withTimeout(
+            this.deleteFile(args.path as string),
+            FS_OP_TIMEOUT_MS,
+            "delete_file",
+          );
           break;
         case "make_directory":
-          result = await this.makeDirectory(args.path as string);
+          result = await withTimeout(
+            this.makeDirectory(args.path as string),
+            FS_OP_TIMEOUT_MS,
+            "make_directory",
+          );
           break;
         case "stat_file":
-          result = await this.statFile(args.path as string);
+          result = await withTimeout(
+            this.statFile(args.path as string),
+            FS_OP_TIMEOUT_MS,
+            "stat_file",
+          );
           break;
         case "find_files":
           result = await this.findFiles(
@@ -329,7 +357,8 @@ export class FileSystemPlugin implements AgentPlugin {
           );
           break;
         default:
-          return undefined;
+          result = undefined;
+          break;
       }
       logger.debug("FileSystem", `${name} done`, {
         elapsed: `${Date.now() - start}ms`,
@@ -414,24 +443,7 @@ export class FileSystemPlugin implements AgentPlugin {
     return { path: relative(this.baseDir, resolved), size };
   }
 
-  private listDirectory(
-    path?: string,
-  ): Promise<{
-    path: string;
-    entries: {
-      name: string;
-      type: "file" | "directory" | "symlink";
-      size?: number;
-    }[];
-  }> {
-    return withTimeout(
-      this._listDirectory(path),
-      FS_OP_TIMEOUT_MS,
-      "list_directory",
-    );
-  }
-
-  private async _listDirectory(
+  private async listDirectory(
     path?: string,
   ): Promise<{
     path: string;
