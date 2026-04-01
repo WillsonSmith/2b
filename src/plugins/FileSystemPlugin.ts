@@ -1,4 +1,5 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
+import { logger } from "../logger.ts";
 import { join, resolve, relative, isAbsolute, dirname } from "node:path";
 import {
   readdir,
@@ -13,6 +14,19 @@ import {
 } from "node:fs/promises";
 
 const MAX_READ_BYTES = 1 * 1024 * 1024; // 1 MB
+const MAX_PAGINATED_READ_BYTES = 10 * 1024 * 1024; // 10 MB
+const FS_OP_TIMEOUT_MS = 10_000; // 10 s
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+  );
+  return Promise.race([promise, timeout]);
+}
 
 export class FileSystemPlugin implements AgentPlugin {
   name = "FileSystem";
@@ -60,15 +74,18 @@ export class FileSystemPlugin implements AgentPlugin {
           properties: {
             path: {
               type: "string",
-              description: "Path to the file, relative to the working directory.",
+              description:
+                "Path to the file, relative to the working directory.",
             },
             offset: {
               type: "number",
-              description: "1-indexed line number to start reading from. Omit to start from the beginning.",
+              description:
+                "1-indexed line number to start reading from. Omit to start from the beginning.",
             },
             limit: {
               type: "number",
-              description: "Maximum number of lines to return. Omit to return all lines.",
+              description:
+                "Maximum number of lines to return. Omit to return all lines.",
             },
           },
           required: ["path"],
@@ -99,7 +116,8 @@ export class FileSystemPlugin implements AgentPlugin {
           properties: {
             path: {
               type: "string",
-              description: "Path to the file or directory, relative to the working directory.",
+              description:
+                "Path to the file or directory, relative to the working directory.",
             },
           },
           required: ["path"],
@@ -118,7 +136,8 @@ export class FileSystemPlugin implements AgentPlugin {
             },
             limit: {
               type: "number",
-              description: "Maximum number of results to return. Omit to return all matches.",
+              description:
+                "Maximum number of results to return. Omit to return all matches.",
             },
           },
           required: ["pattern"],
@@ -135,7 +154,8 @@ export class FileSystemPlugin implements AgentPlugin {
           properties: {
             path: {
               type: "string",
-              description: "Path to the file, relative to the working directory.",
+              description:
+                "Path to the file, relative to the working directory.",
             },
             content: {
               type: "string",
@@ -155,7 +175,8 @@ export class FileSystemPlugin implements AgentPlugin {
           properties: {
             path: {
               type: "string",
-              description: "Path to the file, relative to the working directory.",
+              description:
+                "Path to the file, relative to the working directory.",
             },
             content: {
               type: "string",
@@ -175,7 +196,8 @@ export class FileSystemPlugin implements AgentPlugin {
           properties: {
             source: {
               type: "string",
-              description: "Current path of the file or directory, relative to the working directory.",
+              description:
+                "Current path of the file or directory, relative to the working directory.",
             },
             destination: {
               type: "string",
@@ -195,11 +217,13 @@ export class FileSystemPlugin implements AgentPlugin {
           properties: {
             source: {
               type: "string",
-              description: "Path of the file to copy, relative to the working directory.",
+              description:
+                "Path of the file to copy, relative to the working directory.",
             },
             destination: {
               type: "string",
-              description: "Destination path for the copy, relative to the working directory.",
+              description:
+                "Destination path for the copy, relative to the working directory.",
             },
           },
           required: ["source", "destination"],
@@ -215,7 +239,8 @@ export class FileSystemPlugin implements AgentPlugin {
           properties: {
             path: {
               type: "string",
-              description: "Path to the file to delete, relative to the working directory.",
+              description:
+                "Path to the file to delete, relative to the working directory.",
             },
           },
           required: ["path"],
@@ -230,7 +255,8 @@ export class FileSystemPlugin implements AgentPlugin {
           properties: {
             path: {
               type: "string",
-              description: "Path to the directory to create, relative to the working directory.",
+              description:
+                "Path to the directory to create, relative to the working directory.",
             },
           },
           required: ["path"],
@@ -239,34 +265,83 @@ export class FileSystemPlugin implements AgentPlugin {
     ];
   }
 
-  async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    switch (name) {
-      case "read_file":
-        return this.readFile(
-          args.path as string,
-          args.offset as number | undefined,
-          args.limit as number | undefined,
-        );
-      case "write_file":
-        return this.writeFile(args.path as string, args.content as string);
-      case "append_file":
-        return this.appendFile(args.path as string, args.content as string);
-      case "list_directory":
-        return this.listDirectory(args.path as string | undefined);
-      case "move_file":
-        return this.moveFile(args.source as string, args.destination as string);
-      case "copy_file":
-        return this.copyFile(args.source as string, args.destination as string);
-      case "delete_file":
-        return this.deleteFile(args.path as string);
-      case "make_directory":
-        return this.makeDirectory(args.path as string);
-      case "stat_file":
-        return this.statFile(args.path as string);
-      case "find_files":
-        return this.findFiles(args.pattern as string, args.limit as number | undefined);
-      default:
-        return undefined;
+  async executeTool(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> {
+    // Log args without potentially large content fields
+    const { content: _content, ...logArgs } = args as Record<
+      string,
+      unknown
+    > & { content?: unknown };
+    logger.debug("FileSystem", `${name} start`, logArgs);
+    const start = Date.now();
+    try {
+      let result: unknown;
+      switch (name) {
+        case "read_file":
+          result = await this.readFile(
+            args.path as string,
+            args.offset as number | undefined,
+            args.limit as number | undefined,
+          );
+          break;
+        case "write_file":
+          result = await this.writeFile(
+            args.path as string,
+            args.content as string,
+          );
+          break;
+        case "append_file":
+          result = await this.appendFile(
+            args.path as string,
+            args.content as string,
+          );
+          break;
+        case "list_directory":
+          result = await this.listDirectory(args.path as string | undefined);
+          break;
+        case "move_file":
+          result = await this.moveFile(
+            args.source as string,
+            args.destination as string,
+          );
+          break;
+        case "copy_file":
+          result = await this.copyFile(
+            args.source as string,
+            args.destination as string,
+          );
+          break;
+        case "delete_file":
+          result = await this.deleteFile(args.path as string);
+          break;
+        case "make_directory":
+          result = await this.makeDirectory(args.path as string);
+          break;
+        case "stat_file":
+          result = await this.statFile(args.path as string);
+          break;
+        case "find_files":
+          result = await this.findFiles(
+            args.pattern as string,
+            args.limit as number | undefined,
+          );
+          break;
+        default:
+          return undefined;
+      }
+      logger.debug("FileSystem", `${name} done`, {
+        elapsed: `${Date.now() - start}ms`,
+      });
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.debug("FileSystem", `${name} error`, {
+        elapsed: `${Date.now() - start}ms`,
+        error: msg,
+      });
+      throw new Error(`${name} failed: ${msg}`);
     }
   }
 
@@ -274,12 +349,25 @@ export class FileSystemPlugin implements AgentPlugin {
     path: string,
     offset?: number,
     limit?: number,
-  ): Promise<{ path: string; content: string; totalLines: number; returnedLines: number; size: number }> {
+  ): Promise<{
+    path: string;
+    content: string;
+    totalLines: number;
+    returnedLines: number;
+    size: number;
+  }> {
     const resolved = this.validatePath(path);
     const file = Bun.file(resolved);
     const size = file.size;
 
-    // Only block when no pagination is requested — pagination makes large files accessible
+    // Hard cap: files over 10 MB are never loaded into memory
+    if (size > MAX_PAGINATED_READ_BYTES) {
+      throw new Error(
+        `File is ${size} bytes, which exceeds the 10 MB read limit.`,
+      );
+    }
+
+    // Without pagination, apply the tighter 1 MB guard and suggest paging
     if (offset === undefined && limit === undefined && size > MAX_READ_BYTES) {
       throw new Error(
         `File is ${size} bytes, which exceeds the 1 MB read limit. Use offset and limit to page through it.`,
@@ -291,7 +379,10 @@ export class FileSystemPlugin implements AgentPlugin {
     const totalLines = lines.length;
 
     const start = offset !== undefined ? Math.max(0, offset - 1) : 0;
-    const sliced = limit !== undefined ? lines.slice(start, start + limit) : lines.slice(start);
+    const sliced =
+      limit !== undefined
+        ? lines.slice(start, start + limit)
+        : lines.slice(start);
 
     return {
       path: relative(this.baseDir, resolved),
@@ -302,14 +393,20 @@ export class FileSystemPlugin implements AgentPlugin {
     };
   }
 
-  private async writeFile(path: string, content: string): Promise<{ path: string; size: number }> {
+  private async writeFile(
+    path: string,
+    content: string,
+  ): Promise<{ path: string; size: number }> {
     const resolved = this.validatePath(path);
     await mkdir(dirname(resolved), { recursive: true });
     const size = await Bun.write(resolved, content);
     return { path: relative(this.baseDir, resolved), size };
   }
 
-  private async appendFile(path: string, content: string): Promise<{ path: string; size: number }> {
+  private async appendFile(
+    path: string,
+    content: string,
+  ): Promise<{ path: string; size: number }> {
     const resolved = this.validatePath(path);
     await mkdir(dirname(resolved), { recursive: true });
     await fsAppendFile(resolved, content);
@@ -317,11 +414,40 @@ export class FileSystemPlugin implements AgentPlugin {
     return { path: relative(this.baseDir, resolved), size };
   }
 
-  private async listDirectory(
+  private listDirectory(
     path?: string,
-  ): Promise<{ path: string; entries: { name: string; type: "file" | "directory" | "symlink"; size?: number }[] }> {
+  ): Promise<{
+    path: string;
+    entries: {
+      name: string;
+      type: "file" | "directory" | "symlink";
+      size?: number;
+    }[];
+  }> {
+    return withTimeout(
+      this._listDirectory(path),
+      FS_OP_TIMEOUT_MS,
+      "list_directory",
+    );
+  }
+
+  private async _listDirectory(
+    path?: string,
+  ): Promise<{
+    path: string;
+    entries: {
+      name: string;
+      type: "file" | "directory" | "symlink";
+      size?: number;
+    }[];
+  }> {
     const resolved = this.validatePath(path ?? ".");
     const dirents = await readdir(resolved, { withFileTypes: true });
+
+    logger.debug("FileSystem", "list_directory stat", {
+      path: relative(this.baseDir, resolved) || ".",
+      entries: dirents.length,
+    });
 
     const entries = await Promise.all(
       dirents.map(async (entry) => {
@@ -346,20 +472,32 @@ export class FileSystemPlugin implements AgentPlugin {
     };
   }
 
-  private async moveFile(source: string, destination: string): Promise<{ from: string; to: string }> {
+  private async moveFile(
+    source: string,
+    destination: string,
+  ): Promise<{ from: string; to: string }> {
     const from = this.validatePath(source);
     const to = this.validatePath(destination);
     await mkdir(dirname(to), { recursive: true });
     await fsRename(from, to);
-    return { from: relative(this.baseDir, from), to: relative(this.baseDir, to) };
+    return {
+      from: relative(this.baseDir, from),
+      to: relative(this.baseDir, to),
+    };
   }
 
-  private async copyFile(source: string, destination: string): Promise<{ from: string; to: string }> {
+  private async copyFile(
+    source: string,
+    destination: string,
+  ): Promise<{ from: string; to: string }> {
     const from = this.validatePath(source);
     const to = this.validatePath(destination);
     await mkdir(dirname(to), { recursive: true });
     await fsCopyFile(from, to);
-    return { from: relative(this.baseDir, from), to: relative(this.baseDir, to) };
+    return {
+      from: relative(this.baseDir, from),
+      to: relative(this.baseDir, to),
+    };
   }
 
   private async deleteFile(path: string): Promise<{ path: string }> {
@@ -370,7 +508,9 @@ export class FileSystemPlugin implements AgentPlugin {
       const realTarget = await fsRealpath(resolved);
       const rel = relative(this.baseDir, realTarget);
       if (rel.startsWith("..") || isAbsolute(rel)) {
-        throw new Error("Refusing to delete: symlink target is outside the working directory.");
+        throw new Error(
+          "Refusing to delete: symlink target is outside the working directory.",
+        );
       }
     }
     await unlink(resolved);
@@ -385,7 +525,12 @@ export class FileSystemPlugin implements AgentPlugin {
 
   private async statFile(
     path: string,
-  ): Promise<{ path: string; type: "file" | "directory" | "other"; size: number; modifiedAt: string }> {
+  ): Promise<{
+    path: string;
+    type: "file" | "directory" | "other";
+    size: number;
+    modifiedAt: string;
+  }> {
     const resolved = this.validatePath(path);
     const s = await fsStat(resolved);
     return {
@@ -400,9 +545,17 @@ export class FileSystemPlugin implements AgentPlugin {
     pattern: string,
     limit?: number,
   ): Promise<{ pattern: string; matches: string[]; truncated?: boolean }> {
+    const deadline = Date.now() + FS_OP_TIMEOUT_MS;
     const glob = new Bun.Glob(pattern);
     const matches: string[] = [];
-    for await (const file of glob.scan({ cwd: this.baseDir, onlyFiles: true, dot: true })) {
+    for await (const file of glob.scan({
+      cwd: this.baseDir,
+      onlyFiles: true,
+      dot: true,
+    })) {
+      if (Date.now() > deadline) {
+        throw new Error(`find_files timed out after ${FS_OP_TIMEOUT_MS}ms`);
+      }
       matches.push(file);
       if (limit !== undefined && matches.length >= limit) {
         return { pattern, matches: matches.sort(), truncated: true };
