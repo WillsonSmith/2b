@@ -789,14 +789,24 @@ export class MetacognitionPlugin implements AgentPlugin {
   }
 
   private async strengthenCorrectiveRule(correction: CorrectionRecord): Promise<void> {
+    // Ceiling guard — do not stack CRITICAL prefixes
+    if (correction.rule_saved.startsWith("CRITICAL")) return;
     try {
       const strengthened =
         `CRITICAL (pattern persisted after correction): ${correction.rule_saved}`;
-      await this.memoryPlugin.executeTool!("edit_memory", {
+      // Delete old memory and recreate with the ineffective tag so status survives restarts
+      await this.memoryPlugin.executeTool!("delete_memory", {
         id: correction.behavior_memory_id,
-        content: strengthened,
       });
+      const newId = await this.memoryPlugin.db.addMemory(
+        strengthened,
+        "behavior",
+        ["metacognition-correction", correction.trigger, "metacognition-correction:ineffective"],
+      );
+      correction.behavior_memory_id = newId;
       correction.rule_saved = strengthened;
+      correction.strengthened_at = new Date();
+      correction.post_strengthen_count += 1;
     } catch {
       // non-critical
     }
