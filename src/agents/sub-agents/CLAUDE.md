@@ -26,7 +26,7 @@ The factory handles all plugin construction. Callers just pass `llm` and optiona
 | `createFileSystemAgent` | `FileSystemAgent` | `FileSystemPlugin` |
 | `createCodeReaderAgent` | `CodeReaderAgent` | `SourceReaderPlugin` |
 | `createSystemAgent` | `SystemAgent` | `ShellPlugin`, `FileSystemPlugin`, `DownloadPlugin`, `ClipboardPlugin`, `CodeSandboxPlugin` |
-| `createInfoAgent` | `InfoAgent` | `TMDBPlugin`, `WeatherPlugin`, `NotesPlugin` |
+| `createInfoAgent` | `InfoAgent` | `TMDBPlugin`, `WeatherPlugin`, `WikipediaPlugin` |
 
 `createCodeReaderAgent` creates its own `LMStudioProvider` internally (defaults to `qwen2.5-coder-7b-instruct-mlx`, overridable via `CODE_READER_MODEL` env var or `model` option). It does not take the orchestrator's `llm` — it owns its own model connection.
 
