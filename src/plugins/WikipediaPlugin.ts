@@ -38,6 +38,10 @@ const ENTITY_MAP: Record<string, string> = {
   "&nbsp;": " ",
 };
 
+// Decodes the six most common named HTML entities plus &#39;.
+// Numeric entities (e.g. &#8216;, &#160;) and less-common named entities are
+// intentionally left as-is — they appear rarely in Wikipedia prose and adding
+// a full decode table would pull in a dependency for marginal benefit.
 function decodeEntities(text: string): string {
   return text.replace(/&(?:amp|lt|gt|quot|#39|nbsp);/g, (m) => ENTITY_MAP[m] ?? m);
 }
@@ -49,6 +53,12 @@ function cleanSectionText(html: string): string {
     .trim();
 }
 
+// Extracts internal Wikipedia links from raw HTML using a regex over the
+// title attribute. The inner-text capture ([^<]+) only matches plain text
+// directly inside the <a> tag — links whose visible text is wrapped in a
+// child element (e.g. <a title="Foo"><b>Bold</b></a>) will be silently
+// skipped. This is an acceptable trade-off for the Wikipedia mobile API,
+// where most anchors contain plain text.
 function extractLinks(html: string): WikiLink[] {
   const pattern = /<a[^>]+title="([^"]+)"[^>]*>([^<]+)<\/a>/g;
   const seen = new Set<string>();
@@ -192,15 +202,15 @@ export class WikipediaPlugin implements AgentPlugin {
     if (name === "wikipedia_get_section") {
       return this.getSection(
         args.title as string,
-        args.section_index as number,
-        args.max_chars as number | undefined,
+        Number(args.section_index),
+        args.max_chars !== undefined ? Number(args.max_chars) : undefined,
       );
     }
     if (name === "wikipedia_get_links") {
       return this.getLinks(
         args.title as string,
-        args.section_index as number | undefined,
-        args.limit as number | undefined,
+        args.section_index !== undefined ? Number(args.section_index) : undefined,
+        args.limit !== undefined ? Number(args.limit) : undefined,
       );
     }
     logger.warn("WikipediaPlugin", `unknown tool: ${name}`);
@@ -290,7 +300,6 @@ export class WikipediaPlugin implements AgentPlugin {
       throw e;
     }
 
-    const lead = data.lead.sections[0];
     const sections = [
       { index: 0, toclevel: 1, title: "Introduction", anchor: "Introduction" },
       ...data.remaining.sections.map((s) => ({
