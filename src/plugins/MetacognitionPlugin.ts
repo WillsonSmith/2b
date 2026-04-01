@@ -711,26 +711,71 @@ export class MetacognitionPlugin implements AgentPlugin {
 
   private async checkCorrectionEffectiveness(): Promise<void> {
     const EFFECTIVE_TURNS = 10;
-    const STALE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+    const STALE_TURNS = EFFECTIVE_TURNS * 3; // 30 clean turns → prune
 
-    for (const correction of this.correctionHistory) {
-      if (correction.effectiveness !== "pending") continue;
+    // Iterate over a snapshot to avoid mutation issues within the loop
+    for (const correction of [...this.correctionHistory]) {
+      // === Pending: first resolution check ===
+      if (correction.effectiveness === "pending") {
+        const turnsSince = this.turnHistory.filter(
+          (t) => (t.ended_at ?? t.started_at) > correction.applied_at,
+        );
+        if (turnsSince.length === 0) continue;
 
-      const turnsSince = this.turnHistory.filter(
-        (t) => (t.ended_at ?? t.started_at) > correction.applied_at,
-      );
-      if (turnsSince.length === 0) continue;
+        const recurred = this.patternRecurredIn(correction.trigger, turnsSince);
 
-      const recurred = this.patternRecurredIn(correction.trigger, turnsSince);
+        if (recurred) {
+          correction.effectiveness = "ineffective";
+          // Only strengthen once — ceiling guard in strengthenCorrectiveRule handles re-entry
+          if (correction.post_strengthen_count === 0) {
+            await this.strengthenCorrectiveRule(correction);
+          }
+        } else if (turnsSince.length >= EFFECTIVE_TURNS) {
+          correction.effectiveness = "effective";
+        }
+      }
 
-      if (recurred) {
-        correction.effectiveness = "ineffective";
-        await this.strengthenCorrectiveRule(correction);
-      } else if (turnsSince.length >= EFFECTIVE_TURNS) {
-        correction.effectiveness = "effective";
-        const ageMs = Date.now() - correction.applied_at.getTime();
-        if (ageMs > STALE_MS) {
+      // === Effective / effective_after_strengthen: prune when stale ===
+      else if (
+        correction.effectiveness === "effective" ||
+        correction.effectiveness === "effective_after_strengthen"
+      ) {
+        const turnsSince = this.turnHistory.filter(
+          (t) => (t.ended_at ?? t.started_at) > correction.applied_at,
+        ).length;
+        if (turnsSince >= STALE_TURNS) {
           await this.maybePruneCorrection(correction);
+        }
+      }
+
+      // === Ineffective: second observation window after CRITICAL strengthening ===
+      else if (correction.effectiveness === "ineffective") {
+        if (!correction.strengthened_at) continue;
+
+        const turnsSinceStrengthen = this.turnHistory.filter(
+          (t) => (t.ended_at ?? t.started_at) > correction.strengthened_at!,
+        );
+        if (turnsSinceStrengthen.length === 0) continue;
+
+        const recurredAfterStrengthen = this.patternRecurredIn(
+          correction.trigger,
+          turnsSinceStrengthen,
+        );
+
+        if (!recurredAfterStrengthen && turnsSinceStrengthen.length >= EFFECTIVE_TURNS) {
+          // CRITICAL rule worked — treat as effective and let the stale check prune it
+          correction.effectiveness = "effective_after_strengthen";
+        } else if (recurredAfterStrengthen && correction.post_strengthen_count >= 1) {
+          // Truly stuck — full cleanup to unlock retry for this trigger
+          correction.effectiveness = "failed";
+          try {
+            await this.memoryPlugin.executeTool!("delete_memory", {
+              id: correction.behavior_memory_id,
+            });
+          } catch {
+            // non-critical
+          }
+          this.correctionHistory = this.correctionHistory.filter((c) => c.id !== correction.id);
         }
       }
     }
