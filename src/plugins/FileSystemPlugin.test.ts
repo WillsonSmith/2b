@@ -361,3 +361,21 @@ describe("unknown tool", () => {
     expect(result).toBeUndefined();
   });
 });
+
+// ── error wrapping ────────────────────────────────────────────────────────────
+
+describe("error wrapping", () => {
+  test("prefixes errors with the tool name", async () => {
+    await expect(
+      plugin.executeTool("stat_file", { path: r(join(tmpDir, "ghost.txt")) }),
+    ).rejects.toThrow("stat_file failed:");
+  });
+
+  test("rejects paginated reads of files over 10 MB", async () => {
+    const abs = join(tmpDir, "big.bin");
+    await nodeWriteFile(abs, Buffer.alloc(10 * 1024 * 1024 + 1, "x"));
+    await expect(
+      plugin.executeTool("read_file", { path: r(abs), offset: 1, limit: 10 }),
+    ).rejects.toThrow("exceeds the 10 MB read limit");
+  });
+});
