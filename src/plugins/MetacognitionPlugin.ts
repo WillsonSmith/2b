@@ -4,30 +4,11 @@ import type { BaseAgent } from "../core/BaseAgent.ts";
 import type { Message } from "../core/types.ts";
 import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
 
-const MEMORY_TOOLS = new Set([
-  "search_memory", "query_memories", "hybrid_search",
-  "save_memory", "save_behavior", "save_procedure", "edit_memory", "delete_memory",
-  "get_linked_memories", "aggregate_memories", "get_memory_timeline",
-]);
-
-const EXTERNAL_TOOLS = new Set([
-  "web_search", "read_webpage", "download_file", "run_shell",
-  "download_video_clip", "fetch_rss_feed",
-  "ffmpeg_get_info", "ffmpeg_trim", "ffmpeg_convert", "ffmpeg_extract_audio",
-  "ffmpeg_resize", "ffmpeg_concatenate", "ffmpeg_images_to_video", "ffmpeg_add_audio",
-  "ffmpeg_extract_frames", "ffmpeg_screenshot", "ffmpeg_crop", "ffmpeg_speed", "ffmpeg_rotate",
-]);
-
-const SYSTEM_TOOLS = new Set([
-  "introspect", "memory_status", "show_active_rules",
-  "list_registered_plugins", "list_available_tools", "get_system_prompt",
-  "efficiency_report",
-]);
 
 interface ToolCallRecord {
   tool: string;
   args_summary: string;
-  category: "memory" | "external" | "system" | "other";
+  category: "memory" | "system" | "other";
   timestamp: Date;
   result_meta?: Record<string, unknown>;
 }
@@ -38,7 +19,6 @@ interface TurnState {
   ended_at?: Date;
   tool_calls: ToolCallRecord[];
   memory_access_count: number;
-  external_tool_count: number;
   behavioral_rules_active: string[];
   uncertainty_markers: string[];
 }
@@ -60,13 +40,6 @@ interface CorrectionRecord {
   post_strengthen_count: number;
 }
 
-function categorize(tool: string): ToolCallRecord["category"] {
-  if (MEMORY_TOOLS.has(tool)) return "memory";
-  if (EXTERNAL_TOOLS.has(tool)) return "external";
-  if (SYSTEM_TOOLS.has(tool)) return "system";
-  return "other";
-}
-
 export class MetacognitionPlugin implements AgentPlugin {
   name = "Metacognition";
   private currentTurn: TurnState;
@@ -75,6 +48,8 @@ export class MetacognitionPlugin implements AgentPlugin {
   private readonly blockedTools = new Set<string>();
   private readonly saturationThreshold: number;
   private agentRef: BaseAgent | null = null;
+  private memoryToolNames = new Set<string>();
+  private systemToolNames = new Set<string>();
 
   constructor(
     private memoryPlugin: CortexMemoryPlugin,
@@ -90,7 +65,6 @@ export class MetacognitionPlugin implements AgentPlugin {
       started_at: new Date(),
       tool_calls: [],
       memory_access_count: 0,
-      external_tool_count: 0,
       behavioral_rules_active: [],
       uncertainty_markers: [],
     };
@@ -98,6 +72,14 @@ export class MetacognitionPlugin implements AgentPlugin {
 
   onInit(agent: BaseAgent): void {
     this.agentRef = agent;
+
+    // Build category sets from live plugin state rather than hardcoded lists
+    for (const t of this.memoryPlugin.getTools()) {
+      this.memoryToolNames.add(t.name);
+    }
+    for (const t of this.getTools()) {
+      this.systemToolNames.add(t.name);
+    }
 
     // Reconstruct correction history from DB so effectiveness state survives restarts
     try {
@@ -138,7 +120,7 @@ export class MetacognitionPlugin implements AgentPlugin {
     }
 
     agent.on("tool_call", (name: string, args: Record<string, unknown>) => {
-      const category = categorize(name);
+      const category = this.categorize(name);
       const record: ToolCallRecord = {
         tool: name,
         args_summary: JSON.stringify(args).slice(0, 100),
@@ -163,8 +145,6 @@ export class MetacognitionPlugin implements AgentPlugin {
           record.result_meta = meta;
           this.memoryPlugin.searchMetaBuffer.delete(name);
         }
-      } else if (category === "external") {
-        this.currentTurn.external_tool_count++;
       }
     });
   }
@@ -371,7 +351,6 @@ export class MetacognitionPlugin implements AgentPlugin {
       `Turn ID: ${t.turn_id}`,
       `Started: ${t.started_at.toISOString()}`,
       `Memory accesses: ${t.memory_access_count}`,
-      `External tool calls: ${t.external_tool_count}`,
       `Active behavioral rules: ${t.behavioral_rules_active.length > 0 ? t.behavioral_rules_active.join("; ") : "none"}`,
       `Uncertainty markers: ${t.uncertainty_markers.length > 0 ? t.uncertainty_markers.join(", ") : "none"}`,
       "",
@@ -639,6 +618,12 @@ export class MetacognitionPlugin implements AgentPlugin {
         );
       }),
     ].join("\n");
+  }
+
+  private categorize(tool: string): ToolCallRecord["category"] {
+    if (this.memoryToolNames.has(tool)) return "memory";
+    if (this.systemToolNames.has(tool)) return "system";
+    return "other";
   }
 
   private async maybeAutoCorrect(): Promise<void> {
