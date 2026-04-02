@@ -139,7 +139,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       const parts: string[] = [];
       if (factualResults.length > 0) {
         const entries = factualResults
-          .map((r) => `- [${r.id.slice(0, 8)}] ${r.text.trim()}`)
+          .map((r) => `- [${r.id}] ${r.text.trim()}`)
           .join("\n");
         parts.push(`Relevant memories:\n${entries}`);
       }
@@ -454,7 +454,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
           raw.length > this.MAX_MEMORY_TEXT_LENGTH
             ? raw.slice(0, this.MAX_MEMORY_TEXT_LENGTH) + "…"
             : raw;
-        return `[${r.id.slice(0, 8)}] (score: ${r.score.toFixed(2)}) ${text}`;
+        return `[${r.id}] (score: ${r.score.toFixed(2)}) ${text}`;
       })
       .join("\n");
   }
@@ -474,7 +474,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       args.tags ?? [],
     );
     this.savedThisTurn.add(id);
-    logger.info(this.name, `save_memory SUCCESS id=${id.slice(0, 8)}`);
+    logger.info(this.name, `save_memory SUCCESS id=${id}`);
     // Link to top 3 similar existing memories
     const similar = await this.db.search(content, 3, 0.5);
     logger.debug(
@@ -522,36 +522,36 @@ export class CortexMemoryPlugin implements AgentPlugin {
     }
     logger.info(
       this.name,
-      `edit_memory id=${args.id.slice(0, 8)}: "${content.slice(0, 100)}"`,
+      `edit_memory id=${args.id}: "${content.slice(0, 100)}"`,
     );
     const existing = await this.db.getMemoryById(args.id);
-    if (!existing) return `No memory found with id ${args.id.slice(0, 8)}.`;
+    if (!existing) return `No memory found with id ${args.id}.`;
     await this.db.updateMemoryText(args.id, content);
-    logger.info(this.name, `edit_memory SUCCESS id=${args.id.slice(0, 8)}`);
-    return `Memory ${args.id.slice(0, 8)} updated.`;
+    logger.info(this.name, `edit_memory SUCCESS id=${args.id}`);
+    return `Memory ${args.id} updated.`;
   }
 
   private async handleDeleteMemory(args: any): Promise<string> {
     if (!args.id || typeof args.id !== "string") {
       return "delete_memory requires a valid memory id string.";
     }
-    logger.info(this.name, `delete_memory id=${args.id.slice(0, 8)}`);
+    logger.info(this.name, `delete_memory id=${args.id}`);
     const existing = await this.db.getMemoryById(args.id);
-    if (!existing) return `No memory found with id ${args.id.slice(0, 8)}.`;
+    if (!existing) return `No memory found with id ${args.id}.`;
     await this.db.deleteMemory(args.id);
     this.coreBehaviorCache = null; // invalidate cache in case a behavior was deleted
-    return `Memory ${args.id.slice(0, 8)} deleted.`;
+    return `Memory ${args.id} deleted.`;
   }
 
   private async handleGetLinkedMemories(args: any): Promise<string> {
     if (!args.id || typeof args.id !== "string") {
       return "get_linked_memories requires a valid memory id string.";
     }
-    logger.debug(this.name, `get_linked_memories id=${args.id.slice(0, 8)}`);
+    logger.debug(this.name, `get_linked_memories id=${args.id}`);
     const linked = await this.db.getLinkedMemories(args.id);
     logger.debug(this.name, `get_linked_memories found ${linked.length} links`);
     if (linked.length === 0) return "No linked memories found.";
-    return linked.map((m) => `[${m.id.slice(0, 8)}] ${m.text.trim()}`).join("\n");
+    return linked.map((m) => `[${m.id}] ${m.text.trim()}`).join("\n");
   }
 
   private handleQueryMemories(args: any): string {
@@ -569,7 +569,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
             : raw;
         const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
         const date = new Date(r.timestamp).toISOString().slice(0, 10);
-        return `[${r.id.slice(0, 8)}] (${r.type}, ${date}${tagsStr}) ${text}`;
+        return `[${r.id}] (${r.type}, ${date}${tagsStr}) ${text}`;
       })
       .join("\n");
   }
@@ -603,7 +603,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
             : raw;
         const tagsStr = r.tags.length > 0 ? ` [${r.tags.join(", ")}]` : "";
         const date = new Date(r.timestamp).toISOString().slice(0, 10);
-        return `[${r.id.slice(0, 8)}] (score: ${r.score.toFixed(2)}, ${r.type}, ${date}${tagsStr}) ${text}`;
+        return `[${r.id}] (score: ${r.score.toFixed(2)}, ${r.type}, ${date}${tagsStr}) ${text}`;
       })
       .join("\n");
   }
@@ -652,7 +652,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
           .toISOString()
           .replace("T", " ")
           .slice(0, 19);
-        return `[${r.id.slice(0, 8)}] (${r.type}, ${date}${tagsStr}) ${text}`;
+        return `[${r.id}] (${r.type}, ${date}${tagsStr}) ${text}`;
       })
       .join("\n");
   }
@@ -714,13 +714,13 @@ export class CortexMemoryPlugin implements AgentPlugin {
         if (mem.timestamp >= twoHoursAgo) {
           logger.info(
             this.name,
-            `Deleting recent conflicting memory id=${candidate.id.slice(0, 8)}`,
+            `Deleting recent conflicting memory id=${candidate.id}`,
           );
           await this.db.deleteMemory(candidate.id);
         } else {
           logger.info(
             this.name,
-            `Marking memory superseded id=${candidate.id.slice(0, 8)}`,
+            `Marking memory superseded id=${candidate.id}`,
           );
           const superseded = `[SUPERSEDED] User has since changed this position: ${mem.text}`;
           await this.db.updateMemoryText(candidate.id, superseded);
