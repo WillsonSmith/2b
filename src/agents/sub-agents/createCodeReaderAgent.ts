@@ -2,7 +2,8 @@ import { HeadlessAgent } from "../../core/HeadlessAgent.ts";
 import { LMStudioProvider } from "../../providers/llm/LMStudioProvider.ts";
 import { SourceReaderPlugin } from "../../plugins/SourceReaderPlugin.ts";
 
-const DEFAULT_MODEL = "qwen2.5-coder-7b-instruct-mlx";
+// const DEFAULT_MODEL = "qwen2.5-coder-7b-instruct-mlx";
+const DEFAULT_MODEL = "qwen/qwen3.5-35b-a3b";
 
 const SYSTEM_PROMPT = [
   "You are a read-only code analysis agent for the 2b agent framework.",
@@ -28,11 +29,16 @@ export interface CodeReaderAgentOptions {
   lmStudioUrl?: string;
 }
 
-export function createCodeReaderAgent(options: CodeReaderAgentOptions = {}): HeadlessAgent {
+export function createCodeReaderAgent(
+  options: CodeReaderAgentOptions = {},
+): HeadlessAgent {
   const model = options.model ?? process.env.CODE_READER_MODEL ?? DEFAULT_MODEL;
-  const url = options.lmStudioUrl ?? process.env.LM_STUDIO_URL ?? "ws://127.0.0.1:1234";
+  const url =
+    options.lmStudioUrl ?? process.env.LM_STUDIO_URL ?? "ws://127.0.0.1:1234";
 
-  const llm = new LMStudioProvider(model, url, { toolCallingStrategy: "native" });
+  const llm = new LMStudioProvider(model, url, {
+    toolCallingStrategy: "native",
+  });
 
   return new HeadlessAgent(
     llm,
