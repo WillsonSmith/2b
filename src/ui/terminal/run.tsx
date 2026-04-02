@@ -118,8 +118,8 @@ agent.registerPlugin(
     description:
       "Use when the user asks how this agent works, wants to trace a data flow, understand a plugin, or look up implementation details in this agent's own source code. Scoped only to this agent's source — not for exploring other projects or general coding tasks.",
     agent: createCodeReaderAgent({ sourceRoot }),
-    inactivityTimeoutMs: 30_000,
-    absoluteTimeoutMs: 60_000,
+    // inactivityTimeoutMs: 30_000,
+    absoluteTimeoutMs: 300_000,
   }),
 );
 agent.registerPlugin(minimalToolsPlugin);
