@@ -3,31 +3,12 @@ import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import type { BaseAgent } from "../core/BaseAgent.ts";
 import type { Message } from "../core/types.ts";
 import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
-
-const MEMORY_TOOLS = new Set([
-  "search_memory", "query_memories", "hybrid_search",
-  "save_memory", "save_behavior", "save_procedure", "edit_memory", "delete_memory",
-  "get_linked_memories", "aggregate_memories", "get_memory_timeline",
-]);
-
-const EXTERNAL_TOOLS = new Set([
-  "web_search", "read_webpage", "download_file", "run_shell",
-  "download_video_clip", "fetch_rss_feed",
-  "ffmpeg_get_info", "ffmpeg_trim", "ffmpeg_convert", "ffmpeg_extract_audio",
-  "ffmpeg_resize", "ffmpeg_concatenate", "ffmpeg_images_to_video", "ffmpeg_add_audio",
-  "ffmpeg_extract_frames", "ffmpeg_screenshot", "ffmpeg_crop", "ffmpeg_speed", "ffmpeg_rotate",
-]);
-
-const SYSTEM_TOOLS = new Set([
-  "introspect", "memory_status", "show_active_rules",
-  "list_registered_plugins", "list_available_tools", "get_system_prompt",
-  "efficiency_report",
-]);
+import { logger } from "../logger.ts";
 
 interface ToolCallRecord {
   tool: string;
   args_summary: string;
-  category: "memory" | "external" | "system" | "other";
+  category: "memory" | "system" | "other";
   timestamp: Date;
   result_meta?: Record<string, unknown>;
 }
@@ -38,7 +19,6 @@ interface TurnState {
   ended_at?: Date;
   tool_calls: ToolCallRecord[];
   memory_access_count: number;
-  external_tool_count: number;
   behavioral_rules_active: string[];
   uncertainty_markers: string[];
 }
@@ -55,14 +35,14 @@ interface CorrectionRecord {
   behavior_memory_id: string;
   applied_at: Date;
   turns_observed: number;
-  effectiveness: "pending" | "effective" | "ineffective";
-}
-
-function categorize(tool: string): ToolCallRecord["category"] {
-  if (MEMORY_TOOLS.has(tool)) return "memory";
-  if (EXTERNAL_TOOLS.has(tool)) return "external";
-  if (SYSTEM_TOOLS.has(tool)) return "system";
-  return "other";
+  effectiveness:
+    | "pending"
+    | "effective"
+    | "ineffective"
+    | "effective_after_strengthen"
+    | "failed";
+  strengthened_at?: Date;
+  post_strengthen_count: number;
 }
 
 export class MetacognitionPlugin implements AgentPlugin {
@@ -73,12 +53,16 @@ export class MetacognitionPlugin implements AgentPlugin {
   private readonly blockedTools = new Set<string>();
   private readonly saturationThreshold: number;
   private agentRef: BaseAgent | null = null;
+  private memoryToolNames = new Set<string>();
+  private systemToolNames = new Set<string>();
 
   constructor(
     private memoryPlugin: CortexMemoryPlugin,
     options?: { toolSaturationThreshold?: number },
   ) {
-    this.saturationThreshold = options?.toolSaturationThreshold ?? 5;
+    // Default raised from 5 → 8; the old value was too aggressive and caused
+    // false saturation warnings on normal multi-step turns.
+    this.saturationThreshold = options?.toolSaturationThreshold ?? 8;
     this.currentTurn = this.newTurn();
   }
 
@@ -88,7 +72,6 @@ export class MetacognitionPlugin implements AgentPlugin {
       started_at: new Date(),
       tool_calls: [],
       memory_access_count: 0,
-      external_tool_count: 0,
       behavioral_rules_active: [],
       uncertainty_markers: [],
     };
@@ -97,8 +80,62 @@ export class MetacognitionPlugin implements AgentPlugin {
   onInit(agent: BaseAgent): void {
     this.agentRef = agent;
 
+    // Build category sets from live plugin state rather than hardcoded lists
+    for (const t of this.memoryPlugin.getTools()) {
+      this.memoryToolNames.add(t.name);
+    }
+    for (const t of this.getTools()) {
+      this.systemToolNames.add(t.name);
+    }
+
+    // Reconstruct correction history from DB so effectiveness state survives restarts
+    try {
+      const CROSS_SESSION_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+      const existing = this.memoryPlugin.db.queryMemories({
+        types: ["behavior"],
+        tags: ["metacognition-correction"],
+        limit: CORRECTION_HISTORY_LIMIT,
+      });
+      for (const mem of existing) {
+        const trigger = (mem.tags as string[]).find(
+          (t) =>
+            t !== "metacognition-correction" &&
+            !t.startsWith("metacognition-correction:"),
+        );
+        if (
+          !trigger ||
+          !["saturation", "redundancy", "hedged_no_search"].includes(trigger)
+        )
+          continue;
+
+        const isIneffective = (mem.tags as string[]).includes(
+          "metacognition-correction:ineffective",
+        );
+        const age = Date.now() - new Date(mem.timestamp).getTime();
+
+        if (isIneffective && age > CROSS_SESSION_STALE_MS) {
+          // Prune stale ineffective corrections from a prior session
+          this.memoryPlugin.db.deleteMemory(mem.id).catch(() => {});
+          continue;
+        }
+
+        this.correctionHistory.push({
+          id: randomUUID(),
+          trigger: trigger as CorrectionRecord["trigger"],
+          rule_saved: mem.text,
+          behavior_memory_id: mem.id,
+          applied_at: new Date(mem.timestamp),
+          turns_observed: 0,
+          effectiveness: isIneffective ? "ineffective" : "pending",
+          post_strengthen_count: isIneffective ? 1 : 0,
+        });
+      }
+    } catch {
+      // non-critical — corrections are best-effort
+    }
+
     agent.on("tool_call", (name: string, args: Record<string, unknown>) => {
-      const category = categorize(name);
+      const category = this.categorize(name);
       const record: ToolCallRecord = {
         tool: name,
         args_summary: JSON.stringify(args).slice(0, 100),
@@ -123,8 +160,6 @@ export class MetacognitionPlugin implements AgentPlugin {
           record.result_meta = meta;
           this.memoryPlugin.searchMetaBuffer.delete(name);
         }
-      } else if (category === "external") {
-        this.currentTurn.external_tool_count++;
       }
     });
   }
@@ -143,12 +178,14 @@ export class MetacognitionPlugin implements AgentPlugin {
   getContext(): string {
     const t = this.currentTurn;
     const lastTool = t.tool_calls.at(-1)?.tool ?? "none";
-    const rules = t.behavioral_rules_active.length > 0
-      ? t.behavioral_rules_active.join(", ")
-      : "none";
-    const markers = t.uncertainty_markers.length > 0
-      ? t.uncertainty_markers.join(", ")
-      : "none";
+    const rules =
+      t.behavioral_rules_active.length > 0
+        ? t.behavioral_rules_active.join(", ")
+        : "none";
+    const markers =
+      t.uncertainty_markers.length > 0
+        ? t.uncertainty_markers.join(", ")
+        : "none";
     const saturationWarning = t.uncertainty_markers.includes("tool_saturation")
       ? " (TOOL SATURATION)"
       : "";
@@ -163,7 +200,10 @@ export class MetacognitionPlugin implements AgentPlugin {
     ];
 
     if (t.uncertainty_markers.includes("tool_saturation")) {
-      const prevTurnAlsoSaturated = this.turnHistory.at(-1)?.uncertainty_markers.includes("tool_saturation") ?? false;
+      const prevTurnAlsoSaturated =
+        this.turnHistory
+          .at(-1)
+          ?.uncertainty_markers.includes("tool_saturation") ?? false;
       if (prevTurnAlsoSaturated) {
         parts.push(
           "HARD STOP: Memory search threshold has been exceeded across multiple consecutive turns. You MUST NOT call search_memory, hybrid_search, or query_memories this turn. Synthesize entirely from already-retrieved context.",
@@ -242,13 +282,18 @@ export class MetacognitionPlugin implements AgentPlugin {
     ];
   }
 
-  async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  async executeTool(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> {
     try {
       if (name === "introspect") return this.handleIntrospect();
       if (name === "memory_status") return this.handleMemoryStatus();
       if (name === "show_active_rules") return this.handleShowActiveRules();
-      if (name === "list_registered_plugins") return this.handleListRegisteredPlugins();
-      if (name === "list_available_tools") return this.handleListAvailableTools();
+      if (name === "list_registered_plugins")
+        return this.handleListRegisteredPlugins();
+      if (name === "list_available_tools")
+        return this.handleListAvailableTools();
       if (name === "get_system_prompt") return this.handleGetSystemPrompt();
       if (name === "efficiency_report") return this.handleEfficiencyReport();
       if (name === "show_corrections") return this.handleShowCorrections();
@@ -271,7 +316,10 @@ export class MetacognitionPlugin implements AgentPlugin {
       this.currentTurn = this.newTurn();
       this.blockedTools.clear();
       try {
-        const behaviors = this.memoryPlugin.db.getRecentMemories(20, "behavior");
+        const behaviors = this.memoryPlugin.db.getRecentMemories(
+          20,
+          "behavior",
+        );
         this.currentTurn.behavioral_rules_active = behaviors.map((b) =>
           b.text.slice(0, 60),
         );
@@ -323,7 +371,8 @@ export class MetacognitionPlugin implements AgentPlugin {
     const correctionLines =
       recentCorrections.length > 0
         ? recentCorrections.map(
-            (c) => `  [${c.trigger}] ${c.rule_saved.slice(0, 80)} (${c.applied_at.toISOString().slice(0, 10)})`,
+            (c) =>
+              `  [${c.trigger}] ${c.rule_saved.slice(0, 80)} (${c.applied_at.toISOString().slice(0, 10)})`,
           )
         : ["  (none)"];
 
@@ -331,7 +380,6 @@ export class MetacognitionPlugin implements AgentPlugin {
       `Turn ID: ${t.turn_id}`,
       `Started: ${t.started_at.toISOString()}`,
       `Memory accesses: ${t.memory_access_count}`,
-      `External tool calls: ${t.external_tool_count}`,
       `Active behavioral rules: ${t.behavioral_rules_active.length > 0 ? t.behavioral_rules_active.join("; ") : "none"}`,
       `Uncertainty markers: ${t.uncertainty_markers.length > 0 ? t.uncertainty_markers.join(", ") : "none"}`,
       "",
@@ -363,7 +411,10 @@ export class MetacognitionPlugin implements AgentPlugin {
 
   private handleShowActiveRules(): string {
     try {
-      const behaviors = this.memoryPlugin.db.queryMemories({ types: ["behavior"], limit: 50 });
+      const behaviors = this.memoryPlugin.db.queryMemories({
+        types: ["behavior"],
+        limit: 50,
+      });
       if (behaviors.length === 0) return "No behavioral rules found.";
       return [
         `Active behavioral rules (${behaviors.length}):`,
@@ -400,9 +451,13 @@ export class MetacognitionPlugin implements AgentPlugin {
       group.push(tc);
       callCounts.set(tc.tool, group);
     }
-    const redundant = [...callCounts.entries()].filter(([, calls]) => calls.length > 1);
+    const redundant = [...callCounts.entries()].filter(
+      ([, calls]) => calls.length > 1,
+    );
     if (redundant.length > 0) {
-      sections.push("**Redundant tool calls** (same tool invoked multiple times this turn):");
+      sections.push(
+        "**Redundant tool calls** (same tool invoked multiple times this turn):",
+      );
       for (const [tool, calls] of redundant) {
         sections.push(`  ${tool} × ${calls.length}`);
         for (const c of calls) {
@@ -422,7 +477,9 @@ export class MetacognitionPlugin implements AgentPlugin {
 
     // Hedging
     if (t.uncertainty_markers.includes("hedged_language")) {
-      sections.push("**Hedged language detected** in this turn's response — possible low confidence.");
+      sections.push(
+        "**Hedged language detected** in this turn's response — possible low confidence.",
+      );
     }
 
     // Tool mix
@@ -440,12 +497,16 @@ export class MetacognitionPlugin implements AgentPlugin {
     // ── Historical analysis ────────────────────────────────────────────────────
     const historical = this.turnHistory;
     if (historical.length > 0) {
-      sections.push(`\n## Historical Patterns (last ${historical.length} completed turns)`);
+      sections.push(
+        `\n## Historical Patterns (last ${historical.length} completed turns)`,
+      );
 
       const avgMemory =
-        historical.reduce((s, turn) => s + turn.memory_access_count, 0) / historical.length;
+        historical.reduce((s, turn) => s + turn.memory_access_count, 0) /
+        historical.length;
       const avgTools =
-        historical.reduce((s, turn) => s + turn.tool_calls.length, 0) / historical.length;
+        historical.reduce((s, turn) => s + turn.tool_calls.length, 0) /
+        historical.length;
       const saturationCount = historical.filter((turn) =>
         turn.uncertainty_markers.includes("tool_saturation"),
       ).length;
@@ -453,8 +514,12 @@ export class MetacognitionPlugin implements AgentPlugin {
         turn.uncertainty_markers.includes("hedged_language"),
       ).length;
 
-      sections.push(`Average memory accesses per turn: ${avgMemory.toFixed(1)}`);
-      sections.push(`Average total tool calls per turn: ${avgTools.toFixed(1)}`);
+      sections.push(
+        `Average memory accesses per turn: ${avgMemory.toFixed(1)}`,
+      );
+      sections.push(
+        `Average total tool calls per turn: ${avgTools.toFixed(1)}`,
+      );
       sections.push(
         `Saturation events: ${saturationCount}/${historical.length} turns (${Math.round((saturationCount / historical.length) * 100)}%)`,
       );
@@ -492,17 +557,35 @@ export class MetacognitionPlugin implements AgentPlugin {
     // ── Correction effectiveness ────────────────────────────────────────────────
     if (this.correctionHistory.length > 0) {
       sections.push("\n## Correction Effectiveness");
-      const counts = { pending: 0, effective: 0, ineffective: 0 };
+      const counts = {
+        pending: 0,
+        effective: 0,
+        ineffective: 0,
+        effective_after_strengthen: 0,
+        failed: 0,
+      };
       for (const c of this.correctionHistory) counts[c.effectiveness]++;
       sections.push(
         `Total corrections: ${this.correctionHistory.length} — ` +
-          `${counts.effective} effective, ${counts.ineffective} ineffective, ${counts.pending} pending`,
+          `${counts.effective + counts.effective_after_strengthen} effective, ` +
+          `${counts.ineffective} ineffective (CRITICAL, under observation), ` +
+          `${counts.failed} failed (cleared for retry), ` +
+          `${counts.pending} pending`,
       );
-      const ineffective = this.correctionHistory.filter((c) => c.effectiveness === "ineffective");
+      const ineffective = this.correctionHistory.filter(
+        (c) => c.effectiveness === "ineffective",
+      );
       if (ineffective.length > 0) {
-        sections.push("Ineffective corrections (rule strengthened):");
+        sections.push(
+          "Ineffective corrections (CRITICAL rule active, second observation window running):",
+        );
         for (const c of ineffective) {
-          sections.push(`  [${c.trigger}] ${c.rule_saved.slice(0, 80)}`);
+          const since = c.strengthened_at
+            ? ` since ${c.strengthened_at.toISOString().slice(0, 10)}`
+            : "";
+          sections.push(
+            `  [${c.trigger}]${since} ${c.rule_saved.slice(0, 80)}`,
+          );
         }
       }
     }
@@ -516,20 +599,25 @@ export class MetacognitionPlugin implements AgentPlugin {
         "You called the same tool multiple times this turn. Check whether the first result was sufficient before re-querying.",
       );
     }
-    const memoryRatio = t.tool_calls.length > 0
-      ? t.memory_access_count / t.tool_calls.length
-      : 0;
+    const memoryRatio =
+      t.tool_calls.length > 0 ? t.memory_access_count / t.tool_calls.length : 0;
     if (memoryRatio > 0.6 && t.tool_calls.length >= 3) {
       suggestions.push(
         "Over 60% of your tool calls this turn were memory lookups. Consider whether you could have answered from context alone.",
       );
     }
-    if (t.uncertainty_markers.includes("hedged_language") && t.memory_access_count === 0) {
+    if (
+      t.uncertainty_markers.includes("hedged_language") &&
+      t.memory_access_count === 0
+    ) {
       suggestions.push(
         "You hedged your response but didn't search memory. A targeted memory search may have resolved the uncertainty.",
       );
     }
-    if (t.uncertainty_markers.includes("hedged_language") && t.memory_access_count > 3) {
+    if (
+      t.uncertainty_markers.includes("hedged_language") &&
+      t.memory_access_count > 3
+    ) {
       suggestions.push(
         "You searched memory extensively but still hedged. The relevant memory may not exist yet — consider saving what you learn.",
       );
@@ -548,7 +636,10 @@ export class MetacognitionPlugin implements AgentPlugin {
     if (plugins.length === 0) return "No plugins registered.";
     return [
       `Registered plugins (${plugins.length}):`,
-      ...plugins.map((p) => `  ${p.name} — ${p.toolCount} tool${p.toolCount !== 1 ? "s" : ""}`),
+      ...plugins.map(
+        (p) =>
+          `  ${p.name} — ${p.toolCount} tool${p.toolCount !== 1 ? "s" : ""}`,
+      ),
     ].join("\n");
   }
 
@@ -565,7 +656,8 @@ export class MetacognitionPlugin implements AgentPlugin {
   private handleGetSystemPrompt(): string {
     if (!this.agentRef) return "Agent not initialised yet.";
     const prompt = this.agentRef.getLastSystemPrompt();
-    if (!prompt) return "No system prompt recorded yet (agent hasn't completed a turn).";
+    if (!prompt)
+      return "No system prompt recorded yet (agent hasn't completed a turn).";
     return `System prompt (${prompt.length} chars):\n\n${prompt}`;
   }
 
@@ -573,20 +665,38 @@ export class MetacognitionPlugin implements AgentPlugin {
     if (this.correctionHistory.length === 0) {
       return "No self-corrections have been applied yet.";
     }
-    const counts = { pending: 0, effective: 0, ineffective: 0 };
+    const counts = {
+      pending: 0,
+      effective: 0,
+      ineffective: 0,
+      effective_after_strengthen: 0,
+      failed: 0,
+    };
     for (const c of this.correctionHistory) counts[c.effectiveness]++;
     return [
       `Self-correction history (${this.correctionHistory.length} total — ` +
-        `${counts.effective} effective, ${counts.ineffective} ineffective, ${counts.pending} pending):`,
+        `${counts.effective + counts.effective_after_strengthen} effective, ` +
+        `${counts.ineffective} ineffective (CRITICAL), ` +
+        `${counts.failed} failed (cleared), ` +
+        `${counts.pending} pending):`,
       ...this.correctionHistory.slice(-20).map((c) => {
         const date = c.applied_at.toISOString().slice(0, 16).replace("T", " ");
+        const strengthenNote = c.strengthened_at
+          ? ` [strengthened ${c.strengthened_at.toISOString().slice(0, 10)}]`
+          : "";
         return (
-          `[${c.id.slice(0, 8)}] (${date}) trigger=${c.trigger} effectiveness=${c.effectiveness}\n` +
+          `[${c.id.slice(0, 8)}] (${date}) trigger=${c.trigger} effectiveness=${c.effectiveness}${strengthenNote}\n` +
           `  rule: ${c.rule_saved.slice(0, 120)}\n` +
           `  behavior_id: ${c.behavior_memory_id.slice(0, 8)}`
         );
       }),
     ].join("\n");
+  }
+
+  private categorize(tool: string): ToolCallRecord["category"] {
+    if (this.memoryToolNames.has(tool)) return "memory";
+    if (this.systemToolNames.has(tool)) return "system";
+    return "other";
   }
 
   private async maybeAutoCorrect(): Promise<void> {
@@ -607,12 +717,13 @@ export class MetacognitionPlugin implements AgentPlugin {
       );
     }
 
-    // Redundancy pattern: same tool called multiple times in the same turn, repeatedly
+    // Redundancy pattern: same tool+args called multiple times in the same turn, repeatedly
     const redundancyCount = window.filter((t) => {
       const seen = new Set<string>();
       for (const tc of t.tool_calls) {
-        if (seen.has(tc.tool)) return true;
-        seen.add(tc.tool);
+        const key = `${tc.tool}:${tc.args_summary.slice(0, 50)}`;
+        if (seen.has(key)) return true;
+        seen.add(key);
       }
       return false;
     }).length;
@@ -651,14 +762,22 @@ export class MetacognitionPlugin implements AgentPlugin {
         .some((c) => c.trigger === trigger);
       if (recentlySaved) return;
 
-      // Also skip if a behavior with this tag already exists in the DB
+      // Also skip if an active (non-failed) correction for this trigger already exists in the DB
       const existing = this.memoryPlugin.db.queryMemories({
         types: ["behavior"],
         tags: ["metacognition-correction"],
         contains: trigger,
         limit: 1,
       });
-      if (existing.length > 0) return;
+      if (existing.length > 0) {
+        const isActive = this.correctionHistory.some(
+          (c) =>
+            c.behavior_memory_id === existing[0]!.id &&
+            c.effectiveness !== "failed",
+        );
+        if (isActive) return;
+        // Otherwise the DB record is stale/orphaned — fall through and allow save
+      }
 
       const behaviorMemoryId = await this.memoryPlugin.db.addMemory(
         rule,
@@ -674,6 +793,7 @@ export class MetacognitionPlugin implements AgentPlugin {
         applied_at: new Date(),
         turns_observed: turnsObserved,
         effectiveness: "pending",
+        post_strengthen_count: 0,
       });
       if (this.correctionHistory.length > CORRECTION_HISTORY_LIMIT) {
         this.correctionHistory.shift();
@@ -694,8 +814,9 @@ export class MetacognitionPlugin implements AgentPlugin {
       if (trigger === "redundancy") {
         const seen = new Set<string>();
         for (const tc of t.tool_calls) {
-          if (seen.has(tc.tool)) return true;
-          seen.add(tc.tool);
+          const key = `${tc.tool}:${tc.args_summary.slice(0, 50)}`;
+          if (seen.has(key)) return true;
+          seen.add(key);
         }
         return false;
       }
@@ -709,50 +830,138 @@ export class MetacognitionPlugin implements AgentPlugin {
 
   private async checkCorrectionEffectiveness(): Promise<void> {
     const EFFECTIVE_TURNS = 10;
-    const STALE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+    const STALE_TURNS = EFFECTIVE_TURNS * 3; // 30 clean turns → prune
 
-    for (const correction of this.correctionHistory) {
-      if (correction.effectiveness !== "pending") continue;
+    // Iterate over a snapshot to avoid mutation issues within the loop
+    for (const correction of [...this.correctionHistory]) {
+      // === Pending: first resolution check ===
+      if (correction.effectiveness === "pending") {
+        const turnsSince = this.turnHistory.filter(
+          (t) => (t.ended_at ?? t.started_at) > correction.applied_at,
+        );
+        if (turnsSince.length === 0) continue;
 
-      const turnsSince = this.turnHistory.filter(
-        (t) => (t.ended_at ?? t.started_at) > correction.applied_at,
-      );
-      if (turnsSince.length === 0) continue;
+        const recurred = this.patternRecurredIn(correction.trigger, turnsSince);
 
-      const recurred = this.patternRecurredIn(correction.trigger, turnsSince);
+        if (recurred) {
+          correction.effectiveness = "ineffective";
+          // Only strengthen once — ceiling guard in strengthenCorrectiveRule handles re-entry
+          if (correction.post_strengthen_count === 0) {
+            await this.strengthenCorrectiveRule(correction);
+          }
+        } else if (turnsSince.length >= EFFECTIVE_TURNS) {
+          correction.effectiveness = "effective";
+        }
+      }
 
-      if (recurred) {
-        correction.effectiveness = "ineffective";
-        await this.strengthenCorrectiveRule(correction);
-      } else if (turnsSince.length >= EFFECTIVE_TURNS) {
-        correction.effectiveness = "effective";
-        const ageMs = Date.now() - correction.applied_at.getTime();
-        if (ageMs > STALE_MS) {
+      // === Effective / effective_after_strengthen: prune when stale ===
+      else if (
+        correction.effectiveness === "effective" ||
+        correction.effectiveness === "effective_after_strengthen"
+      ) {
+        const turnsSince = this.turnHistory.filter(
+          (t) => (t.ended_at ?? t.started_at) > correction.applied_at,
+        ).length;
+        if (turnsSince >= STALE_TURNS) {
           await this.maybePruneCorrection(correction);
+        }
+      }
+
+      // === Ineffective: second observation window after CRITICAL strengthening ===
+      else if (correction.effectiveness === "ineffective") {
+        if (!correction.strengthened_at) continue;
+
+        const turnsSinceStrengthen = this.turnHistory.filter(
+          (t) => (t.ended_at ?? t.started_at) > correction.strengthened_at!,
+        );
+        if (turnsSinceStrengthen.length === 0) continue;
+
+        const recurredAfterStrengthen = this.patternRecurredIn(
+          correction.trigger,
+          turnsSinceStrengthen,
+        );
+
+        if (
+          !recurredAfterStrengthen &&
+          turnsSinceStrengthen.length >= EFFECTIVE_TURNS
+        ) {
+          // CRITICAL rule worked — treat as effective and let the stale check prune it
+          correction.effectiveness = "effective_after_strengthen";
+        } else if (
+          recurredAfterStrengthen &&
+          correction.post_strengthen_count >= 1
+        ) {
+          // Truly stuck — full cleanup to unlock retry for this trigger
+          correction.effectiveness = "failed";
+          try {
+            await this.memoryPlugin.executeTool!("delete_memory", {
+              id: correction.behavior_memory_id,
+            });
+          } catch {
+            // non-critical
+          }
+          this.correctionHistory = this.correctionHistory.filter(
+            (c) => c.id !== correction.id,
+          );
         }
       }
     }
   }
 
-  private async strengthenCorrectiveRule(correction: CorrectionRecord): Promise<void> {
+  private async strengthenCorrectiveRule(
+    correction: CorrectionRecord,
+  ): Promise<void> {
+    // Ceiling guard — do not stack CRITICAL prefixes
+    // Use post_strengthen_count as the canonical guard; startsWith check is a
+    // belt-and-suspenders fallback for records reconstructed from DB text.
+    if (correction.post_strengthen_count > 0) return;
+    if (correction.rule_saved.startsWith("CRITICAL")) return;
     try {
-      const strengthened =
-        `CRITICAL (pattern persisted after correction): ${correction.rule_saved}`;
-      await this.memoryPlugin.executeTool!("edit_memory", {
-        id: correction.behavior_memory_id,
-        content: strengthened,
-      });
+      const strengthened = `CRITICAL (pattern persisted after correction): ${correction.rule_saved}`;
+      // Delete old memory and recreate with the ineffective tag so status survives restarts.
+      // Capture the old ID before deletion so we can restore if addMemory fails.
+      const oldId = correction.behavior_memory_id;
+      await this.memoryPlugin.executeTool!("delete_memory", { id: oldId });
+      let newId: string;
+      try {
+        newId = await this.memoryPlugin.db.addMemory(
+          strengthened,
+          "behavior",
+          [
+            "metacognition-correction",
+            correction.trigger,
+            "metacognition-correction:ineffective",
+          ],
+        );
+      } catch (innerErr) {
+        // addMemory failed — the old record is already gone. Log and leave the
+        // in-memory correction record intact so it stays observable, but do not
+        // update behavior_memory_id (it is now stale/dangling).
+        logger.warn(
+          "MetacognitionPlugin",
+          `strengthenCorrectiveRule: delete succeeded but addMemory failed for trigger=${correction.trigger}: ${innerErr}`,
+        );
+        return;
+      }
+      correction.behavior_memory_id = newId;
       correction.rule_saved = strengthened;
+      correction.strengthened_at = new Date();
+      correction.post_strengthen_count += 1;
     } catch {
       // non-critical
     }
   }
 
-  private async maybePruneCorrection(correction: CorrectionRecord): Promise<void> {
+  private async maybePruneCorrection(
+    correction: CorrectionRecord,
+  ): Promise<void> {
     try {
       await this.memoryPlugin.executeTool!("delete_memory", {
         id: correction.behavior_memory_id,
       });
+      this.correctionHistory = this.correctionHistory.filter(
+        (c) => c.id !== correction.id,
+      );
     } catch {
       // non-critical
     }
