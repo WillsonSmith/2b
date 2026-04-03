@@ -3,6 +3,7 @@ import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import type { BaseAgent } from "../core/BaseAgent.ts";
 import type { Message } from "../core/types.ts";
 import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
+import { logger } from "../logger.ts";
 
 interface ToolCallRecord {
   tool: string;
@@ -59,6 +60,8 @@ export class MetacognitionPlugin implements AgentPlugin {
     private memoryPlugin: CortexMemoryPlugin,
     options?: { toolSaturationThreshold?: number },
   ) {
+    // Default raised from 5 → 8; the old value was too aggressive and caused
+    // false saturation warnings on normal multi-step turns.
     this.saturationThreshold = options?.toolSaturationThreshold ?? 8;
     this.currentTurn = this.newTurn();
   }
@@ -909,22 +912,37 @@ export class MetacognitionPlugin implements AgentPlugin {
     correction: CorrectionRecord,
   ): Promise<void> {
     // Ceiling guard — do not stack CRITICAL prefixes
+    // Use post_strengthen_count as the canonical guard; startsWith check is a
+    // belt-and-suspenders fallback for records reconstructed from DB text.
+    if (correction.post_strengthen_count > 0) return;
     if (correction.rule_saved.startsWith("CRITICAL")) return;
     try {
       const strengthened = `CRITICAL (pattern persisted after correction): ${correction.rule_saved}`;
-      // Delete old memory and recreate with the ineffective tag so status survives restarts
-      await this.memoryPlugin.executeTool!("delete_memory", {
-        id: correction.behavior_memory_id,
-      });
-      const newId = await this.memoryPlugin.db.addMemory(
-        strengthened,
-        "behavior",
-        [
-          "metacognition-correction",
-          correction.trigger,
-          "metacognition-correction:ineffective",
-        ],
-      );
+      // Delete old memory and recreate with the ineffective tag so status survives restarts.
+      // Capture the old ID before deletion so we can restore if addMemory fails.
+      const oldId = correction.behavior_memory_id;
+      await this.memoryPlugin.executeTool!("delete_memory", { id: oldId });
+      let newId: string;
+      try {
+        newId = await this.memoryPlugin.db.addMemory(
+          strengthened,
+          "behavior",
+          [
+            "metacognition-correction",
+            correction.trigger,
+            "metacognition-correction:ineffective",
+          ],
+        );
+      } catch (innerErr) {
+        // addMemory failed — the old record is already gone. Log and leave the
+        // in-memory correction record intact so it stays observable, but do not
+        // update behavior_memory_id (it is now stale/dangling).
+        logger.warn(
+          "MetacognitionPlugin",
+          `strengthenCorrectiveRule: delete succeeded but addMemory failed for trigger=${correction.trigger}: ${innerErr}`,
+        );
+        return;
+      }
       correction.behavior_memory_id = newId;
       correction.rule_saved = strengthened;
       correction.strengthened_at = new Date();
