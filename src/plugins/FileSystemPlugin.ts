@@ -1,21 +1,25 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { logger } from "../logger.ts";
-import { join, resolve, relative, isAbsolute, dirname } from "node:path";
+import { join, resolve, dirname, sep, relative } from "node:path";
 import {
   readdir,
   rename as fsRename,
   copyFile as fsCopyFile,
   unlink,
   mkdir,
-  stat as fsStat,
   lstat as fsLstat,
-  realpath as fsRealpath,
+  readlink as fsReadlink,
   appendFile as fsAppendFile,
+  rm as fsRm,
 } from "node:fs/promises";
 
 const MAX_READ_BYTES = 1 * 1024 * 1024; // 1 MB
 const MAX_PAGINATED_READ_BYTES = 10 * 1024 * 1024; // 10 MB
 const FS_OP_TIMEOUT_MS = 10_000; // 10 s
+const SEARCH_TIMEOUT_MS = 30_000; // 30 s
+const STAT_CONCURRENCY = 8;
+const BINARY_SAMPLE_BYTES = 512;
+const BINARY_NONPRINTABLE_THRESHOLD = 0.3;
 
 function withTimeout<T>(
   promise: Promise<T>,
@@ -32,54 +36,101 @@ function withTimeout<T>(
   return Promise.race([promise, timeout]).finally(() => clearTimeout(id));
 }
 
+function isBinary(sample: Uint8Array): boolean {
+  let nonPrintable = 0;
+  for (const byte of sample) {
+    if (byte === 0x00) return true;
+    if (
+      !(
+        byte === 0x09 ||
+        byte === 0x0a ||
+        byte === 0x0d ||
+        (byte >= 0x20 && byte <= 0x7e)
+      )
+    ) {
+      nonPrintable++;
+    }
+  }
+  return (
+    sample.length > 0 && nonPrintable / sample.length > BINARY_NONPRINTABLE_THRESHOLD
+  );
+}
+
+export interface FileSystemPluginOptions {
+  allowedRoots?: string[];
+}
+
+type DirEntry = {
+  name: string;
+  type: "file" | "directory" | "symlink";
+  size?: number;
+};
+
 export class FileSystemPlugin implements AgentPlugin {
   name = "FileSystem";
-  private readonly baseDir: string;
+  private readonly allowedRoots: string[];
+  private readonly sessionApprovedDirs = new Set<string>();
 
-  constructor() {
-    this.baseDir = process.cwd();
+  constructor(options?: FileSystemPluginOptions) {
+    this.allowedRoots =
+      options?.allowedRoots?.map((r) => resolve(r)) ?? [process.cwd()];
   }
 
-  private validatePath(path: string): string {
-    const resolved = resolve(this.baseDir, path);
-    const rel = relative(this.baseDir, resolved);
-    if (rel.startsWith("..") || isAbsolute(rel)) {
-      throw new Error("Path must be within the working directory.");
+  private resolveSafe(path: string): string {
+    const resolved = resolve(this.allowedRoots[0], path);
+    for (const root of this.allowedRoots) {
+      if (resolved === root || resolved.startsWith(root + sep)) {
+        return resolved;
+      }
     }
-    return resolved;
+    throw new Error("Path must be within an allowed root.");
+  }
+
+  approveDirectoryForSession(dir: string): void {
+    this.sessionApprovedDirs.add(this.resolveSafe(dir));
+  }
+
+  private isDirectorySessionApproved(resolvedPath: string): boolean {
+    for (const dir of this.sessionApprovedDirs) {
+      if (resolvedPath === dir || resolvedPath.startsWith(dir + sep)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   getSystemPromptFragment(): string {
     return [
-      "You have direct access to the local filesystem within the working directory.",
-      "- read_file: Read text content from a file (max 1 MB). Use offset and limit to page through large files.",
+      "You have direct access to the local filesystem. Paths can be absolute or relative to the working directory.",
+      "- read_file: Read text content from a file (max 1 MB). Use offset and limit to page through large files. Binary files are rejected.",
       "- write_file: Write or overwrite a file with text content. Creates parent directories automatically.",
       "- append_file: Append text to the end of a file, or create it if missing.",
       "- list_directory: List files and subdirectories with names, types, and sizes.",
       "- move_file: Move or rename a file or directory.",
       "- copy_file: Copy a file to a new path.",
       "- delete_file: Permanently delete a file.",
+      "- delete_directory: Recursively delete a directory and all its contents. Cannot delete an allowed root.",
       "- make_directory: Create a directory and any missing parent directories.",
-      "- stat_file: Get metadata for a file or directory: type, size, and last-modified time.",
-      "- find_files: Search for files matching a glob pattern (e.g. '**/*.ts', 'src/**/*.json').",
-      "All paths are relative to the working directory and cannot escape it.",
+      "- stat_file: Get metadata: type (file/directory/symlink/other), size, last-modified time, and symlink target if applicable.",
+      "- find_files: Search for files matching a glob pattern. Dotfiles excluded by default — pass includeDotfiles: true to include .env, .gitignore, etc.",
+      "- search_in_files: Search for a regex pattern across file contents. Uses ripgrep if available, with a built-in fallback.",
     ].join("\n");
   }
 
   getTools(): ToolDefinition[] {
     return [
-      // Read-only tools (no permission field — approved implicitly)
+      // Read-only tools
       {
         name: "read_file",
         description:
-          "Read the text content of a file (max 1 MB). Returns content, total line count, and bytes read. Use offset and limit to page through files larger than 1 MB.",
+          "Read the text content of a file (max 1 MB). Returns content, total line count, and bytes read. Use offset and limit to page through files larger than 1 MB. Binary files are rejected with an error.",
         parameters: {
           type: "object",
           properties: {
             path: {
               type: "string",
               description:
-                "Path to the file, relative to the working directory.",
+                "Absolute path, or path relative to the working directory.",
             },
             offset: {
               type: "number",
@@ -105,7 +156,7 @@ export class FileSystemPlugin implements AgentPlugin {
             path: {
               type: "string",
               description:
-                "Path to the directory, relative to the working directory. Omit to list the working directory.",
+                "Absolute path, or path relative to the working directory. Omit to list the working directory.",
             },
           },
           required: [],
@@ -114,14 +165,14 @@ export class FileSystemPlugin implements AgentPlugin {
       {
         name: "stat_file",
         description:
-          "Get metadata for a file or directory: type (file/directory/other), size in bytes, and last-modified timestamp.",
+          "Get metadata for a file or directory: type (file/directory/symlink/other), size in bytes, last-modified timestamp. For symlinks, also returns isSymlink: true and symlinkTarget.",
         parameters: {
           type: "object",
           properties: {
             path: {
               type: "string",
               description:
-                "Path to the file or directory, relative to the working directory.",
+                "Absolute path, or path relative to the working directory.",
             },
           },
           required: ["path"],
@@ -130,7 +181,7 @@ export class FileSystemPlugin implements AgentPlugin {
       {
         name: "find_files",
         description:
-          "Search for files matching a glob pattern within the working directory. Use ** to match any number of path segments (e.g. '**/*.ts', 'src/**/*.json', '*.md').",
+          "Search for files matching a glob pattern. Use ** to match any number of path segments (e.g. '**/*.ts', 'src/**/*.json', '*.md'). Dotfiles are excluded by default — pass includeDotfiles: true to include .env, .gitignore, etc. Defaults to searching from the working directory.",
         parameters: {
           type: "object",
           properties: {
@@ -138,16 +189,60 @@ export class FileSystemPlugin implements AgentPlugin {
               type: "string",
               description: "Glob pattern to match against file paths.",
             },
+            cwd: {
+              type: "string",
+              description:
+                "Directory to search from. Absolute path, or relative to the working directory. Omit to search from the working directory.",
+            },
             limit: {
               type: "number",
               description:
                 "Maximum number of results to return. Omit to return all matches.",
             },
+            includeDotfiles: {
+              type: "boolean",
+              description:
+                "Include dotfiles (e.g. .env, .gitignore) in results. Defaults to false.",
+            },
           },
           required: ["pattern"],
         },
       },
-      // Mutating tools (permission: "per_call" — user approves each invocation)
+      {
+        name: "search_in_files",
+        description:
+          "Search for a regex pattern across file contents. Returns matching file paths, line numbers, and matched lines. Uses ripgrep (rg) if available, otherwise falls back to a built-in file scanner. Timeout is 30s. Binary files are skipped.",
+        parameters: {
+          type: "object",
+          properties: {
+            pattern: {
+              type: "string",
+              description: "Regular expression pattern to search for.",
+            },
+            glob: {
+              type: "string",
+              description:
+                "Glob pattern to filter which files are searched (e.g. '**/*.ts').",
+            },
+            cwd: {
+              type: "string",
+              description:
+                "Directory to search in. Absolute path, or relative to the working directory. Omit to search from the working directory.",
+            },
+            maxResults: {
+              type: "number",
+              description:
+                "Maximum number of matches to return. Defaults to 100.",
+            },
+            caseSensitive: {
+              type: "boolean",
+              description: "Use case-sensitive matching. Defaults to true.",
+            },
+          },
+          required: ["pattern"],
+        },
+      },
+      // Mutating tools
       {
         name: "write_file",
         permission: "per_call" as const,
@@ -159,7 +254,7 @@ export class FileSystemPlugin implements AgentPlugin {
             path: {
               type: "string",
               description:
-                "Path to the file, relative to the working directory.",
+                "Absolute path, or path relative to the working directory.",
             },
             content: {
               type: "string",
@@ -180,7 +275,7 @@ export class FileSystemPlugin implements AgentPlugin {
             path: {
               type: "string",
               description:
-                "Path to the file, relative to the working directory.",
+                "Absolute path, or path relative to the working directory.",
             },
             content: {
               type: "string",
@@ -201,11 +296,12 @@ export class FileSystemPlugin implements AgentPlugin {
             source: {
               type: "string",
               description:
-                "Current path of the file or directory, relative to the working directory.",
+                "Absolute path, or path relative to the working directory.",
             },
             destination: {
               type: "string",
-              description: "New path, relative to the working directory.",
+              description:
+                "Absolute path, or path relative to the working directory.",
             },
           },
           required: ["source", "destination"],
@@ -215,19 +311,19 @@ export class FileSystemPlugin implements AgentPlugin {
         name: "copy_file",
         permission: "per_call" as const,
         description:
-          "Copy a file to a new path within the working directory. Creates missing parent directories at the destination. Does not copy directories.",
+          "Copy a file to a new path. Creates missing parent directories at the destination. Does not copy directories.",
         parameters: {
           type: "object",
           properties: {
             source: {
               type: "string",
               description:
-                "Path of the file to copy, relative to the working directory.",
+                "Absolute path, or path relative to the working directory.",
             },
             destination: {
               type: "string",
               description:
-                "Destination path for the copy, relative to the working directory.",
+                "Absolute path, or path relative to the working directory.",
             },
           },
           required: ["source", "destination"],
@@ -244,7 +340,24 @@ export class FileSystemPlugin implements AgentPlugin {
             path: {
               type: "string",
               description:
-                "Path to the file to delete, relative to the working directory.",
+                "Absolute path, or path relative to the working directory.",
+            },
+          },
+          required: ["path"],
+        },
+      },
+      {
+        name: "delete_directory",
+        permission: "per_call" as const,
+        description:
+          "Recursively delete a directory and all its contents. This cannot be undone. Cannot delete an allowed root directory. Symlinks within are removed as links, not followed.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description:
+                "Absolute path, or path relative to the working directory.",
             },
           },
           required: ["path"],
@@ -260,7 +373,7 @@ export class FileSystemPlugin implements AgentPlugin {
             path: {
               type: "string",
               description:
-                "Path to the directory to create, relative to the working directory.",
+                "Absolute path, or path relative to the working directory.",
             },
           },
           required: ["path"],
@@ -273,7 +386,6 @@ export class FileSystemPlugin implements AgentPlugin {
     name: string,
     args: Record<string, unknown>,
   ): Promise<unknown> {
-    // Log args without potentially large content fields
     const { content: _content, ...logArgs } = args as Record<
       string,
       unknown
@@ -336,6 +448,13 @@ export class FileSystemPlugin implements AgentPlugin {
             "delete_file",
           );
           break;
+        case "delete_directory":
+          result = await withTimeout(
+            this.deleteDirectory(args.path as string),
+            FS_OP_TIMEOUT_MS,
+            "delete_directory",
+          );
+          break;
         case "make_directory":
           result = await withTimeout(
             this.makeDirectory(args.path as string),
@@ -351,12 +470,32 @@ export class FileSystemPlugin implements AgentPlugin {
           );
           break;
         case "find_files":
-          result = await this.findFiles(
-            args.pattern as string,
-            args.limit as number | undefined,
+          result = await withTimeout(
+            this.findFiles(
+              args.pattern as string,
+              args.cwd as string | undefined,
+              args.limit as number | undefined,
+              args.includeDotfiles as boolean | undefined,
+            ),
+            FS_OP_TIMEOUT_MS,
+            "find_files",
+          );
+          break;
+        case "search_in_files":
+          result = await withTimeout(
+            this.searchInFiles(
+              args.pattern as string,
+              args.glob as string | undefined,
+              args.cwd as string | undefined,
+              args.maxResults as number | undefined,
+              args.caseSensitive as boolean | undefined,
+            ),
+            SEARCH_TIMEOUT_MS,
+            "search_in_files",
           );
           break;
         default:
+          logger.debug("FileSystem", `unknown tool name: ${name}`);
           result = undefined;
           break;
       }
@@ -381,40 +520,100 @@ export class FileSystemPlugin implements AgentPlugin {
   ): Promise<{
     path: string;
     content: string;
-    totalLines: number;
+    totalLines: number | null;
     returnedLines: number;
     size: number;
+    totalLinesApproximate?: boolean;
   }> {
-    const resolved = this.validatePath(path);
+    const resolved = this.resolveSafe(path);
     const file = Bun.file(resolved);
+
+    if (!(await file.exists())) throw new Error(`File not found: ${resolved}`);
     const size = file.size;
 
-    // Hard cap: files over 10 MB are never loaded into memory
     if (size > MAX_PAGINATED_READ_BYTES) {
       throw new Error(
         `File is ${size} bytes, which exceeds the 10 MB read limit.`,
       );
     }
 
-    // Without pagination, apply the tighter 1 MB guard and suggest paging
     if (offset === undefined && limit === undefined && size > MAX_READ_BYTES) {
       throw new Error(
         `File is ${size} bytes, which exceeds the 1 MB read limit. Use offset and limit to page through it.`,
       );
     }
 
+    // Binary detection: sample first 512 bytes
+    if (size > 0) {
+      const sampleBuf = await file.slice(0, BINARY_SAMPLE_BYTES).arrayBuffer();
+      if (isBinary(new Uint8Array(sampleBuf))) {
+        throw new Error(
+          "File appears to be binary. Use a different tool to handle binary content.",
+        );
+      }
+    }
+
+    // Streaming path for large paginated reads (avoids loading full file into memory)
+    if (size > MAX_READ_BYTES && offset !== undefined && limit !== undefined) {
+      const startLine = Math.max(1, offset);
+      const stream = file.stream();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let lineNum = 0;
+      const collected: string[] = [];
+      let done = false;
+
+      for await (const chunk of stream) {
+        if (done) break;
+        buffer += decoder.decode(chunk as Uint8Array, { stream: true });
+        let newlineIdx: number;
+        while ((newlineIdx = buffer.indexOf("\n")) !== -1) {
+          lineNum++;
+          const line = buffer.slice(0, newlineIdx);
+          buffer = buffer.slice(newlineIdx + 1);
+          if (lineNum >= startLine) {
+            collected.push(line);
+            if (collected.length >= limit) {
+              done = true;
+              break;
+            }
+          }
+        }
+      }
+
+      // Handle remaining buffer (last line without trailing newline)
+      if (!done && buffer.length > 0) {
+        lineNum++;
+        if (lineNum >= startLine && collected.length < limit) {
+          collected.push(buffer);
+        }
+      }
+
+      return {
+        path: resolved,
+        content: collected.join("\n"),
+        totalLines: null,
+        returnedLines: collected.length,
+        size,
+        totalLinesApproximate: true,
+      };
+    }
+
+    // Normal path
     const raw = await file.text();
-    const lines = raw.split("\n");
+    const rawLines = raw.split("\n");
+    // Strip trailing empty string produced by a file ending with \n
+    const lines = rawLines.at(-1) === "" ? rawLines.slice(0, -1) : rawLines;
     const totalLines = lines.length;
 
-    const start = offset !== undefined ? Math.max(0, offset - 1) : 0;
+    const startIdx = offset !== undefined ? Math.max(0, offset - 1) : 0;
     const sliced =
       limit !== undefined
-        ? lines.slice(start, start + limit)
-        : lines.slice(start);
+        ? lines.slice(startIdx, startIdx + limit)
+        : lines.slice(startIdx);
 
     return {
-      path: relative(this.baseDir, resolved),
+      path: resolved,
       content: sliced.join("\n"),
       totalLines,
       returnedLines: sliced.length,
@@ -426,61 +625,60 @@ export class FileSystemPlugin implements AgentPlugin {
     path: string,
     content: string,
   ): Promise<{ path: string; size: number }> {
-    const resolved = this.validatePath(path);
+    const resolved = this.resolveSafe(path);
     await mkdir(dirname(resolved), { recursive: true });
     const size = await Bun.write(resolved, content);
-    return { path: relative(this.baseDir, resolved), size };
+    return { path: resolved, size };
   }
 
   private async appendFile(
     path: string,
     content: string,
   ): Promise<{ path: string; size: number }> {
-    const resolved = this.validatePath(path);
+    const resolved = this.resolveSafe(path);
     await mkdir(dirname(resolved), { recursive: true });
     await fsAppendFile(resolved, content);
     const size = Bun.file(resolved).size;
-    return { path: relative(this.baseDir, resolved), size };
+    return { path: resolved, size };
   }
 
-  private async listDirectory(
-    path?: string,
-  ): Promise<{
+  private async listDirectory(path?: string): Promise<{
     path: string;
-    entries: {
-      name: string;
-      type: "file" | "directory" | "symlink";
-      size?: number;
-    }[];
+    entries: DirEntry[];
   }> {
-    const resolved = this.validatePath(path ?? ".");
+    const resolved = this.resolveSafe(path ?? ".");
     const dirents = await readdir(resolved, { withFileTypes: true });
 
     logger.debug("FileSystem", "list_directory stat", {
-      path: relative(this.baseDir, resolved) || ".",
+      path: resolved,
       entries: dirents.length,
     });
 
-    const entries = await Promise.all(
-      dirents.map(async (entry) => {
-        const entryPath = join(resolved, entry.name);
-        if (entry.isFile()) {
-          const { size } = await fsStat(entryPath);
-          return { name: entry.name, type: "file" as const, size };
-        }
-        if (entry.isDirectory()) {
-          return { name: entry.name, type: "directory" as const };
-        }
-        if (entry.isSymbolicLink()) {
-          return { name: entry.name, type: "symlink" as const };
-        }
-        return null;
-      }),
-    );
+    const allEntries: (DirEntry | null)[] = [];
+    for (let i = 0; i < dirents.length; i += STAT_CONCURRENCY) {
+      const chunk = dirents.slice(i, i + STAT_CONCURRENCY);
+      const chunkResults = await Promise.all(
+        chunk.map(async (entry): Promise<DirEntry | null> => {
+          const entryPath = join(resolved, entry.name);
+          if (entry.isFile()) {
+            const { size } = await fsLstat(entryPath);
+            return { name: entry.name, type: "file", size };
+          }
+          if (entry.isDirectory()) {
+            return { name: entry.name, type: "directory" };
+          }
+          if (entry.isSymbolicLink()) {
+            return { name: entry.name, type: "symlink" };
+          }
+          return null;
+        }),
+      );
+      allEntries.push(...chunkResults);
+    }
 
     return {
-      path: relative(this.baseDir, resolved) || ".",
-      entries: entries.filter((e): e is NonNullable<typeof e> => e !== null),
+      path: resolved,
+      entries: allEntries.filter((e): e is DirEntry => e !== null),
     };
   }
 
@@ -488,82 +686,97 @@ export class FileSystemPlugin implements AgentPlugin {
     source: string,
     destination: string,
   ): Promise<{ from: string; to: string }> {
-    const from = this.validatePath(source);
-    const to = this.validatePath(destination);
+    const from = this.resolveSafe(source);
+    const to = this.resolveSafe(destination);
+    const fromStat = await fsLstat(from).catch(() => null);
+    if (!fromStat) throw new Error(`Source not found: ${from}`);
     await mkdir(dirname(to), { recursive: true });
     await fsRename(from, to);
-    return {
-      from: relative(this.baseDir, from),
-      to: relative(this.baseDir, to),
-    };
+    return { from, to };
   }
 
   private async copyFile(
     source: string,
     destination: string,
   ): Promise<{ from: string; to: string }> {
-    const from = this.validatePath(source);
-    const to = this.validatePath(destination);
+    const from = this.resolveSafe(source);
+    const to = this.resolveSafe(destination);
+    const fromStat = await fsLstat(from).catch(() => null);
+    if (!fromStat) throw new Error(`Source not found: ${from}`);
     await mkdir(dirname(to), { recursive: true });
     await fsCopyFile(from, to);
-    return {
-      from: relative(this.baseDir, from),
-      to: relative(this.baseDir, to),
-    };
+    return { from, to };
   }
 
   private async deleteFile(path: string): Promise<{ path: string }> {
-    const resolved = this.validatePath(path);
-    // Verify that symlink targets also reside within baseDir before deleting
-    const lstatResult = await fsLstat(resolved);
-    if (lstatResult.isSymbolicLink()) {
-      const realTarget = await fsRealpath(resolved);
-      const rel = relative(this.baseDir, realTarget);
-      if (rel.startsWith("..") || isAbsolute(rel)) {
-        throw new Error(
-          "Refusing to delete: symlink target is outside the working directory.",
-        );
-      }
-    }
+    const resolved = this.resolveSafe(path);
     await unlink(resolved);
-    return { path: relative(this.baseDir, resolved) };
+    return { path: resolved };
+  }
+
+  private async deleteDirectory(path: string): Promise<{ path: string }> {
+    const resolved = this.resolveSafe(path);
+    if (this.allowedRoots.some((root) => root === resolved)) {
+      throw new Error(`Cannot delete an allowed root: ${resolved}`);
+    }
+    const s = await fsLstat(resolved).catch(() => null);
+    if (!s) throw new Error(`Directory not found: ${resolved}`);
+    if (!s.isDirectory()) throw new Error(`Not a directory: ${resolved}`);
+    await fsRm(resolved, { recursive: true, force: false });
+    return { path: resolved };
   }
 
   private async makeDirectory(path: string): Promise<{ path: string }> {
-    const resolved = this.validatePath(path);
+    const resolved = this.resolveSafe(path);
     await mkdir(resolved, { recursive: true });
-    return { path: relative(this.baseDir, resolved) };
+    return { path: resolved };
   }
 
-  private async statFile(
-    path: string,
-  ): Promise<{
+  private async statFile(path: string): Promise<{
     path: string;
-    type: "file" | "directory" | "other";
+    type: "file" | "directory" | "symlink" | "other";
     size: number;
     modifiedAt: string;
+    isSymlink: boolean;
+    symlinkTarget?: string;
   }> {
-    const resolved = this.validatePath(path);
-    const s = await fsStat(resolved);
+    const resolved = this.resolveSafe(path);
+    const s = await fsLstat(resolved);
+    const isSymlink = s.isSymbolicLink();
+    let symlinkTarget: string | undefined;
+    if (isSymlink) {
+      symlinkTarget = await fsReadlink(resolved);
+    }
     return {
-      path: relative(this.baseDir, resolved),
-      type: s.isFile() ? "file" : s.isDirectory() ? "directory" : "other",
+      path: resolved,
+      type: isSymlink
+        ? "symlink"
+        : s.isFile()
+          ? "file"
+          : s.isDirectory()
+            ? "directory"
+            : "other",
       size: s.size,
       modifiedAt: s.mtime.toISOString(),
+      isSymlink,
+      symlinkTarget,
     };
   }
 
   private async findFiles(
     pattern: string,
+    cwd?: string,
     limit?: number,
+    includeDotfiles?: boolean,
   ): Promise<{ pattern: string; matches: string[]; truncated?: boolean }> {
     const deadline = Date.now() + FS_OP_TIMEOUT_MS;
     const glob = new Bun.Glob(pattern);
+    const searchDir = cwd ? this.resolveSafe(cwd) : this.allowedRoots[0];
     const matches: string[] = [];
     for await (const file of glob.scan({
-      cwd: this.baseDir,
+      cwd: searchDir,
       onlyFiles: true,
-      dot: true,
+      dot: includeDotfiles ?? false,
     })) {
       if (Date.now() > deadline) {
         throw new Error(`find_files timed out after ${FS_OP_TIMEOUT_MS}ms`);
@@ -574,5 +787,143 @@ export class FileSystemPlugin implements AgentPlugin {
       }
     }
     return { pattern, matches: matches.sort() };
+  }
+
+  private async searchInFiles(
+    pattern: string,
+    glob?: string,
+    cwd?: string,
+    maxResults?: number,
+    caseSensitive?: boolean,
+  ): Promise<{
+    pattern: string;
+    matches: Array<{ file: string; line: number; content: string }>;
+    truncated?: boolean;
+  }> {
+    const searchDir = cwd ? this.resolveSafe(cwd) : this.allowedRoots[0];
+    const max = maxResults ?? 100;
+    const sensitive = caseSensitive ?? true;
+
+    if (Bun.which("rg")) {
+      return this.searchWithRipgrep(pattern, searchDir, glob, max, sensitive);
+    }
+    return this.searchWithGlob(pattern, searchDir, glob, max, sensitive);
+  }
+
+  private async searchWithRipgrep(
+    pattern: string,
+    searchDir: string,
+    glob: string | undefined,
+    max: number,
+    caseSensitive: boolean,
+  ): Promise<{
+    pattern: string;
+    matches: Array<{ file: string; line: number; content: string }>;
+    truncated?: boolean;
+  }> {
+    const flags: string[] = [
+      "--line-number",
+      "--with-filename",
+      "--no-heading",
+      "--color=never",
+    ];
+    if (!caseSensitive) flags.push("--ignore-case");
+    if (glob) flags.push("--glob", glob);
+
+    let output: string;
+    try {
+      output = await Bun.$`rg ${flags} -- ${pattern} ${searchDir}`
+        .quiet()
+        .nothrow()
+        .text();
+    } catch {
+      return this.searchWithGlob(pattern, searchDir, glob, max, caseSensitive);
+    }
+
+    const matches: Array<{ file: string; line: number; content: string }> = [];
+    let truncated = false;
+
+    for (const line of output.split("\n")) {
+      if (!line.trim()) continue;
+      const firstColon = line.indexOf(":");
+      if (firstColon === -1) continue;
+      const afterFile = line.slice(firstColon + 1);
+      const secondColon = afterFile.indexOf(":");
+      if (secondColon === -1) continue;
+      const filePath = line.slice(0, firstColon);
+      const lineNum = parseInt(afterFile.slice(0, secondColon), 10);
+      const content = afterFile.slice(secondColon + 1);
+      if (isNaN(lineNum)) continue;
+      matches.push({
+        file: relative(searchDir, filePath),
+        line: lineNum,
+        content,
+      });
+      if (matches.length >= max) {
+        truncated = true;
+        break;
+      }
+    }
+
+    return { pattern, matches, ...(truncated ? { truncated: true } : {}) };
+  }
+
+  private async searchWithGlob(
+    pattern: string,
+    searchDir: string,
+    fileGlob: string | undefined,
+    max: number,
+    caseSensitive: boolean,
+  ): Promise<{
+    pattern: string;
+    matches: Array<{ file: string; line: number; content: string }>;
+    truncated?: boolean;
+  }> {
+    let regex: RegExp;
+    try {
+      regex = new RegExp(pattern, caseSensitive ? "" : "i");
+    } catch {
+      throw new Error(`Invalid regex pattern: ${pattern}`);
+    }
+
+    const globPattern = fileGlob ?? "**/*";
+    const scanner = new Bun.Glob(globPattern);
+    const matches: Array<{ file: string; line: number; content: string }> = [];
+    let truncated = false;
+
+    for await (const filePath of scanner.scan({
+      cwd: searchDir,
+      onlyFiles: true,
+      dot: false,
+    })) {
+      const abs = join(searchDir, filePath);
+      const f = Bun.file(abs);
+      if (!(await f.exists())) continue;
+
+      if (f.size > 0) {
+        const sampleBuf = await f.slice(0, BINARY_SAMPLE_BYTES).arrayBuffer();
+        if (isBinary(new Uint8Array(sampleBuf))) continue;
+      }
+
+      try {
+        const text = await f.text();
+        const lines = text.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          if (regex.test(lines[i])) {
+            matches.push({ file: filePath, line: i + 1, content: lines[i] });
+            if (matches.length >= max) {
+              truncated = true;
+              break;
+            }
+          }
+        }
+      } catch {
+        // skip unreadable files
+      }
+
+      if (truncated) break;
+    }
+
+    return { pattern, matches, ...(truncated ? { truncated: true } : {}) };
   }
 }

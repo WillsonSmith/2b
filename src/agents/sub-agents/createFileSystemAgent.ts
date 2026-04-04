@@ -5,6 +5,7 @@ import { FileSystemPlugin } from "../../plugins/FileSystemPlugin.ts";
 
 export interface FileSystemAgentOptions {
   permissionManager?: PermissionManager;
+  allowedRoots?: string[];
 }
 
 export function createFileSystemAgent(
@@ -13,9 +14,9 @@ export function createFileSystemAgent(
 ): HeadlessAgent {
   return new HeadlessAgent(
     llm,
-    [new FileSystemPlugin()],
+    [new FileSystemPlugin({ allowedRoots: options.allowedRoots })],
     [
-      "You are a file system agent. Your job is to read, write, and manage files and directories within the working directory.",
+      "You are a file system agent. Your job is to read, write, and manage files and directories anywhere on the local filesystem.",
       "",
       "Guidelines:",
       "- Use list_directory or find_files to locate files before reading or modifying them.",
@@ -24,7 +25,7 @@ export function createFileSystemAgent(
       "- Use write_file for new files or full overwrites; use append_file to add to existing content.",
       "- Use move_file to rename or relocate; use copy_file to duplicate.",
       "- Use delete_file only when explicitly instructed — deletions are permanent.",
-      "- All paths are relative to the working directory. Do not attempt to access paths outside it.",
+      "- Paths can be absolute or relative to the working directory.",
       "- Return structured results: always include the resolved path and any relevant metadata (size, line count, etc.).",
       "",
       "Notes:",

@@ -3,7 +3,7 @@ import { LMStudioProvider } from "../../providers/llm/LMStudioProvider.ts";
 import { SourceReaderPlugin } from "../../plugins/SourceReaderPlugin.ts";
 
 // const DEFAULT_MODEL = "qwen2.5-coder-7b-instruct-mlx";
-const DEFAULT_MODEL = "qwen/qwen3.5-35b-a3b";
+const DEFAULT_MODEL = process.env["MODEL"] ?? "qwen/qwen3.5-35b-a3b";
 
 const SYSTEM_PROMPT = [
   "You are a read-only code analysis agent for the 2b agent framework.",
