@@ -9,6 +9,7 @@ import { CodeSandboxPlugin } from "../../plugins/CodeSandboxPlugin.ts";
 
 export interface SystemAgentOptions {
   permissionManager?: PermissionManager;
+  allowedRoots?: string[];
 }
 
 export function createSystemAgent(
@@ -19,7 +20,7 @@ export function createSystemAgent(
     llm,
     [
       new ShellPlugin(),
-      new FileSystemPlugin(),
+      new FileSystemPlugin({ allowedRoots: options.allowedRoots }),
       new DownloadPlugin(),
       new ClipboardPlugin(),
       new CodeSandboxPlugin(),

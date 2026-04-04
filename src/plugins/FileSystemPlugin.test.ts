@@ -83,13 +83,22 @@ describe("read_file", () => {
   test("rejects path traversal outside working directory", async () => {
     await expect(
       plugin.executeTool("read_file", { path: "../../etc/passwd" }),
-    ).rejects.toThrow("Path must be within the working directory.");
+    ).rejects.toThrow("Path must be within an allowed root.");
   });
 
   test("rejects absolute paths outside working directory", async () => {
     await expect(
       plugin.executeTool("read_file", { path: "/etc/hosts" }),
-    ).rejects.toThrow("Path must be within the working directory.");
+    ).rejects.toThrow("Path must be within an allowed root.");
+  });
+
+  test("does not inflate totalLines for files ending with a newline", async () => {
+    await nodeWriteFile(join(tmpDir, "trailing.txt"), "a\nb\nc\n");
+    const result = (await plugin.executeTool("read_file", {
+      path: r(join(tmpDir, "trailing.txt")),
+    })) as any;
+    expect(result.totalLines).toBe(3);
+    expect(result.content).toBe("a\nb\nc");
   });
 });
 
@@ -127,7 +136,7 @@ describe("write_file", () => {
   test("rejects path traversal", async () => {
     await expect(
       plugin.executeTool("write_file", { path: "../../outside.txt", content: "x" }),
-    ).rejects.toThrow("Path must be within the working directory.");
+    ).rejects.toThrow("Path must be within an allowed root.");
   });
 });
 
