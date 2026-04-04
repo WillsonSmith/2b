@@ -69,7 +69,6 @@ type DirEntry = {
 export class FileSystemPlugin implements AgentPlugin {
   name = "FileSystem";
   private readonly allowedRoots: string[];
-  private readonly sessionApprovedDirs = new Set<string>();
 
   constructor(options?: FileSystemPluginOptions) {
     this.allowedRoots =
@@ -84,19 +83,6 @@ export class FileSystemPlugin implements AgentPlugin {
       }
     }
     throw new Error("Path must be within an allowed root.");
-  }
-
-  approveDirectoryForSession(dir: string): void {
-    this.sessionApprovedDirs.add(this.resolveSafe(dir));
-  }
-
-  private isDirectorySessionApproved(resolvedPath: string): boolean {
-    for (const dir of this.sessionApprovedDirs) {
-      if (resolvedPath === dir || resolvedPath.startsWith(dir + sep)) {
-        return true;
-      }
-    }
-    return false;
   }
 
   getSystemPromptFragment(): string {
@@ -123,7 +109,7 @@ export class FileSystemPlugin implements AgentPlugin {
       {
         name: "read_file",
         description:
-          "Read the text content of a file (max 1 MB). Returns content, total line count, and bytes read. Use offset and limit to page through files larger than 1 MB. Binary files are rejected with an error.",
+          "Read the text content of a file (max 1 MB). Returns content, total line count, and bytes read. Use offset and limit to page through files larger than 1 MB. Binary files are rejected with an error. When streaming large paginated files (>1 MB with offset+limit), totalLines is null and totalLinesApproximate is true.",
         parameters: {
           type: "object",
           properties: {
@@ -821,12 +807,7 @@ export class FileSystemPlugin implements AgentPlugin {
     matches: Array<{ file: string; line: number; content: string }>;
     truncated?: boolean;
   }> {
-    const flags: string[] = [
-      "--line-number",
-      "--with-filename",
-      "--no-heading",
-      "--color=never",
-    ];
+    const flags: string[] = ["--json"];
     if (!caseSensitive) flags.push("--ignore-case");
     if (glob) flags.push("--glob", glob);
 
@@ -845,15 +826,17 @@ export class FileSystemPlugin implements AgentPlugin {
 
     for (const line of output.split("\n")) {
       if (!line.trim()) continue;
-      const firstColon = line.indexOf(":");
-      if (firstColon === -1) continue;
-      const afterFile = line.slice(firstColon + 1);
-      const secondColon = afterFile.indexOf(":");
-      if (secondColon === -1) continue;
-      const filePath = line.slice(0, firstColon);
-      const lineNum = parseInt(afterFile.slice(0, secondColon), 10);
-      const content = afterFile.slice(secondColon + 1);
-      if (isNaN(lineNum)) continue;
+      let msg: { type: string; data: { path?: { text?: string }; line_number?: number; lines?: { text?: string } } };
+      try {
+        msg = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (msg.type !== "match") continue;
+      const filePath = msg.data?.path?.text;
+      const lineNum = msg.data?.line_number;
+      const content = (msg.data?.lines?.text ?? "").replace(/\n$/, "");
+      if (typeof filePath !== "string" || typeof lineNum !== "number") continue;
       matches.push({
         file: relative(searchDir, filePath),
         line: lineNum,
