@@ -22,6 +22,7 @@ import { TerminalChat } from "./TerminalChat.tsx";
 import { createFileSystemAgent } from "../../agents/sub-agents/createFileSystemAgent.ts";
 import { createCodeReaderAgent } from "../../agents/sub-agents/createCodeReaderAgent.ts";
 import { createInfoAgent } from "../../agents/sub-agents/createInfoAgent.ts";
+import { ScratchPlugin } from "../../plugins/ScratchPlugin.ts";
 
 // ── Parse CLI args ────────────────────────────────────────────────────────────
 
@@ -123,6 +124,7 @@ agent.registerPlugin(
   }),
 );
 agent.registerPlugin(minimalToolsPlugin);
+agent.registerPlugin(new ScratchPlugin());
 agent.registerPlugin(
   new MemoryPlugin(llm, { cortexMemory: agent.memoryPlugin }),
 );
