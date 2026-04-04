@@ -1,6 +1,6 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { logger } from "../logger.ts";
-import { join, resolve, dirname, sep, relative } from "node:path";
+import { join, resolve, dirname, sep } from "node:path";
 import {
   readdir,
   rename as fsRename,
@@ -767,7 +767,7 @@ export class FileSystemPlugin implements AgentPlugin {
       if (Date.now() > deadline) {
         throw new Error(`find_files timed out after ${FS_OP_TIMEOUT_MS}ms`);
       }
-      matches.push(file);
+      matches.push(join(searchDir, file));
       if (limit !== undefined && matches.length >= limit) {
         return { pattern, matches: matches.sort(), truncated: true };
       }
@@ -838,7 +838,7 @@ export class FileSystemPlugin implements AgentPlugin {
       const content = (msg.data?.lines?.text ?? "").replace(/\n$/, "");
       if (typeof filePath !== "string" || typeof lineNum !== "number") continue;
       matches.push({
-        file: relative(searchDir, filePath),
+        file: filePath,
         line: lineNum,
         content,
       });
@@ -893,7 +893,7 @@ export class FileSystemPlugin implements AgentPlugin {
         const lines = text.split("\n");
         for (let i = 0; i < lines.length; i++) {
           if (regex.test(lines[i])) {
-            matches.push({ file: filePath, line: i + 1, content: lines[i] });
+            matches.push({ file: join(searchDir, filePath), line: i + 1, content: lines[i] });
             if (matches.length >= max) {
               truncated = true;
               break;
