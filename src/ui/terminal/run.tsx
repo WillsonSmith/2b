@@ -22,6 +22,7 @@ import { TerminalChat } from "./TerminalChat.tsx";
 import { createFileSystemAgent } from "../../agents/sub-agents/createFileSystemAgent.ts";
 import { createCodeReaderAgent } from "../../agents/sub-agents/createCodeReaderAgent.ts";
 import { createInfoAgent } from "../../agents/sub-agents/createInfoAgent.ts";
+import { ScratchPlugin } from "../../plugins/ScratchPlugin.ts";
 
 // ── Parse CLI args ────────────────────────────────────────────────────────────
 
@@ -105,7 +106,7 @@ agent.registerPlugin(
   new SubAgentPlugin({
     toolName: "file_system_agent",
     description:
-      "Use for reading, writing, moving, copying, or deleting files and directories on the local filesystem. Also use this to create notes — write them as markdown files (e.g. notes/my-note.md).",
+      "Use for reading, writing, moving, copying, or deleting files and directories on the local filesystem. Also use for git inspection (log, status, diff, blame) and system state queries (disk usage, running processes). Use this to create notes — write them as markdown files (e.g. notes/my-note.md).",
     agent: createFileSystemAgent(llm, { permissionManager }),
     // No absoluteTimeoutMs — FileSystemPlugin enforces per-op timeouts internally.
     // An absolute cap would kill legitimate long-running sequences (e.g. writing many files).
@@ -123,6 +124,7 @@ agent.registerPlugin(
   }),
 );
 agent.registerPlugin(minimalToolsPlugin);
+agent.registerPlugin(new ScratchPlugin());
 agent.registerPlugin(
   new MemoryPlugin(llm, { cortexMemory: agent.memoryPlugin }),
 );
