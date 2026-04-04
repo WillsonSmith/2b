@@ -362,6 +362,109 @@ describe("find_files", () => {
   });
 });
 
+// ── delete_directory ─────────────────────────────────────────────────────────
+
+describe("delete_directory", () => {
+  test("deletes a directory and its contents recursively", async () => {
+    const subdir = join(tmpDir, "to-delete");
+    await nodeMkdir(subdir);
+    await nodeWriteFile(join(subdir, "file.txt"), "data");
+    await plugin.executeTool("delete_directory", { path: r(subdir) });
+    expect(await Bun.file(subdir).exists()).toBe(false);
+  });
+
+  test("rejects deleting an allowed root", async () => {
+    await expect(
+      plugin.executeTool("delete_directory", { path: "." }),
+    ).rejects.toThrow("Cannot delete an allowed root");
+  });
+
+  test("rejects deleting a path that is a file, not a directory", async () => {
+    const abs = join(tmpDir, "notadir.txt");
+    await nodeWriteFile(abs, "x");
+    await expect(
+      plugin.executeTool("delete_directory", { path: r(abs) }),
+    ).rejects.toThrow("Not a directory");
+  });
+});
+
+// ── search_in_files ───────────────────────────────────────────────────────────
+
+describe("search_in_files", () => {
+  test("finds a pattern in matching files", async () => {
+    await nodeWriteFile(join(tmpDir, "a.txt"), "hello world\nfoo bar");
+    const result = (await plugin.executeTool("search_in_files", {
+      pattern: "hello",
+      cwd: tmpDir,
+    })) as any;
+    expect(result.matches.length).toBeGreaterThan(0);
+    expect(result.matches[0].line).toBe(1);
+    expect(result.matches[0].content).toContain("hello");
+  });
+
+  test("returns no matches when pattern is absent", async () => {
+    await nodeWriteFile(join(tmpDir, "b.txt"), "nothing relevant here");
+    const result = (await plugin.executeTool("search_in_files", {
+      pattern: "zzznomatch",
+      cwd: tmpDir,
+    })) as any;
+    expect(result.matches).toEqual([]);
+  });
+
+  test("respects the glob filter", async () => {
+    await nodeWriteFile(join(tmpDir, "code.ts"), "const needle = 1;");
+    await nodeWriteFile(join(tmpDir, "prose.txt"), "needle in a haystack");
+    const result = (await plugin.executeTool("search_in_files", {
+      pattern: "needle",
+      glob: "**/*.ts",
+      cwd: tmpDir,
+    })) as any;
+    const files = result.matches.map((m: any) => m.file as string);
+    expect(files.some((f: string) => f.endsWith(".ts"))).toBe(true);
+    expect(files.some((f: string) => f.endsWith(".txt"))).toBe(false);
+  });
+
+  test("respects caseSensitive: false", async () => {
+    await nodeWriteFile(join(tmpDir, "c.txt"), "Hello World");
+    const result = (await plugin.executeTool("search_in_files", {
+      pattern: "hello",
+      caseSensitive: false,
+      cwd: tmpDir,
+    })) as any;
+    expect(result.matches.length).toBeGreaterThan(0);
+  });
+});
+
+// ── allowedRoots ──────────────────────────────────────────────────────────────
+
+describe("allowedRoots", () => {
+  let tmpDir2: string;
+
+  beforeEach(async () => {
+    tmpDir2 = await mkdtemp(join(cwd, "test-fs2-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir2, { recursive: true, force: true });
+  });
+
+  test("can access a file in a second allowed root using its absolute path", async () => {
+    const multiPlugin = new FileSystemPlugin({ allowedRoots: [tmpDir, tmpDir2] });
+    await nodeWriteFile(join(tmpDir2, "remote.txt"), "from root2");
+    const result = (await multiPlugin.executeTool("read_file", {
+      path: join(tmpDir2, "remote.txt"),
+    })) as any;
+    expect(result.content).toBe("from root2");
+  });
+
+  test("rejects a path outside all allowed roots", async () => {
+    const multiPlugin = new FileSystemPlugin({ allowedRoots: [tmpDir, tmpDir2] });
+    await expect(
+      multiPlugin.executeTool("read_file", { path: "/etc/hosts" }),
+    ).rejects.toThrow("Path must be within an allowed root.");
+  });
+});
+
 // ── unknown tools ────────────────────────────────────────────────────────────
 
 describe("unknown tool", () => {
