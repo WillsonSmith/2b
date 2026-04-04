@@ -467,6 +467,299 @@ describe("allowedRoots", () => {
   });
 });
 
+// ── patch_file ───────────────────────────────────────────────────────────────
+
+describe("patch_file", () => {
+  test("applies a single search/replace edit", async () => {
+    const abs = join(tmpDir, "patch.ts");
+    await nodeWriteFile(abs, "function foo() {\n  return 1;\n}\n");
+    await plugin.executeTool("patch_file", {
+      path: r(abs),
+      edits: [{ search: "return 1;", replace: "return 2;" }],
+    });
+    expect(await Bun.file(abs).text()).toBe("function foo() {\n  return 2;\n}\n");
+  });
+
+  test("applies multiple non-overlapping edits atomically", async () => {
+    const abs = join(tmpDir, "multi.ts");
+    await nodeWriteFile(abs, "const a = 1;\nconst b = 2;\nconst c = 3;\n");
+    await plugin.executeTool("patch_file", {
+      path: r(abs),
+      edits: [
+        { search: "const a = 1;", replace: "const a = 10;" },
+        { search: "const c = 3;", replace: "const c = 30;" },
+      ],
+    });
+    expect(await Bun.file(abs).text()).toBe("const a = 10;\nconst b = 2;\nconst c = 30;\n");
+  });
+
+  test("returns editsApplied, linesAdded, and linesRemoved", async () => {
+    const abs = join(tmpDir, "stats.ts");
+    await nodeWriteFile(abs, "line1\nline2\nline3\n");
+    const result = (await plugin.executeTool("patch_file", {
+      path: r(abs),
+      edits: [{ search: "line2", replace: "replaced2\nextra" }],
+    })) as any;
+    expect(result.editsApplied).toBe(1);
+    expect(result.linesAdded).toBe(2);
+    expect(result.linesRemoved).toBe(1);
+  });
+
+  test("falls back to whitespace-normalized match when indentation differs", async () => {
+    const abs = join(tmpDir, "indent.ts");
+    await nodeWriteFile(abs, "function foo() {\n  return 1;\n}\n");
+    // Search with no leading whitespace — should still match
+    await plugin.executeTool("patch_file", {
+      path: r(abs),
+      edits: [{ search: "function foo() {\nreturn 1;\n}", replace: "function foo() {\n  return 99;\n}" }],
+    });
+    expect(await Bun.file(abs).text()).toContain("return 99;");
+  });
+
+  test("throws when search string is not found", async () => {
+    const abs = join(tmpDir, "notfound.ts");
+    await nodeWriteFile(abs, "hello world");
+    await expect(
+      plugin.executeTool("patch_file", {
+        path: r(abs),
+        edits: [{ search: "missing text", replace: "x" }],
+      }),
+    ).rejects.toThrow("Search string not found");
+  });
+
+  test("throws when search string matches multiple locations", async () => {
+    const abs = join(tmpDir, "ambiguous.ts");
+    await nodeWriteFile(abs, "foo\nfoo\n");
+    await expect(
+      plugin.executeTool("patch_file", {
+        path: r(abs),
+        edits: [{ search: "foo", replace: "bar" }],
+      }),
+    ).rejects.toThrow("matches multiple locations");
+  });
+
+  test("throws when edits overlap", async () => {
+    const abs = join(tmpDir, "overlap.ts");
+    await nodeWriteFile(abs, "abcdef");
+    await expect(
+      plugin.executeTool("patch_file", {
+        path: r(abs),
+        edits: [
+          { search: "abcd", replace: "ABCD" },
+          { search: "cdef", replace: "CDEF" },
+        ],
+      }),
+    ).rejects.toThrow("overlap");
+  });
+
+  test("throws when search is empty", async () => {
+    const abs = join(tmpDir, "empty-search.ts");
+    await nodeWriteFile(abs, "content");
+    await expect(
+      plugin.executeTool("patch_file", {
+        path: r(abs),
+        edits: [{ search: "", replace: "x" }],
+      }),
+    ).rejects.toThrow("must not be empty");
+  });
+
+  test("throws when file does not exist", async () => {
+    await expect(
+      plugin.executeTool("patch_file", {
+        path: r(join(tmpDir, "ghost.ts")),
+        edits: [{ search: "x", replace: "y" }],
+      }),
+    ).rejects.toThrow("File not found");
+  });
+
+  test("rejects binary files", async () => {
+    const abs = join(tmpDir, "bin.dat");
+    const buf = Buffer.alloc(64, 0x00);
+    await nodeWriteFile(abs, buf);
+    await expect(
+      plugin.executeTool("patch_file", {
+        path: r(abs),
+        edits: [{ search: "x", replace: "y" }],
+      }),
+    ).rejects.toThrow("binary");
+  });
+
+  test("does not modify the file if any edit fails validation", async () => {
+    const abs = join(tmpDir, "atomic.ts");
+    const original = "const x = 1;\nconst y = 2;\n";
+    await nodeWriteFile(abs, original);
+    await expect(
+      plugin.executeTool("patch_file", {
+        path: r(abs),
+        edits: [
+          { search: "const x = 1;", replace: "const x = 99;" },
+          { search: "does not exist", replace: "anything" },
+        ],
+      }),
+    ).rejects.toThrow();
+    // File should be unchanged
+    expect(await Bun.file(abs).text()).toBe(original);
+  });
+});
+
+// ── patch_file_range ──────────────────────────────────────────────────────────
+
+describe("patch_file_range", () => {
+  test("replaces a single line in the middle of a file", async () => {
+    const abs = join(tmpDir, "range.ts");
+    await nodeWriteFile(abs, "a\nb\nc\nd\ne\n");
+    await plugin.executeTool("patch_file_range", {
+      path: r(abs),
+      startLine: 3,
+      endLine: 3,
+      newContent: "C",
+    });
+    expect(await Bun.file(abs).text()).toBe("a\nb\nC\nd\ne\n");
+  });
+
+  test("replaces multiple lines with more lines", async () => {
+    const abs = join(tmpDir, "multi.ts");
+    await nodeWriteFile(abs, "a\nb\nc\nd\ne\n");
+    await plugin.executeTool("patch_file_range", {
+      path: r(abs),
+      startLine: 2,
+      endLine: 4,
+      newContent: "X\nY\nZ\nW",
+    });
+    expect(await Bun.file(abs).text()).toBe("a\nX\nY\nZ\nW\ne\n");
+  });
+
+  test("replaces multiple lines with fewer lines", async () => {
+    const abs = join(tmpDir, "shrink.ts");
+    await nodeWriteFile(abs, "a\nb\nc\nd\ne\n");
+    await plugin.executeTool("patch_file_range", {
+      path: r(abs),
+      startLine: 2,
+      endLine: 4,
+      newContent: "X",
+    });
+    expect(await Bun.file(abs).text()).toBe("a\nX\ne\n");
+  });
+
+  test("deletes lines when newContent is empty string", async () => {
+    const abs = join(tmpDir, "delete.ts");
+    await nodeWriteFile(abs, "a\nb\nc\nd\ne\n");
+    await plugin.executeTool("patch_file_range", {
+      path: r(abs),
+      startLine: 2,
+      endLine: 4,
+      newContent: "",
+    });
+    expect(await Bun.file(abs).text()).toBe("a\ne\n");
+  });
+
+  test("replaces last line in a file without trailing newline", async () => {
+    const abs = join(tmpDir, "no-trailing.ts");
+    await nodeWriteFile(abs, "a\nb\nc");
+    await plugin.executeTool("patch_file_range", {
+      path: r(abs),
+      startLine: 3,
+      endLine: 3,
+      newContent: "C",
+    });
+    expect(await Bun.file(abs).text()).toBe("a\nb\nC");
+  });
+
+  test("replaces first line", async () => {
+    const abs = join(tmpDir, "first.ts");
+    await nodeWriteFile(abs, "a\nb\nc\n");
+    await plugin.executeTool("patch_file_range", {
+      path: r(abs),
+      startLine: 1,
+      endLine: 1,
+      newContent: "A",
+    });
+    expect(await Bun.file(abs).text()).toBe("A\nb\nc\n");
+  });
+
+  test("returns correct linesRemoved and linesAdded", async () => {
+    const abs = join(tmpDir, "stats.ts");
+    await nodeWriteFile(abs, "a\nb\nc\nd\ne\n");
+    const result = (await plugin.executeTool("patch_file_range", {
+      path: r(abs),
+      startLine: 2,
+      endLine: 4,
+      newContent: "X\nY",
+    })) as any;
+    expect(result.linesRemoved).toBe(3);
+    expect(result.linesAdded).toBe(2);
+    expect(result.startLine).toBe(2);
+    expect(result.endLine).toBe(4);
+  });
+
+  test("throws when startLine exceeds file length", async () => {
+    const abs = join(tmpDir, "short.ts");
+    await nodeWriteFile(abs, "a\nb\n");
+    await expect(
+      plugin.executeTool("patch_file_range", {
+        path: r(abs),
+        startLine: 10,
+        endLine: 10,
+        newContent: "x",
+      }),
+    ).rejects.toThrow("exceeds the file's line count");
+  });
+
+  test("throws when endLine < startLine", async () => {
+    const abs = join(tmpDir, "bad-range.ts");
+    await nodeWriteFile(abs, "a\nb\nc\n");
+    await expect(
+      plugin.executeTool("patch_file_range", {
+        path: r(abs),
+        startLine: 3,
+        endLine: 1,
+        newContent: "x",
+      }),
+    ).rejects.toThrow("endLine");
+  });
+
+  test("throws when file does not exist", async () => {
+    await expect(
+      plugin.executeTool("patch_file_range", {
+        path: r(join(tmpDir, "ghost.ts")),
+        startLine: 1,
+        endLine: 1,
+        newContent: "x",
+      }),
+    ).rejects.toThrow("File not found");
+  });
+
+  test("cleans up temp file when an error occurs", async () => {
+    const abs = join(tmpDir, "cleanup.ts");
+    await nodeWriteFile(abs, "a\nb\n");
+    await expect(
+      plugin.executeTool("patch_file_range", {
+        path: r(abs),
+        startLine: 99,
+        endLine: 99,
+        newContent: "x",
+      }),
+    ).rejects.toThrow();
+    const tmpExists = await Bun.file(abs + ".__patch_tmp__").exists();
+    expect(tmpExists).toBe(false);
+  });
+});
+
+// ── patch_file: MAX_PATCH_BYTES guard ─────────────────────────────────────────
+
+describe("patch_file size guard", () => {
+  test("rejects files over 10 MB with a helpful message", async () => {
+    const abs = join(tmpDir, "big.txt");
+    await nodeWriteFile(abs, Buffer.alloc(10 * 1024 * 1024 + 1, 0x61)); // 'a' * 10MB+1
+    await expect(
+      plugin.executeTool("patch_file", {
+        path: r(abs),
+        edits: [{ search: "a", replace: "b" }],
+      }),
+    ).rejects.toThrow("patch_file_range");
+  });
+});
+
 // ── unknown tools ────────────────────────────────────────────────────────────
 
 describe("unknown tool", () => {

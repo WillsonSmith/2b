@@ -11,10 +11,12 @@ import {
   readlink as fsReadlink,
   appendFile as fsAppendFile,
   rm as fsRm,
+  open as fsOpen,
 } from "node:fs/promises";
 
 const MAX_READ_BYTES = 1 * 1024 * 1024; // 1 MB
 const MAX_PAGINATED_READ_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_PATCH_BYTES = MAX_PAGINATED_READ_BYTES; // patch_file loads fully; above this use patch_file_range
 const FS_OP_TIMEOUT_MS = 10_000; // 10 s
 const SEARCH_TIMEOUT_MS = 30_000; // 30 s
 const STAT_CONCURRENCY = 8;
@@ -34,6 +36,44 @@ function withTimeout<T>(
     );
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(id));
+}
+
+type MatchResult =
+  | { found: true; start: number; end: number; fuzzy: boolean }
+  | { found: false; error: string };
+
+function findMatch(content: string, search: string): MatchResult {
+  // Exact match
+  const first = content.indexOf(search);
+  if (first !== -1) {
+    if (content.indexOf(search, first + 1) !== -1) {
+      return { found: false, error: "Search string matches multiple locations in the file." };
+    }
+    return { found: true, start: first, end: first + search.length, fuzzy: false };
+  }
+
+  // Whitespace-normalized fallback: compare lines with leading whitespace stripped
+  const contentLines = content.split("\n");
+  const searchLines = search.split("\n");
+  if (searchLines.length > contentLines.length) {
+    return { found: false, error: "Search string not found in file." };
+  }
+  const normalizedSearch = searchLines.map((l) => l.trimStart());
+
+  const hits: Array<{ start: number; end: number }> = [];
+  for (let i = 0; i <= contentLines.length - searchLines.length; i++) {
+    const allMatch = searchLines.every((_, j) => contentLines[i + j].trimStart() === normalizedSearch[j]);
+    if (allMatch) {
+      let startOffset = 0;
+      for (let k = 0; k < i; k++) startOffset += contentLines[k].length + 1;
+      const matchedBlock = contentLines.slice(i, i + searchLines.length).join("\n");
+      hits.push({ start: startOffset, end: startOffset + matchedBlock.length });
+    }
+  }
+
+  if (hits.length === 0) return { found: false, error: "Search string not found in file." };
+  if (hits.length > 1) return { found: false, error: "Search string (whitespace-normalized) matches multiple locations." };
+  return { found: true, ...hits[0], fuzzy: true };
 }
 
 function isBinary(sample: Uint8Array): boolean {
@@ -100,6 +140,9 @@ export class FileSystemPlugin implements AgentPlugin {
       "- stat_file: Get metadata: type (file/directory/symlink/other), size, last-modified time, and symlink target if applicable.",
       "- find_files: Search for files matching a glob pattern. Dotfiles excluded by default — pass includeDotfiles: true to include .env, .gitignore, etc.",
       "- search_in_files: Search for a regex pattern across file contents. Uses ripgrep if available, with a built-in fallback.",
+      "- patch_file: Edit specific sections of an existing file using search/replace pairs. Preferred over write_file for targeted changes. Not for files over 10 MB.",
+      "- patch_file_range: Replace a line range (by 1-indexed line numbers) in a file. Streams the file — use this for files over 10 MB. Call read_file with offset/limit first to find the target line numbers.",
+      "IMPORTANT: Use patch_file instead of write_file when modifying existing files. Only use write_file for new files or complete rewrites. For files over 10 MB, use patch_file_range. Always call read_file first to get exact text or line numbers.",
     ].join("\n");
   }
 
@@ -229,6 +272,70 @@ export class FileSystemPlugin implements AgentPlugin {
         },
       },
       // Mutating tools
+      {
+        name: "patch_file",
+        permission: "per_call" as const,
+        description:
+          "Make targeted edits to an existing file using search/replace pairs. More efficient than write_file — only re-emits the changed sections. All edits are validated before any are applied (all-or-nothing). Tries exact match first, then whitespace-normalized match as a fallback.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description: "Absolute path, or path relative to the working directory.",
+            },
+            edits: {
+              type: "array",
+              description: "One or more search/replace pairs to apply.",
+              items: {
+                type: "object",
+                properties: {
+                  search: {
+                    type: "string",
+                    description:
+                      "Exact text to find. Must appear exactly once in the file. Use read_file first to copy the text verbatim.",
+                  },
+                  replace: {
+                    type: "string",
+                    description: "Text to substitute in place of the search string.",
+                  },
+                },
+                required: ["search", "replace"],
+              },
+            },
+          },
+          required: ["path", "edits"],
+        },
+      },
+      {
+        name: "patch_file_range",
+        permission: "per_call" as const,
+        description:
+          "Replace a range of lines in a file by line number. Streams the file so it is safe for files over 10 MB. Use read_file with offset/limit to identify the target line numbers first. startLine and endLine are both inclusive and 1-indexed.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description: "Absolute path, or path relative to the working directory.",
+            },
+            startLine: {
+              type: "number",
+              description: "1-indexed line number of the first line to replace (inclusive).",
+            },
+            endLine: {
+              type: "number",
+              description: "1-indexed line number of the last line to replace (inclusive). Must be >= startLine.",
+            },
+            newContent: {
+              type: "string",
+              description:
+                "Replacement text. Pass an empty string to delete the line range without inserting anything.",
+            },
+          },
+          required: ["path", "startLine", "endLine", "newContent"],
+        },
+      },
       {
         name: "write_file",
         permission: "per_call" as const,
@@ -390,6 +497,28 @@ export class FileSystemPlugin implements AgentPlugin {
             ),
             FS_OP_TIMEOUT_MS,
             "read_file",
+          );
+          break;
+        case "patch_file":
+          result = await withTimeout(
+            this.patchFile(
+              args.path as string,
+              args.edits as Array<{ search: string; replace: string }>,
+            ),
+            FS_OP_TIMEOUT_MS,
+            "patch_file",
+          );
+          break;
+        case "patch_file_range":
+          result = await withTimeout(
+            this.patchFileRange(
+              args.path as string,
+              args.startLine as number,
+              args.endLine as number,
+              args.newContent as string,
+            ),
+            SEARCH_TIMEOUT_MS,
+            "patch_file_range",
           );
           break;
         case "write_file":
@@ -604,6 +733,174 @@ export class FileSystemPlugin implements AgentPlugin {
       totalLines,
       returnedLines: sliced.length,
       size,
+    };
+  }
+
+  private async patchFile(
+    path: string,
+    edits: Array<{ search: string; replace: string }>,
+  ): Promise<{
+    path: string;
+    editsApplied: number;
+    linesAdded: number;
+    linesRemoved: number;
+  }> {
+    if (!Array.isArray(edits) || edits.length === 0) {
+      throw new Error("edits must be a non-empty array.");
+    }
+
+    const resolved = this.resolveSafe(path);
+    const file = Bun.file(resolved);
+    if (!(await file.exists())) throw new Error(`File not found: ${resolved}`);
+
+    if (file.size > MAX_PATCH_BYTES) {
+      throw new Error(
+        `File is ${file.size} bytes, which exceeds the ${MAX_PATCH_BYTES / 1024 / 1024} MB limit for patch_file. Use patch_file_range instead.`,
+      );
+    }
+
+    if (file.size > 0) {
+      const sampleBuf = await file.slice(0, BINARY_SAMPLE_BYTES).arrayBuffer();
+      if (isBinary(new Uint8Array(sampleBuf))) {
+        throw new Error("File appears to be binary. patch_file only supports text files.");
+      }
+    }
+
+    const content = await file.text();
+
+    // Validate and locate all edits before applying any (all-or-nothing)
+    const located: Array<{ start: number; end: number; replace: string; fuzzy: boolean }> = [];
+    for (let i = 0; i < edits.length; i++) {
+      const { search, replace } = edits[i];
+      if (typeof search !== "string" || typeof replace !== "string") {
+        throw new Error(`Edit ${i}: search and replace must be strings.`);
+      }
+      if (search === "") throw new Error(`Edit ${i}: search string must not be empty.`);
+
+      const match = findMatch(content, search);
+      if (!match.found) throw new Error(`Edit ${i}: ${match.error}`);
+      located.push({ start: match.start, end: match.end, replace, fuzzy: match.fuzzy });
+    }
+
+    // Reject overlapping edits
+    const byPosition = [...located].sort((a, b) => a.start - b.start);
+    for (let i = 0; i < byPosition.length - 1; i++) {
+      if (byPosition[i].end > byPosition[i + 1].start) {
+        throw new Error(`Edits overlap in the file and cannot be applied together.`);
+      }
+    }
+
+    // Apply in reverse order to preserve offsets
+    let patched = content;
+    let linesAdded = 0;
+    let linesRemoved = 0;
+    for (const { start, end, replace } of [...located].sort((a, b) => b.start - a.start)) {
+      const removed = patched.slice(start, end);
+      linesRemoved += removed.split("\n").length;
+      linesAdded += replace === "" ? 0 : replace.split("\n").length;
+      patched = patched.slice(0, start) + replace + patched.slice(end);
+    }
+
+    await Bun.write(resolved, patched);
+    return { path: resolved, editsApplied: edits.length, linesAdded, linesRemoved };
+  }
+
+  private async patchFileRange(
+    path: string,
+    startLine: number,
+    endLine: number,
+    newContent: string,
+  ): Promise<{
+    path: string;
+    startLine: number;
+    endLine: number;
+    linesRemoved: number;
+    linesAdded: number;
+  }> {
+    if (!Number.isInteger(startLine) || startLine < 1) {
+      throw new Error("startLine must be a positive integer (1-indexed).");
+    }
+    if (!Number.isInteger(endLine) || endLine < startLine) {
+      throw new Error(`endLine (${endLine}) must be >= startLine (${startLine}).`);
+    }
+    if (typeof newContent !== "string") {
+      throw new Error("newContent must be a string.");
+    }
+
+    const resolved = this.resolveSafe(path);
+    const file = Bun.file(resolved);
+    if (!(await file.exists())) throw new Error(`File not found: ${resolved}`);
+
+    if (file.size > 0) {
+      const sampleBuf = await file.slice(0, BINARY_SAMPLE_BYTES).arrayBuffer();
+      if (isBinary(new Uint8Array(sampleBuf))) {
+        throw new Error("File appears to be binary. patch_file_range only supports text files.");
+      }
+    }
+
+    const tmpPath = resolved + ".__patch_tmp__";
+    const encoder = new TextEncoder();
+    const fh = await fsOpen(tmpPath, "w");
+
+    try {
+      const stream = file.stream();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let lineNum = 0;
+      let replacementWritten = false;
+
+      for await (const chunk of stream) {
+        buffer += decoder.decode(chunk as Uint8Array, { stream: true });
+        let newlineIdx: number;
+        while ((newlineIdx = buffer.indexOf("\n")) !== -1) {
+          lineNum++;
+          const line = buffer.slice(0, newlineIdx);
+          buffer = buffer.slice(newlineIdx + 1);
+
+          if (lineNum < startLine || lineNum > endLine) {
+            await fh.write(encoder.encode(line + "\n"));
+          } else if (lineNum === startLine) {
+            if (newContent !== "") {
+              const toWrite = newContent.endsWith("\n") ? newContent : newContent + "\n";
+              await fh.write(encoder.encode(toWrite));
+            }
+            replacementWritten = true;
+          }
+          // Lines startLine+1..endLine are dropped — replaced by newContent above
+        }
+      }
+
+      // Last line with no trailing newline
+      if (buffer.length > 0) {
+        lineNum++;
+        if (lineNum < startLine || lineNum > endLine) {
+          await fh.write(encoder.encode(buffer));
+        } else if (lineNum === startLine && !replacementWritten) {
+          if (newContent !== "") await fh.write(encoder.encode(newContent));
+          replacementWritten = true;
+        }
+      }
+
+      if (!replacementWritten) {
+        throw new Error(
+          `startLine ${startLine} exceeds the file's line count (${lineNum}).`,
+        );
+      }
+
+      await fh.close();
+      await fsRename(tmpPath, resolved);
+    } catch (err) {
+      await fh.close().catch(() => {});
+      await unlink(tmpPath).catch(() => {});
+      throw err;
+    }
+
+    return {
+      path: resolved,
+      startLine,
+      endLine,
+      linesRemoved: endLine - startLine + 1,
+      linesAdded: newContent === "" ? 0 : newContent.split("\n").length,
     };
   }
 
