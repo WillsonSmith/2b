@@ -336,6 +336,7 @@ describe("find_files", () => {
     expect(names).toContain("a.ts");
     expect(names).toContain("b.ts");
     expect(names).not.toContain("c.txt");
+    expect(result.matches.every((m: string) => m.startsWith("/"))).toBe(true);
   });
 
   test("matches files recursively with ** pattern", async () => {
@@ -400,6 +401,7 @@ describe("search_in_files", () => {
     expect(result.matches.length).toBeGreaterThan(0);
     expect(result.matches[0].line).toBe(1);
     expect(result.matches[0].content).toContain("hello");
+    expect(result.matches[0].file.startsWith("/")).toBe(true);
   });
 
   test("returns no matches when pattern is absent", async () => {
