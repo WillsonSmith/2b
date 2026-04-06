@@ -48,7 +48,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "Use `save_behavior` to record a persistent behavioral rule you want to follow on every future turn. Pass `core: true` for universal rules that should always be active (e.g. formatting, tone). Omit or pass `core: false` for context-specific rules that will be surfaced when relevant.",
       "Use `save_procedure` after successfully completing a non-trivial task to record the steps taken.",
       "Use `edit_memory` to update the text of an existing memory by its ID.",
-      "Use `delete_memory` to remove a memory by its ID.",
+      "Use `delete_memory` to remove a memory. Single form: `{ id }`. Batch form: `{ ids: [id1, id2, ...] }` — deletes multiple memories in one call and costs one memory access regardless of how many IDs are provided.",
       "Use `get_linked_memories` to follow chains of related ideas.",
       "Use `query_memories` to filter memories by type, tags, date range, or full-text content.",
       "Use `hybrid_search` to combine semantic similarity search with metadata filters.",
@@ -261,13 +261,18 @@ export class CortexMemoryPlugin implements AgentPlugin {
       },
       {
         name: "delete_memory",
-        description: "Delete a memory by its ID.",
+        description:
+          "Delete a memory by ID. Single form: pass `id` (string). Batch form: pass `ids` (array of strings) to delete multiple memories in one call — batch costs one memory access regardless of how many IDs are provided.",
         parameters: {
           type: "object",
           properties: {
-            id: { type: "string", description: "The memory ID to delete" },
+            id: { type: "string", description: "The memory ID to delete (single form)" },
+            ids: {
+              type: "array",
+              items: { type: "string" },
+              description: "Array of memory IDs to delete in one call (batch form)",
+            },
           },
-          required: ["id"],
         },
       },
       {
@@ -532,6 +537,27 @@ export class CortexMemoryPlugin implements AgentPlugin {
   }
 
   private async handleDeleteMemory(args: any): Promise<string> {
+    // Batch path
+    if (Array.isArray(args.ids) && args.ids.length > 0) {
+      let deleted = 0;
+      let missing = 0;
+      for (const id of args.ids) {
+        if (typeof id !== "string" || !id.trim()) continue;
+        const existing = await this.db.getMemoryById(id);
+        if (!existing) { missing++; continue; }
+        await this.db.deleteMemory(id);
+        deleted++;
+      }
+      this.coreBehaviorCache = null; // invalidate once for the whole batch
+      return `Batch delete: ${deleted} deleted, ${missing} not found out of ${args.ids.length} requested.`;
+    }
+
+    // Empty ids array — explicit error rather than confusing fallthrough
+    if (Array.isArray(args.ids) && args.ids.length === 0) {
+      return "delete_memory error: 'ids' array is empty — provide at least one ID.";
+    }
+
+    // Single-delete path
     if (!args.id || typeof args.id !== "string") {
       return "delete_memory requires a valid memory id string.";
     }
