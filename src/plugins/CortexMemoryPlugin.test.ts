@@ -347,6 +347,23 @@ describe("delete_memory — batch path", () => {
     expect((plugin as any).coreBehaviorCache).toBeNull();
   });
 
+  test("counts non-string and blank entries as invalid, not missing", async () => {
+    const plugin = makePlugin();
+    await plugin.executeTool("save_memory", { content: "valid one", type: "factual" });
+    const memories = plugin.db.queryMemories({});
+    const realId = memories[0]!.id;
+
+    const result = await plugin.executeTool("delete_memory", {
+      ids: [realId, 42, ""],
+    }) as string;
+    expect(result).toContain("1 deleted");
+    expect(result).toContain("0 not found");
+    expect(result).toContain("2 invalid");
+    expect(result).toContain("out of 3 requested");
+    const after = plugin.db.queryMemories({});
+    expect(after).toHaveLength(0);
+  });
+
   test("returns empty-array error when ids: [] is passed", async () => {
     const plugin = makePlugin();
     const result = await plugin.executeTool("delete_memory", { ids: [] }) as string;

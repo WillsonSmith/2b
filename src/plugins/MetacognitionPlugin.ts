@@ -29,7 +29,7 @@ const PATTERN_WINDOW = 5;
 const PATTERN_THRESHOLD = 3;
 const SATURATION_WARNING_RATIO = 0.6;
 const USER_UNCERTAINTY_PATTERN =
-  /\b(i'm not sure|not sure|i don't know|don't know|help me figure|i was wondering|unclear|confused|unsure)\b/i;
+  /\b(i(?:'m| am) not sure|i don't know|help me figure|i was wondering|i(?:'m| am) unclear|i(?:'m| am) confused|i(?:'m| am) unsure)\b/i;
 
 interface CorrectionRecord {
   id: string;
@@ -213,7 +213,7 @@ export class MetacognitionPlugin implements AgentPlugin {
       );
     }
 
-    if (t.uncertainty_markers.includes("tool_saturation")) {
+    if (isSaturated) {
       const prevTurnAlsoSaturated =
         this.turnHistory
           .at(-1)
