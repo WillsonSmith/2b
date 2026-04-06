@@ -48,7 +48,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "Use `save_behavior` to record a persistent behavioral rule you want to follow on every future turn. Pass `core: true` for universal rules that should always be active (e.g. formatting, tone). Omit or pass `core: false` for context-specific rules that will be surfaced when relevant.",
       "Use `save_procedure` after successfully completing a non-trivial task to record the steps taken.",
       "Use `edit_memory` to update the text of an existing memory by its ID.",
-      "Use `delete_memory` to remove a memory. Single form: `{ id }`. Batch form: `{ ids: [id1, id2, ...] }` — deletes multiple memories in one call and costs one memory access regardless of how many IDs are provided.",
+      "Use `delete_memory` to remove a memory. Single form: `{ id }`. Batch form: `{ ids: [id1, id2, ...] }` — deletes multiple memories in one call and triggers one cache invalidation regardless of how many IDs are provided.",
       "Use `get_linked_memories` to follow chains of related ideas.",
       "Use `query_memories` to filter memories by type, tags, date range, or full-text content.",
       "Use `hybrid_search` to combine semantic similarity search with metadata filters.",
@@ -262,7 +262,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       {
         name: "delete_memory",
         description:
-          "Delete a memory by ID. Single form: pass `id` (string). Batch form: pass `ids` (array of strings) to delete multiple memories in one call — batch costs one memory access regardless of how many IDs are provided.",
+          "Delete a memory by ID. Single form: pass `id` (string). Batch form: pass `ids` (array of strings) to delete multiple memories in one call — triggers one cache invalidation regardless of how many IDs are provided.",
         parameters: {
           type: "object",
           properties: {
@@ -541,15 +541,16 @@ export class CortexMemoryPlugin implements AgentPlugin {
     if (Array.isArray(args.ids) && args.ids.length > 0) {
       let deleted = 0;
       let missing = 0;
+      let invalid = 0;
       for (const id of args.ids) {
-        if (typeof id !== "string" || !id.trim()) continue;
+        if (typeof id !== "string" || !id.trim()) { invalid++; continue; }
         const existing = await this.db.getMemoryById(id);
         if (!existing) { missing++; continue; }
         await this.db.deleteMemory(id);
         deleted++;
       }
       this.coreBehaviorCache = null; // invalidate once for the whole batch
-      return `Batch delete: ${deleted} deleted, ${missing} not found out of ${args.ids.length} requested.`;
+      return `Batch delete: ${deleted} deleted, ${missing} not found, ${invalid} invalid out of ${args.ids.length} requested.`;
     }
 
     // Empty ids array — explicit error rather than confusing fallthrough
