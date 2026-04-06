@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { AgentState, ChatMessage, ToolCallRecord } from "./types.ts";
+import type { ActiveTool, AgentState, ChatMessage, ToolCallRecord } from "./types.ts";
 
 /**
  * Minimal interface satisfied by both BaseAgent and CortexAgent.
@@ -13,6 +13,8 @@ export interface AgentLike {
   on(event: "thought", listener: (text: string) => void): this;
   on(event: "state_change", listener: (state: AgentState) => void): this;
   on(event: "tool_call", listener: (name: string, args: Record<string, unknown>) => void): this;
+  on(event: "tool_result", listener: (name: string) => void): this;
+  on(event: "subagent_tool_call", listener: (agentToolName: string, toolName: string, args: Record<string, unknown>) => void): this;
   on(event: "error", listener: (err: Error) => void): this;
 }
 
@@ -34,6 +36,7 @@ export class ChatSession extends EventEmitter {
   private _messages: ChatMessage[] = [];
   private _state: AgentState = "idle";
   private _pendingAssistantId: string | null = null;
+  private _activeTools: ActiveTool[] = [];
 
   constructor(private readonly agent: AgentLike) {
     super();
@@ -51,6 +54,11 @@ export class ChatSession extends EventEmitter {
   /** Current agent state. */
   get state(): AgentState {
     return this._state;
+  }
+
+  /** Snapshot of tools currently executing. */
+  get activeTools(): readonly ActiveTool[] {
+    return this._activeTools;
   }
 
   /**
@@ -93,6 +101,8 @@ export class ChatSession extends EventEmitter {
       this.patchPending({ status: "complete" });
       this._pendingAssistantId = null;
     }
+    this._activeTools = [];
+    this.emit("active_tools_changed", []);
   }
 
   /** Add an inline system notification (slash command feedback, errors, etc.). */
@@ -129,22 +139,52 @@ export class ChatSession extends EventEmitter {
       if (text) this.patchPending({ thought: text });
     });
 
-    // Record each tool invocation on the pending message.
+    // Record each tool invocation on the pending message and track as active.
     this.agent.on("tool_call", (name, args) => {
       const msg = this.getPending();
       if (!msg) return;
       const record: ToolCallRecord = { name, args };
       this.patchPending({ toolCalls: [...msg.toolCalls, record] });
+      this._activeTools = [...this._activeTools, { name }];
+      this.emit("active_tools_changed", [...this._activeTools]);
+    });
+
+    // When a sub-agent starts one of its own tools, annotate its parent entry.
+    this.agent.on("subagent_tool_call", (agentToolName, toolName) => {
+      const idx = this._activeTools.findIndex((t) => t.name === agentToolName);
+      if (idx !== -1) {
+        const updated = [...this._activeTools];
+        updated[idx] = { ...updated[idx]!, currentSubTool: toolName };
+        this._activeTools = updated;
+        this.emit("active_tools_changed", [...this._activeTools]);
+      }
+    });
+
+    // Remove the tool from the active list when it completes.
+    this.agent.on("tool_result", (name) => {
+      const idx = this._activeTools.findIndex((t) => t.name === name);
+      if (idx !== -1) {
+        const updated = [...this._activeTools];
+        updated.splice(idx, 1);
+        this._activeTools = updated;
+        this.emit("active_tools_changed", [...this._activeTools]);
+      }
     });
 
     // "speak" fires after all tool rounds complete with the authoritative final text.
     this.agent.on("speak", (response) => {
       this.patchPending({ content: response, status: "complete" });
       this._pendingAssistantId = null;
+      this._activeTools = [];
+      this.emit("active_tools_changed", []);
     });
 
     this.agent.on("state_change", (state) => {
       this._state = state;
+      if (state === "idle") {
+        this._activeTools = [];
+        this.emit("active_tools_changed", []);
+      }
       this.emit("state_change", state);
     });
 
