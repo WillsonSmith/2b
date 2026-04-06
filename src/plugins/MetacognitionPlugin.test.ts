@@ -380,7 +380,7 @@ describe("checkCorrectionEffectiveness", () => {
     expect((plugin as any).correctionHistory[0].effectiveness).toBe("effective");
   });
 
-  test("prunes stale effective correction from DB after 30+ clean turns", async () => {
+  test("prunes stale effective correction from DB after 20+ clean turns", async () => {
     const { plugin, memPlugin } = makeMetaPlugin();
     const behaviorId = await memPlugin.db.addMemory(
       "old rule",
@@ -401,7 +401,7 @@ describe("checkCorrectionEffectiveness", () => {
     }];
 
     const afterDate = new Date();
-    (plugin as any).turnHistory = Array.from({ length: 30 }, () =>
+    (plugin as any).turnHistory = Array.from({ length: 20 }, () =>
       makeTurn([], 1, [], afterDate),
     );
 
@@ -598,5 +598,54 @@ describe("getContext — approaching saturation warning", () => {
     (plugin as any).currentTurn.memory_access_count = 6;
     const ctx = (plugin as any).getContext();
     expect(ctx).toContain("6/8");
+  });
+});
+
+// ── Sensitive key redaction ───────────────────────────────────────────────────
+
+describe("tool_call event — sensitive key redaction", () => {
+  test("redacts known sensitive keys from args_summary", async () => {
+    const { plugin, memPlugin } = makeMetaPlugin();
+    await memPlugin.onInit?.({ on: () => {} } as any);
+    plugin.onInit({ on: (event: string, cb: Function) => {
+      if (event === "tool_call") {
+        cb("save_memory", { text: "hello", password: "s3cr3t", token: "abc123", key: "mykey" });
+      }
+    } } as any);
+
+    const record = (plugin as any).currentTurn.tool_calls[0];
+    expect(record.args_summary).not.toContain("s3cr3t");
+    expect(record.args_summary).not.toContain("abc123");
+    expect(record.args_summary).not.toContain("mykey");
+    expect(record.args_summary).toContain("[redacted]");
+    expect(record.args_summary).toContain("hello");
+  });
+
+  test("preserves non-sensitive keys in args_summary", async () => {
+    const { plugin } = makeMetaPlugin();
+    plugin.onInit({ on: (event: string, cb: Function) => {
+      if (event === "tool_call") {
+        cb("search_memory", { query: "test query", limit: 5 });
+      }
+    } } as any);
+
+    const record = (plugin as any).currentTurn.tool_calls[0];
+    expect(record.args_summary).toContain("test query");
+    expect(record.args_summary).toContain("5");
+    expect(record.args_summary).not.toContain("[redacted]");
+  });
+
+  test("handles circular reference args without throwing", async () => {
+    const { plugin } = makeMetaPlugin();
+    plugin.onInit({ on: (event: string, cb: Function) => {
+      if (event === "tool_call") {
+        const circular: Record<string, unknown> = {};
+        circular["self"] = circular;
+        cb("some_tool", circular);
+      }
+    } } as any);
+
+    const record = (plugin as any).currentTurn.tool_calls[0];
+    expect(record.args_summary).toBe("[unserializable]");
   });
 });
