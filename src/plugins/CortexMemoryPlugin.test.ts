@@ -298,6 +298,75 @@ describe("delete_memory", () => {
 });
 
 // ---------------------------------------------------------------------------
+// delete_memory — batch path
+// ---------------------------------------------------------------------------
+
+describe("delete_memory — batch path", () => {
+  test("deletes multiple memories in one call; all absent from DB after", async () => {
+    const plugin = makePlugin();
+    await plugin.executeTool("save_memory", { content: "memory one", type: "factual" });
+    await plugin.executeTool("save_memory", { content: "memory two", type: "factual" });
+    const memories = plugin.db.queryMemories({});
+    expect(memories).toHaveLength(2);
+    const ids = memories.map((m) => m.id);
+
+    const result = await plugin.executeTool("delete_memory", { ids }) as string;
+    expect(result).toContain("2 deleted");
+    expect(result).toContain("0 not found");
+    const after = plugin.db.queryMemories({});
+    expect(after).toHaveLength(0);
+  });
+
+  test("reports missing IDs without failing (partial success)", async () => {
+    const plugin = makePlugin();
+    await plugin.executeTool("save_memory", { content: "exists", type: "factual" });
+    const memories = plugin.db.queryMemories({});
+    const realId = memories[0]!.id;
+
+    const result = await plugin.executeTool("delete_memory", {
+      ids: [realId, "00000000-0000-0000-0000-000000000000"],
+    }) as string;
+    expect(result).toContain("1 deleted");
+    expect(result).toContain("1 not found");
+    const after = plugin.db.queryMemories({});
+    expect(after).toHaveLength(0);
+  });
+
+  test("invalidates coreBehaviorCache once for the whole batch", async () => {
+    const plugin = makePlugin();
+    await plugin.executeTool("save_behavior", { rule: "Rule A", core: true });
+    await plugin.executeTool("save_behavior", { rule: "Rule B", core: true });
+    // Prime the cache
+    await plugin.getSystemPromptFragment();
+    expect((plugin as any).coreBehaviorCache).not.toBeNull();
+
+    const memories = plugin.db.queryMemories({ types: ["behavior"] });
+    const ids = memories.map((m) => m.id);
+    await plugin.executeTool("delete_memory", { ids });
+
+    expect((plugin as any).coreBehaviorCache).toBeNull();
+  });
+
+  test("returns empty-array error when ids: [] is passed", async () => {
+    const plugin = makePlugin();
+    const result = await plugin.executeTool("delete_memory", { ids: [] }) as string;
+    expect(result).toContain("'ids' array is empty");
+  });
+
+  test("single-delete regression: existing id-form still works correctly", async () => {
+    const plugin = makePlugin();
+    await plugin.executeTool("save_memory", { content: "to delete", type: "factual" });
+    const memories = plugin.db.queryMemories({});
+    expect(memories).toHaveLength(1);
+
+    const result = await plugin.executeTool("delete_memory", { id: memories[0]!.id }) as string;
+    expect(result).toContain("deleted");
+    const after = plugin.db.queryMemories({});
+    expect(after).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // query_memories
 // ---------------------------------------------------------------------------
 
