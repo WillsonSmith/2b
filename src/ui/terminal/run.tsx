@@ -23,6 +23,7 @@ import { createFileSystemAgent } from "../../agents/sub-agents/createFileSystemA
 import { createCodeReaderAgent } from "../../agents/sub-agents/createCodeReaderAgent.ts";
 import { createInfoAgent } from "../../agents/sub-agents/createInfoAgent.ts";
 import { ScratchPlugin } from "../../plugins/ScratchPlugin.ts";
+import { RSSPlugin } from "../../plugins/RSSPlugin.ts";
 
 // ── Parse CLI args ────────────────────────────────────────────────────────────
 
@@ -125,6 +126,7 @@ agent.registerPlugin(
 );
 agent.registerPlugin(minimalToolsPlugin);
 agent.registerPlugin(new ScratchPlugin());
+agent.registerPlugin(new RSSPlugin());
 agent.registerPlugin(
   new MemoryPlugin(llm, { cortexMemory: agent.memoryPlugin }),
 );
