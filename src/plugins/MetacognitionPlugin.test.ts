@@ -125,7 +125,7 @@ describe("onBeforeToolCall — tool blocking", () => {
     (plugin as any).blockedTools.add("search_memory");
     const result = plugin.onBeforeToolCall("search_memory", {}) as { allow: false; reason: string };
     expect(result.reason).toContain("7");  // access count
-    expect(result.reason).toContain("5");  // default threshold
+    expect(result.reason).toContain("8");  // default threshold
   });
 });
 
@@ -317,6 +317,7 @@ describe("checkCorrectionEffectiveness", () => {
       applied_at: correctionDate,
       turns_observed: 5,
       effectiveness: "pending",
+      post_strengthen_count: 0,
     }];
 
     const afterDate = new Date();
@@ -325,7 +326,8 @@ describe("checkCorrectionEffectiveness", () => {
     await (plugin as any).checkCorrectionEffectiveness();
 
     const memories = memPlugin.db.queryMemories({ types: ["behavior"] });
-    const updated = memories.find((m: { id: string }) => m.id === behaviorId) as { text: string } | undefined;
+    // strengthenCorrectiveRule deletes the old record and creates a new one with a new ID
+    const updated = memories.find((m: { text: string }) => m.text.includes("CRITICAL")) as { text: string } | undefined;
     expect(updated?.text).toContain("CRITICAL");
     expect(updated?.text).toContain("original rule");
   });
@@ -342,6 +344,7 @@ describe("checkCorrectionEffectiveness", () => {
       applied_at: correctionDate,
       turns_observed: 5,
       effectiveness: "pending",
+      post_strengthen_count: 0,
     }];
 
     const afterDate = new Date();
@@ -377,7 +380,7 @@ describe("checkCorrectionEffectiveness", () => {
     expect((plugin as any).correctionHistory[0].effectiveness).toBe("effective");
   });
 
-  test("prunes stale effective correction from DB when older than 30 days", async () => {
+  test("prunes stale effective correction from DB after 30+ clean turns", async () => {
     const { plugin, memPlugin } = makeMetaPlugin();
     const behaviorId = await memPlugin.db.addMemory(
       "old rule",
@@ -385,25 +388,25 @@ describe("checkCorrectionEffectiveness", () => {
       ["metacognition-correction", "saturation"],
     );
 
-    const staleDate = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+    const appliedDate = new Date(Date.now() - 1000);
     (plugin as any).correctionHistory = [{
       id: "test-4",
       trigger: "saturation",
       rule_saved: "old rule",
       behavior_memory_id: behaviorId,
-      applied_at: staleDate,
+      applied_at: appliedDate,
       turns_observed: 5,
-      effectiveness: "pending",
+      effectiveness: "effective",
+      post_strengthen_count: 0,
     }];
 
-    const afterDate = new Date(staleDate.getTime() + 1000);
-    (plugin as any).turnHistory = Array.from({ length: 10 }, () =>
+    const afterDate = new Date();
+    (plugin as any).turnHistory = Array.from({ length: 30 }, () =>
       makeTurn([], 1, [], afterDate),
     );
 
     await (plugin as any).checkCorrectionEffectiveness();
 
-    expect((plugin as any).correctionHistory[0].effectiveness).toBe("effective");
     const remaining = memPlugin.db.queryMemories({ types: ["behavior"] });
     expect(remaining.find((m: { id: string }) => m.id === behaviorId)).toBeUndefined();
   });
