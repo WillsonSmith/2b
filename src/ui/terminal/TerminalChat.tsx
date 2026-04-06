@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Box, Static, useInput, useApp } from "ink";
 import type { ChatSession } from "../ChatSession.ts";
-import type { ChatMessage, AgentState } from "../types.ts";
+import type { ActiveTool, ChatMessage, AgentState } from "../types.ts";
 import { MessageItem } from "./MessageItem.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 import { InputBar } from "./InputBar.tsx";
@@ -26,7 +26,7 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
   const [streamingMessage, setStreamingMessage] = useState<ChatMessage | null>(null);
 
   const [agentState, setAgentState] = useState<AgentState>("idle");
-  const [activeToolCalls, setActiveToolCalls] = useState<string[]>([]);
+  const [activeToolCalls, setActiveToolCalls] = useState<ActiveTool[]>([]);
   const [input, setInput] = useState("");
   const [permissionQueue, setPermissionQueue] = useState<PendingPermission[]>([]);
 
@@ -49,30 +49,29 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
       if (msg.status === "complete" || msg.status === "error") {
         setCompletedMessages((prev) => [...prev, msg]);
         setStreamingMessage(null);
-        setActiveToolCalls([]);
       } else {
         setStreamingMessage({ ...msg });
-        if (msg.toolCalls.length > 0) {
-          // Only the last tool call is currently running; earlier ones have already completed.
-          const lastName = msg.toolCalls[msg.toolCalls.length - 1]!.name;
-          setActiveToolCalls([lastName]);
-        }
       }
     };
 
     const onStateChange = (state: AgentState) => {
       setAgentState(state);
-      if (state === "idle") setActiveToolCalls([]);
+    };
+
+    const onActiveToolsChanged = (tools: ActiveTool[]) => {
+      setActiveToolCalls(tools);
     };
 
     session.on("message", onMessage);
     session.on("message_updated", onMessageUpdated);
     session.on("state_change", onStateChange);
+    session.on("active_tools_changed", onActiveToolsChanged);
 
     return () => {
       session.off("message", onMessage);
       session.off("message_updated", onMessageUpdated);
       session.off("state_change", onStateChange);
+      session.off("active_tools_changed", onActiveToolsChanged);
     };
   }, [session]);
 

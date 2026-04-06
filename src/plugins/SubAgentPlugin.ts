@@ -38,7 +38,7 @@ export class SubAgentPlugin implements AgentPlugin {
   onInit(agent: BaseAgent): void {
     this.agent.setToolCallHandler((name, args) => {
       for (const reset of this.onActivityResetHandlers) reset();
-      agent.emit("tool_call", name, args);
+      agent.emit("subagent_tool_call", this.toolName, name, args);
     });
   }
 

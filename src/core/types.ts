@@ -10,6 +10,8 @@ export interface AgentEventMap {
   log: [message: string];
   speak: [response: string];
   tool_call: [name: string, args: Record<string, unknown>];
+  tool_result: [name: string];
+  subagent_tool_call: [agentToolName: string, toolName: string, args: Record<string, unknown>];
   tool_call_blocked: [name: string, args: Record<string, unknown>, reason: string];
 }
 
