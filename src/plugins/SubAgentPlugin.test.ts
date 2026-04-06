@@ -102,9 +102,10 @@ describe("tool call forwarding", () => {
 
     await plugin.executeTool("run_task", { task: "do something" });
 
-    const toolCallEvents = parent.emitted.filter((e) => e.event === "tool_call");
+    const toolCallEvents = parent.emitted.filter((e) => e.event === "subagent_tool_call");
     expect(toolCallEvents).toHaveLength(1);
-    expect(toolCallEvents[0].args[0]).toBe("search");
+    expect(toolCallEvents[0]!.args[0]).toBe("run_task");
+    expect(toolCallEvents[0]!.args[1]).toBe("search");
   });
 });
 

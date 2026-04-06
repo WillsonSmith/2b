@@ -281,7 +281,9 @@ export class BaseAgent extends EventEmitter {
                 }
               }
               this.emit("tool_call", toolName, args);
-              return plugin.executeTool!(toolName, args);
+              const toolResult = await plugin.executeTool!(toolName, args);
+              this.emit("tool_result", toolName);
+              return toolResult;
             };
           }
           tools.push(t);

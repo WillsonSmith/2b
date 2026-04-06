@@ -1,13 +1,31 @@
 import { useEffect, useState } from "react";
 import { Box, Text } from "ink";
-import type { AgentState } from "../types.ts";
+import type { ActiveTool, AgentState } from "../types.ts";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 interface StatusBarProps {
   state: AgentState;
-  activeToolCalls: string[];
+  activeToolCalls: ActiveTool[];
   model?: string;
+}
+
+function ToolLabel({ tool }: { tool: ActiveTool }) {
+  if (tool.currentSubTool) {
+    return (
+      <Box gap={1}>
+        <Text color="yellow">{`[${tool.name}]`}</Text>
+        <Text color="gray">running</Text>
+        <Text color="cyan">{tool.currentSubTool}</Text>
+      </Box>
+    );
+  }
+  return (
+    <Box gap={1}>
+      <Text color="yellow">{`[${tool.name}]`}</Text>
+      <Text color="gray">running</Text>
+    </Box>
+  );
 }
 
 export function StatusBar({ state, activeToolCalls, model }: StatusBarProps) {
@@ -35,11 +53,8 @@ export function StatusBar({ state, activeToolCalls, model }: StatusBarProps) {
           paddingX={1}
           marginBottom={1}
         >
-          {activeToolCalls.map((name, i) => (
-            <Box key={i} gap={1}>
-              <Text color="yellow">{`[${name}]`}</Text>
-              <Text color="gray">running</Text>
-            </Box>
+          {activeToolCalls.map((tool, i) => (
+            <ToolLabel key={i} tool={tool} />
           ))}
         </Box>
       )}
