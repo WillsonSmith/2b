@@ -500,3 +500,100 @@ describe("checkCorrectionEffectiveness", () => {
     expect((plugin as any).patternRecurredIn("hedged_no_search", [cleanTurn])).toBe(false);
   });
 });
+
+// ── Improvement C: User uncertainty detection ─────────────────────────────────
+
+describe("onMessage('user') — user uncertainty detection", () => {
+  test("pushes 'user_query_uncertain' when message matches pattern", () => {
+    const { plugin } = makeMetaPlugin();
+    plugin.onMessage("user", "I'm not sure how this works");
+    expect((plugin as any).currentTurn.uncertainty_markers).toContain("user_query_uncertain");
+  });
+
+  test("does not push marker when message has no uncertainty signals", () => {
+    const { plugin } = makeMetaPlugin();
+    plugin.onMessage("user", "Tell me about Paris");
+    expect((plugin as any).currentTurn.uncertainty_markers).not.toContain("user_query_uncertain");
+  });
+
+  test("marker is on the new turn, not the archived previous turn", () => {
+    const { plugin } = makeMetaPlugin();
+    // Simulate a completed turn so there is something to archive
+    (plugin as any).currentTurn.tool_calls.push({ tool: "search_memory", args_summary: "", category: "memory", timestamp: new Date() });
+    plugin.onMessage("user", "I don't know if this is right");
+    const archived: any[] = (plugin as any).turnHistory;
+    expect(archived.length).toBe(1);
+    expect(archived[0].uncertainty_markers).not.toContain("user_query_uncertain");
+    expect((plugin as any).currentTurn.uncertainty_markers).toContain("user_query_uncertain");
+  });
+
+  test("marker is absent after next user message with no uncertainty", () => {
+    const { plugin } = makeMetaPlugin();
+    plugin.onMessage("user", "I'm not sure about this");
+    expect((plugin as any).currentTurn.uncertainty_markers).toContain("user_query_uncertain");
+    // Next user message (new turn)
+    (plugin as any).currentTurn.tool_calls.push({ tool: "search_memory", args_summary: "", category: "memory", timestamp: new Date() });
+    plugin.onMessage("user", "What is the capital of France?");
+    expect((plugin as any).currentTurn.uncertainty_markers).not.toContain("user_query_uncertain");
+  });
+});
+
+describe("getContext — user_query_uncertain directive", () => {
+  test("emits directive when marker is present", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).currentTurn.uncertainty_markers = ["user_query_uncertain"];
+    const ctx = (plugin as any).getContext();
+    expect(ctx).toContain("DIRECTIVE: User query contains uncertainty signals");
+  });
+
+  test("does not emit directive when marker is absent", () => {
+    const { plugin } = makeMetaPlugin();
+    const ctx = (plugin as any).getContext();
+    expect(ctx).not.toContain("User query contains uncertainty signals");
+  });
+
+  test("both user_query_uncertain and hedged_language directives appear simultaneously", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).currentTurn.uncertainty_markers = ["user_query_uncertain", "hedged_language"];
+    const ctx = (plugin as any).getContext();
+    expect(ctx).toContain("User query contains uncertainty signals");
+    expect(ctx).toContain("You hedged your last response");
+  });
+});
+
+// ── Improvement A: Graduated saturation warning ───────────────────────────────
+
+describe("getContext — approaching saturation warning", () => {
+  test("no approaching-saturation line when count is below warning threshold", () => {
+    // threshold=8, warningThreshold=ceil(8*0.6)=5; count=4 → below
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).currentTurn.memory_access_count = 4;
+    const ctx = (plugin as any).getContext();
+    expect(ctx).not.toContain("APPROACHING SATURATION");
+  });
+
+  test("emits approaching-saturation line when count >= warningThreshold and not yet saturated", () => {
+    // threshold=8, warningThreshold=5; count=5 → at threshold, not saturated
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).currentTurn.memory_access_count = 5;
+    const ctx = (plugin as any).getContext();
+    expect(ctx).toContain("APPROACHING SATURATION");
+    expect(ctx).toContain("5/8");
+  });
+
+  test("does NOT emit approaching-saturation when already saturated; DIRECTIVE appears instead", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).currentTurn.memory_access_count = 9;
+    (plugin as any).currentTurn.uncertainty_markers = ["tool_saturation"];
+    const ctx = (plugin as any).getContext();
+    expect(ctx).not.toContain("APPROACHING SATURATION");
+    expect(ctx).toContain("DIRECTIVE:");
+  });
+
+  test("approaching-saturation line includes correct count/threshold values", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).currentTurn.memory_access_count = 6;
+    const ctx = (plugin as any).getContext();
+    expect(ctx).toContain("6/8");
+  });
+});

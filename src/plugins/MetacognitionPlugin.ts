@@ -27,6 +27,9 @@ const TURN_HISTORY_LIMIT = 20;
 const CORRECTION_HISTORY_LIMIT = 50;
 const PATTERN_WINDOW = 5;
 const PATTERN_THRESHOLD = 3;
+const SATURATION_WARNING_RATIO = 0.6;
+const USER_UNCERTAINTY_PATTERN =
+  /\b(i(?:'m| am) not sure|i don't know|help me figure|i was wondering|i(?:'m| am) unclear|i(?:'m| am) confused|i(?:'m| am) unsure)\b/i;
 
 interface CorrectionRecord {
   id: string;
@@ -199,7 +202,18 @@ export class MetacognitionPlugin implements AgentPlugin {
       `Uncertainty: ${markers}`,
     ];
 
-    if (t.uncertainty_markers.includes("tool_saturation")) {
+    const warningThreshold = Math.ceil(this.saturationThreshold * SATURATION_WARNING_RATIO);
+    const isSaturated = t.uncertainty_markers.includes("tool_saturation");
+    const isApproaching = !isSaturated && t.memory_access_count >= warningThreshold;
+
+    if (isApproaching) {
+      parts.push(
+        `APPROACHING SATURATION: ${t.memory_access_count}/${this.saturationThreshold} memory accesses used. ` +
+        `Synthesize from retrieved context where possible rather than issuing additional memory searches.`,
+      );
+    }
+
+    if (isSaturated) {
       const prevTurnAlsoSaturated =
         this.turnHistory
           .at(-1)
@@ -217,6 +231,11 @@ export class MetacognitionPlugin implements AgentPlugin {
     if (t.uncertainty_markers.includes("hedged_language")) {
       parts.push(
         "DIRECTIVE: You hedged your last response. Retrieve a specific memory that resolves the uncertainty, or explicitly state the information is not in memory.",
+      );
+    }
+    if (t.uncertainty_markers.includes("user_query_uncertain")) {
+      parts.push(
+        "DIRECTIVE: User query contains uncertainty signals. Search memory before responding rather than hedging.",
       );
     }
 
@@ -325,6 +344,9 @@ export class MetacognitionPlugin implements AgentPlugin {
         );
       } catch {
         // non-critical
+      }
+      if (USER_UNCERTAINTY_PATTERN.test(content)) {
+        this.currentTurn.uncertainty_markers.push("user_query_uncertain");
       }
     } else if (role === "assistant") {
       const hedgePattern =
@@ -620,6 +642,14 @@ export class MetacognitionPlugin implements AgentPlugin {
     ) {
       suggestions.push(
         "You searched memory extensively but still hedged. The relevant memory may not exist yet — consider saving what you learn.",
+      );
+    }
+    if (
+      t.uncertainty_markers.includes("user_query_uncertain") &&
+      t.memory_access_count === 0
+    ) {
+      suggestions.push(
+        "User expressed uncertainty but you didn't search memory. A targeted retrieval might have produced a more grounded response.",
       );
     }
     if (suggestions.length === 0) {
