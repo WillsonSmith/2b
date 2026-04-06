@@ -73,7 +73,7 @@ describe("search_memory", () => {
     const plugin = makePlugin();
     await plugin.executeTool("save_memory", { content: "short fact", type: "factual" });
     const result = await plugin.executeTool("search_memory", { query: "fact" });
-    expect(result).toMatch(/^\[[\da-f]{8}\] \(score: [\d.]+\) short fact/);
+    expect(result).toMatch(/^\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\] \(score: [\d.]+\) short fact/);
   });
 
   test("type filter limits results to matching type", async () => {
@@ -103,7 +103,7 @@ describe("save_memory", () => {
   test("returns success message with id and type", async () => {
     const plugin = makePlugin();
     const result = await plugin.executeTool("save_memory", { content: "test fact", type: "factual" });
-    expect(result).toMatch(/Memory saved \(type: factual, id: [\da-f]{8}\)\./);
+    expect(result).toMatch(/Memory saved \(type: factual, id: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\)\./);
   });
 
   test("auto-links to up to 3 similar memories after saving", async () => {
@@ -113,7 +113,7 @@ describe("save_memory", () => {
     const ids: string[] = [];
     for (let i = 0; i < 4; i++) {
       const r = (await plugin.executeTool("save_memory", { content: `existing ${i}`, type: "factual" })) as string;
-      const match = r.match(/id: ([\da-f]{8})/);
+      const match = r.match(/id: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
       if (match) ids.push(match[1]);
     }
     // Save a new one — should link to at most 3 of the existing ones
@@ -223,21 +223,12 @@ describe("edit_memory", () => {
       content: "original",
       type: "factual",
     })) as string;
-    const match = saveResult.match(/id: ([\da-f]{8})/);
+    const match = saveResult.match(/id: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
     expect(match).not.toBeNull();
-    // Get the full ID via search
-    const searchResult = (await plugin.executeTool("search_memory", { query: "original" })) as string;
-    const idMatch = searchResult.match(/\[([\da-f]{8})\]/);
-    expect(idMatch).not.toBeNull();
-    const shortId = idMatch![1];
+    const fullId = match![1];
 
-    // Get full ID from DB via query
-    const memories = plugin.db.queryMemories({});
-    const mem = memories.find((m) => m.id.startsWith(shortId));
-    expect(mem).toBeDefined();
-
-    await plugin.executeTool("edit_memory", { id: mem!.id, content: "updated" });
-    const updated = await plugin.db.getMemoryById(mem!.id);
+    await plugin.executeTool("edit_memory", { id: fullId, content: "updated" });
+    const updated = await plugin.db.getMemoryById(fullId);
     expect(updated?.text).toBe("updated");
   });
 
