@@ -12,7 +12,7 @@ import { OllamaProvider } from "./OllamaProvider.ts";
  *
  * Ollama env vars:
  *   OLLAMA_URL      HTTP endpoint  (default: http://127.0.0.1:11434)
- *   OLLAMA_NUM_CTX  Context window in tokens (default: 8192)
+ *   OLLAMA_NUM_CTX  Context window in tokens (omitted by default — Ollama scales automatically)
  */
 export function createProvider(model: string): LLMProvider {
   const backend = (process.env.PROVIDER ?? "lmstudio").toLowerCase();
@@ -25,7 +25,7 @@ export function createProvider(model: string): LLMProvider {
         toolCallingStrategy: "native",
         numCtx: process.env.OLLAMA_NUM_CTX
           ? Number(process.env.OLLAMA_NUM_CTX)
-          : 8192,
+          : undefined,
       },
     );
   }
