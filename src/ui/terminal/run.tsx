@@ -11,7 +11,7 @@
  */
 import { render } from "ink";
 import { CortexAgent } from "../../core/CortexAgent.ts";
-import { LMStudioProvider } from "../../providers/llm/LMStudioProvider.ts";
+import { createProvider } from "../../providers/llm/createProvider.ts";
 import { MemoryPlugin } from "../../plugins/MemoryPlugin.ts";
 import { SubAgentPlugin } from "../../plugins/SubAgentPlugin.ts";
 import { InkPermissionManager } from "./InkPermissionManager.ts";
@@ -31,8 +31,6 @@ const args = process.argv.slice(2);
 const modelFlag = args.indexOf("--model");
 const modelArg = modelFlag !== -1 ? args[modelFlag + 1] : undefined;
 const model = modelArg ?? process.env["MODEL"] ?? "qwen/qwen3.5-35b-a3b";
-
-const lmStudioUrl = process.env["LM_STUDIO_URL"] ?? "ws://127.0.0.1:1234";
 
 // ── Inline tools ──────────────────────────────────────────────────────────────
 
@@ -68,9 +66,7 @@ const minimalToolsPlugin: AgentPlugin = {
 
 // ── Build agent (no CLIInputSource — Ink owns stdin) ─────────────────────────
 
-const llm = new LMStudioProvider(model, lmStudioUrl, {
-  toolCallingStrategy: "native",
-});
+const llm = createProvider(model);
 
 const permissionManager = new InkPermissionManager();
 
@@ -119,7 +115,7 @@ agent.registerPlugin(
     toolName: "explore_codebase",
     description:
       "Use when the user asks how this agent works, wants to trace a data flow, understand a plugin, or look up implementation details in this agent's own source code. Scoped only to this agent's source — not for exploring other projects or general coding tasks.",
-    agent: createCodeReaderAgent({ sourceRoot }),
+    agent: createCodeReaderAgent(llm, { sourceRoot }),
     // inactivityTimeoutMs: 30_000,
     // absoluteTimeoutMs: 300_000,
   }),
