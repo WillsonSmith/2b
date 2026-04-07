@@ -13,9 +13,8 @@ export interface OllamaProviderOptions {
   embeddingModel?: string;
   /**
    * Context window size in tokens passed as `num_ctx` to every request.
-   * Unlike LMStudio (which exposes this in the UI), Ollama defaults to 2048 for
-   * most models unless overridden here or in the model's Modelfile. Set this
-   * explicitly to avoid silent conversation truncation.
+   * When omitted, Ollama automatically scales the context window based on
+   * available system resources. Set explicitly to cap or guarantee a specific size.
    */
   numCtx?: number;
   /**

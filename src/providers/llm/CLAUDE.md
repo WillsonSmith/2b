@@ -90,7 +90,7 @@ new OllamaProvider(
   options?: {
     toolCallingStrategy?: "native" | "structured_output";  // default: "native"
     embeddingModel?: string;  // default: "nomic-embed-text"
-    numCtx?: number;          // context window tokens — no UI equivalent, MUST be set explicitly
+    numCtx?: number;          // context window tokens — omit to let Ollama scale automatically
   }
 )
 ```
@@ -106,7 +106,7 @@ new OllamaProvider(
 - Content inside `<think>...</think>` → `reasoningText`, streamed with `isReasoning: true`
 - All other content → `nonReasoningContent`, streamed with `isReasoning: false`
 
-**`numCtx` — critical difference from LMStudio:** LMStudio exposes context length in its UI; Ollama defaults to 2048 tokens for most models unless overridden. Always set `numCtx` explicitly to avoid silent conversation truncation.
+**`numCtx` — optional:** Ollama automatically scales context length based on available system resources. Set `numCtx` only if you need to cap or guarantee a specific size.
 
 **Native tool-call loop:** `actWithTools()` runs up to 10 rounds. Each round sends the full message history with tools; if the response has `tool_calls`, executes them and appends `{ role: "tool", content }` messages before the next round. The final round with no `tool_calls` is returned as the response.
 
