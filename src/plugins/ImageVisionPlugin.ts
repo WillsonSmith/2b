@@ -1,6 +1,7 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { resolve, relative, isAbsolute, extname } from "node:path";
 import { logger } from "../logger.ts";
+import { defaultVisionBaseUrl, defaultVisionModel } from "../providers/llm/createProvider.ts";
 
 const MIME_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
@@ -62,8 +63,8 @@ export class ImageVisionPlugin implements AgentPlugin {
   private baseUrl: string;
 
   constructor(
-    visionModel = process.env.VISION_MODEL ?? "google/gemma-3-4b",
-    baseUrl = "http://127.0.0.1:1234",
+    visionModel = process.env.VISION_MODEL ?? defaultVisionModel(),
+    baseUrl = process.env.VISION_BASE_URL ?? defaultVisionBaseUrl(),
   ) {
     this.visionModel = visionModel;
     this.baseUrl = baseUrl;
