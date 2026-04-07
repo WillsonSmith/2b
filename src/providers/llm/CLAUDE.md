@@ -1,14 +1,15 @@
 # LLM Providers
 
-Language model backend. One interface, one concrete implementation, one helper.
+Language model backend. One interface, two concrete implementations, one helper.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `LLMProvider.ts` | Interface contract for all LLM backends |
-| `LMStudioProvider.ts` | LMStudio SDK integration — the only current implementation |
-| `StructuredToolCaller.ts` | Manual JSON-schema tool-call loop for models without native tool support |
+| `LMStudioProvider.ts` | LMStudio SDK integration via WebSocket |
+| `OllamaProvider.ts` | Ollama HTTP REST integration |
+| `StructuredToolCaller.ts` | Manual JSON-schema tool-call loop for models without native tool support (LMStudio only) |
 
 ## LLMProvider Interface
 
@@ -77,8 +78,41 @@ Used automatically when `toolCallingStrategy === "structured_output"`. Not calle
 
 **`ToolCallLimitError`** is a named error subclass — catch it specifically if you need to distinguish the limit case.
 
+## OllamaProvider
+
+Connects to a local Ollama server via HTTP REST (`http://127.0.0.1:11434` by default).
+
+**Constructor:**
+```typescript
+new OllamaProvider(
+  model?: string,       // default: "llama3.2"
+  endpoint?: string,    // default: "http://127.0.0.1:11434"
+  options?: {
+    toolCallingStrategy?: "native" | "structured_output";  // default: "native"
+    embeddingModel?: string;  // default: "nomic-embed-text"
+    numCtx?: number;          // context window tokens — no UI equivalent, MUST be set explicitly
+  }
+)
+```
+
+**Tool calling strategies:**
+
+| Strategy | How it works | When to use |
+|---|---|---|
+| `"native"` | Sends tools in OpenAI format; drives a manual agentic loop checking `tool_calls` on each response | Models with Ollama tool support (llama3, mistral, etc.) |
+| `"structured_output"` | Uses `buildToolSystemPromptAddition` + Ollama `format` (JSON schema) to constrain output | Any model that doesn't support native tools |
+
+**Reasoning extraction:** Ollama has no SDK-level reasoning markers. `parseStreamChunk()` manually detects `<think>...</think>` tags across streaming chunk boundaries:
+- Content inside `<think>...</think>` → `reasoningText`, streamed with `isReasoning: true`
+- All other content → `nonReasoningContent`, streamed with `isReasoning: false`
+
+**`numCtx` — critical difference from LMStudio:** LMStudio exposes context length in its UI; Ollama defaults to 2048 tokens for most models unless overridden. Always set `numCtx` explicitly to avoid silent conversation truncation.
+
+**Native tool-call loop:** `actWithTools()` runs up to 10 rounds. Each round sends the full message history with tools; if the response has `tool_calls`, executes them and appends `{ role: "tool", content }` messages before the next round. The final round with no `tool_calls` is returned as the response.
+
 ## Gotchas
 
-- `getEmbedding()` uses a separate embedding model, not the chat model. The default is `nomic-embed-text-v1.5` — it must be loaded in LMStudio alongside the chat model.
-- In `"native"` mode, tools without an `implementation` on `ToolDefinition` will throw at the LMStudio level. `BaseAgent` and `HeadlessAgent` wrap every tool with an implementation before passing to `chat()`.
-- `"structured_output"` does not stream tokens (`onToken` is not called). The response is only available after all tool rounds complete.
+- `getEmbedding()` uses a separate embedding model, not the chat model. LMStudio default is `nomic-embed-text-v1.5` (must be loaded in LMStudio). Ollama default is `nomic-embed-text` (must be pulled separately with `ollama pull nomic-embed-text`).
+- In LMStudio `"native"` mode, tools without an `implementation` on `ToolDefinition` will throw at the LMStudio level. `BaseAgent` and `HeadlessAgent` wrap every tool with an implementation before passing to `chat()`.
+- `"structured_output"` does not stream tokens (`onToken` is not called for LMStudio; same for Ollama). The response is only available after all tool rounds complete.
+- Ollama `"structured_output"` uses Ollama's `format` parameter (JSON schema), not the LMStudio SDK's constrained decoding. `StructuredToolCaller` is LMStudio-only; `OllamaProvider` has its own inline implementation.
