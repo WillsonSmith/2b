@@ -1,5 +1,5 @@
 import { CortexAgent } from "../core/CortexAgent.ts";
-import { LMStudioProvider } from "../providers/llm/LMStudioProvider.ts";
+import { createProvider, defaultModel } from "../providers/llm/createProvider.ts";
 import { MemoryPlugin } from "../plugins/MemoryPlugin.ts";
 import { SubAgentPlugin } from "../plugins/SubAgentPlugin.ts";
 import { CLIInputSource } from "./input-sources/CLIInputSource.ts";
@@ -63,22 +63,10 @@ export interface CreateAgentResult {
 
 export function createAgent(
   model?: string,
-  lmStudioUrl?: string,
 ): CreateAgentResult {
-  const resolvedModel = model ?? process.env.MODEL ?? "qwen/qwen3.5-35b-a3b";
+  const resolvedModel = model ?? process.env.MODEL ?? defaultModel();
   if (!resolvedModel) throw new Error("MODEL env var is set but empty");
-  const resolvedLmStudioUrl =
-    lmStudioUrl ?? process.env.LM_STUDIO_URL ?? "ws://127.0.0.1:1234";
-  try {
-    new URL(resolvedLmStudioUrl);
-  } catch {
-    throw new Error(
-      `LM_STUDIO_URL is not a valid URL: "${resolvedLmStudioUrl}"`,
-    );
-  }
-  const llm = new LMStudioProvider(resolvedModel, resolvedLmStudioUrl, {
-    toolCallingStrategy: "native",
-  });
+  const llm = createProvider(resolvedModel);
 
   const sessionCache = new SessionCache();
   const permissionManager = new InteractivePermissionManager({
@@ -126,7 +114,7 @@ export function createAgent(
       toolName: "explore_codebase",
       description:
         "Ask questions about the agent's own source code and get synthesized explanations. Use this to understand how the agent works, trace data flow, or look up implementation details. Example: 'How does tool_call flow through the system?' or 'What does MetacognitionPlugin track?'",
-      agent: createCodeReaderAgent({ sourceRoot }),
+      agent: createCodeReaderAgent(llm, { sourceRoot }),
       inactivityTimeoutMs: 30_000,
       absoluteTimeoutMs: 60_000,
     }),
