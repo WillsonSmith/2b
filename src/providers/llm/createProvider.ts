@@ -1,6 +1,6 @@
-import type { LLMProvider } from "./LLMProvider.ts";
 import { LMStudioProvider } from "./LMStudioProvider.ts";
 import { OllamaProvider } from "./OllamaProvider.ts";
+import { ModelCapabilityProvider } from "./ModelCapabilityProvider.ts";
 
 /**
  * Constructs an LLMProvider from environment variables.
@@ -14,27 +14,33 @@ import { OllamaProvider } from "./OllamaProvider.ts";
  *   OLLAMA_URL      HTTP endpoint  (default: http://127.0.0.1:11434)
  *   OLLAMA_NUM_CTX  Context window in tokens (omitted by default — Ollama scales automatically)
  */
-export function createProvider(model: string): LLMProvider {
+export function createProvider(model: string): ModelCapabilityProvider {
   const backend = (process.env.PROVIDER ?? "lmstudio").toLowerCase();
 
   if (backend === "ollama") {
-    return new OllamaProvider(
+    return new ModelCapabilityProvider(
+      new OllamaProvider(
+        model,
+        process.env.OLLAMA_URL ?? "http://127.0.0.1:11434",
+        {
+          toolCallingStrategy: "native",
+          numCtx: process.env.OLLAMA_NUM_CTX
+            ? Number(process.env.OLLAMA_NUM_CTX)
+            : undefined,
+          think: true,
+        },
+      ),
       model,
-      process.env.OLLAMA_URL ?? "http://127.0.0.1:11434",
-      {
-        toolCallingStrategy: "native",
-        numCtx: process.env.OLLAMA_NUM_CTX
-          ? Number(process.env.OLLAMA_NUM_CTX)
-          : undefined,
-        think: true,
-      },
     );
   }
 
-  return new LMStudioProvider(
+  return new ModelCapabilityProvider(
+    new LMStudioProvider(
+      model,
+      process.env.LM_STUDIO_URL ?? "ws://127.0.0.1:1234",
+      { toolCallingStrategy: "native" },
+    ),
     model,
-    process.env.LM_STUDIO_URL ?? "ws://127.0.0.1:1234",
-    { toolCallingStrategy: "native" },
   );
 }
 
