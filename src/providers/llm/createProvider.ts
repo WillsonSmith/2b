@@ -13,21 +13,50 @@ import { ModelCapabilityProvider } from "./ModelCapabilityProvider.ts";
  * Ollama env vars:
  *   OLLAMA_URL      HTTP endpoint  (default: http://127.0.0.1:11434)
  *   OLLAMA_NUM_CTX  Context window in tokens (omitted by default — Ollama scales automatically)
+ *   OLLAMA_THINK    Enable reasoning (default: true). Set to "false" to disable, or
+ *                   "high"/"medium"/"low" for models that accept a budget level.
  */
 export function createProvider(model: string): ModelCapabilityProvider {
   const backend = (process.env.PROVIDER ?? "lmstudio").toLowerCase();
 
   if (backend === "ollama") {
+    const rawNumCtx = process.env.OLLAMA_NUM_CTX;
+    let numCtx: number | undefined;
+    if (rawNumCtx !== undefined) {
+      numCtx = parseInt(rawNumCtx, 10);
+      if (isNaN(numCtx)) {
+        throw new Error(
+          `OLLAMA_NUM_CTX is not a valid integer: "${rawNumCtx}"`,
+        );
+      }
+    }
+
+    const rawThink = process.env.OLLAMA_THINK;
+    let think: boolean | "high" | "medium" | "low" = true;
+    if (rawThink !== undefined) {
+      if (rawThink === "false") {
+        think = false;
+      } else if (
+        rawThink === "high" ||
+        rawThink === "medium" ||
+        rawThink === "low"
+      ) {
+        think = rawThink;
+      } else if (rawThink !== "true") {
+        throw new Error(
+          `OLLAMA_THINK must be "true", "false", "high", "medium", or "low" — got "${rawThink}"`,
+        );
+      }
+    }
+
     return new ModelCapabilityProvider(
       new OllamaProvider(
         model,
         process.env.OLLAMA_URL ?? "http://127.0.0.1:11434",
         {
           toolCallingStrategy: "native",
-          numCtx: process.env.OLLAMA_NUM_CTX
-            ? Number(process.env.OLLAMA_NUM_CTX)
-            : undefined,
-          think: true,
+          numCtx,
+          think,
         },
       ),
       model,
