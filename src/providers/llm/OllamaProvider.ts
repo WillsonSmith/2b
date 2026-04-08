@@ -51,7 +51,7 @@ export class OllamaProvider implements LLMProvider {
   private think: boolean | "high" | "medium" | "low";
 
   constructor(
-    private model: string = "llama3.2",
+    private model: string = "gemma3:4b",
     endpoint: string = "http://127.0.0.1:11434",
     options: OllamaProviderOptions = {},
   ) {

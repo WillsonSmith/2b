@@ -85,7 +85,7 @@ Connects to a local Ollama server via HTTP REST (`http://127.0.0.1:11434` by def
 **Constructor:**
 ```typescript
 new OllamaProvider(
-  model?: string,       // default: "llama3.2"
+  model?: string,       // default: "gemma3:4b"
   endpoint?: string,    // default: "http://127.0.0.1:11434"
   options?: {
     toolCallingStrategy?: "native" | "structured_output";  // default: "native"
