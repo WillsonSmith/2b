@@ -373,6 +373,8 @@ export class OllamaProvider implements LLMProvider {
       model: this.embeddingModel,
       input,
     });
-    return response.embeddings[0];
+    const embedding = response.embeddings[0];
+    if (!embedding) throw new Error("Ollama returned no embedding vector");
+    return embedding;
   }
 }
