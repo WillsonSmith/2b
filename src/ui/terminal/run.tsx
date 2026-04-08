@@ -71,7 +71,7 @@ const llm = createProvider(model);
 const permissionManager = new InkPermissionManager();
 
 const systemPrompt =
-  "You are a helpful assistant with access to tools. Think carefully before responding.\n\nWhen delegating to a sub-agent, always include in the task field all relevant context the sub-agent needs: usernames, URLs, IDs, dates, and any specific facts from memory. Sub-agents have no access to your memory or conversation history.";
+  "<|think|>You are a helpful assistant with access to tools. Think carefully before responding.\n\nWhen delegating to a sub-agent, always include in the task field all relevant context the sub-agent needs: usernames, URLs, IDs, dates, and any specific facts from memory. Sub-agents have no access to your memory or conversation history.";
 
 const agent = new CortexAgent(llm, {
   name: "2b",

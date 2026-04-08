@@ -1,4 +1,8 @@
-import { Ollama, type Message as OllamaMessage, type Tool as OllamaTool } from "ollama";
+import {
+  Ollama,
+  type Message as OllamaMessage,
+  type Tool as OllamaTool,
+} from "ollama";
 import type { LLMProvider, ChatResponse } from "./LLMProvider.ts";
 import type { ToolDefinition } from "../../core/Plugin.ts";
 import type { Message } from "../../core/types.ts";
@@ -76,7 +80,10 @@ export class OllamaProvider implements LLMProvider {
 
       let effectiveSystemPrompt = systemPrompt;
       if (hasTools && this.toolCallingStrategy === "structured_output") {
-        effectiveSystemPrompt = [systemPrompt, buildToolSystemPromptAddition(tools)]
+        effectiveSystemPrompt = [
+          systemPrompt,
+          buildToolSystemPromptAddition(tools),
+        ]
           .filter(Boolean)
           .join("\n\n");
       }
@@ -97,12 +104,24 @@ export class OllamaProvider implements LLMProvider {
             parameters: t.parameters as OllamaTool["function"]["parameters"],
           },
         }));
-        return await this.actWithTools(ollamaMessages, ollamaTools, tools, onToken);
+        return await this.actWithTools(
+          ollamaMessages,
+          ollamaTools,
+          tools,
+          onToken,
+        );
       }
 
       if (hasTools && this.toolCallingStrategy === "structured_output") {
-        const result = await this.callWithStructuredTools(ollamaMessages, tools);
-        return { response: result, nonReasoningContent: result, reasoningText: "" };
+        const result = await this.callWithStructuredTools(
+          ollamaMessages,
+          tools,
+        );
+        return {
+          response: result,
+          nonReasoningContent: result,
+          reasoningText: "",
+        };
       }
 
       return await this.respond(ollamaMessages, onToken);
@@ -129,7 +148,9 @@ export class OllamaProvider implements LLMProvider {
       messages,
       stream: true,
       think: this.think,
-      ...(this.numCtx !== undefined ? { options: { num_ctx: this.numCtx } } : {}),
+      ...(this.numCtx !== undefined
+        ? { options: { num_ctx: this.numCtx } }
+        : {}),
     });
 
     for await (const chunk of stream) {
@@ -169,7 +190,9 @@ export class OllamaProvider implements LLMProvider {
         tools: ollamaTools,
         stream: false,
         think: this.think,
-        ...(this.numCtx !== undefined ? { options: { num_ctx: this.numCtx } } : {}),
+        ...(this.numCtx !== undefined
+          ? { options: { num_ctx: this.numCtx } }
+          : {}),
       });
 
       const assistantMsg = response.message;
@@ -180,8 +203,15 @@ export class OllamaProvider implements LLMProvider {
         const reasoning = assistantMsg.thinking ?? "";
         if (onToken && reasoning) onToken(reasoning, true);
         if (onToken && content) onToken(content, false);
-        logger.debug("Ollama", `actWithTools() finished after ${round + 1} round(s)`);
-        return { response: content, nonReasoningContent: content, reasoningText: reasoning };
+        logger.debug(
+          "Ollama",
+          `actWithTools() finished after ${round + 1} round(s)`,
+        );
+        return {
+          response: content,
+          nonReasoningContent: content,
+          reasoningText: reasoning,
+        };
       }
 
       logger.info(
@@ -198,18 +228,34 @@ export class OllamaProvider implements LLMProvider {
           logger.warn("Ollama", result);
         } else {
           try {
-            logger.info("Ollama", `Tool called by model: ${tc.function.name}`, tc.function.arguments);
+            logger.info(
+              "Ollama",
+              `Tool called by model: ${tc.function.name}`,
+              tc.function.arguments,
+            );
             const raw = await tool.implementation(tc.function.arguments);
-            result = typeof raw === "string" ? raw : JSON.stringify(raw ?? null);
-            logger.debug("Ollama", `Tool result: ${tc.function.name}`, result.slice(0, 200));
+            result =
+              typeof raw === "string" ? raw : JSON.stringify(raw ?? null);
+            logger.debug(
+              "Ollama",
+              `Tool result: ${tc.function.name}`,
+              result.slice(0, 200),
+            );
           } catch (e) {
             const errMsg = e instanceof Error ? e.message : String(e);
-            logger.error("Ollama", `Tool threw: ${tc.function.name}: ${errMsg}`);
+            logger.error(
+              "Ollama",
+              `Tool threw: ${tc.function.name}: ${errMsg}`,
+            );
             result = JSON.stringify({ error: errMsg });
           }
         }
 
-        history.push({ role: "tool", tool_name: tc.function.name, content: result });
+        history.push({
+          role: "tool",
+          tool_name: tc.function.name,
+          content: result,
+        });
       }
     }
 
@@ -237,7 +283,9 @@ export class OllamaProvider implements LLMProvider {
         messages: history,
         format: STRUCTURED_RESPONSE_SCHEMA,
         stream: false,
-        ...(this.numCtx !== undefined ? { options: { num_ctx: this.numCtx } } : {}),
+        ...(this.numCtx !== undefined
+          ? { options: { num_ctx: this.numCtx } }
+          : {}),
       });
 
       const content = response.message.content;
@@ -260,7 +308,10 @@ export class OllamaProvider implements LLMProvider {
 
       if (parsed.type === "tool_call") {
         if (!parsed.tool) {
-          history.push({ role: "user", content: 'Tool error: response was missing the "tool" field.' });
+          history.push({
+            role: "user",
+            content: 'Tool error: response was missing the "tool" field.',
+          });
           continue;
         }
 
@@ -283,7 +334,10 @@ export class OllamaProvider implements LLMProvider {
         }
 
         history.push({ role: "assistant", content });
-        history.push({ role: "user", content: `Tool result for ${parsed.tool}: ${result}` });
+        history.push({
+          role: "user",
+          content: `Tool result for ${parsed.tool}: ${result}`,
+        });
       } else {
         history.push({
           role: "user",
@@ -292,7 +346,9 @@ export class OllamaProvider implements LLMProvider {
       }
     }
 
-    throw new Error(`Ollama structured tool-call loop reached the maximum of ${MAX_ITERATIONS} iterations.`);
+    throw new Error(
+      `Ollama structured tool-call loop reached the maximum of ${MAX_ITERATIONS} iterations.`,
+    );
   }
 
   public getModel(): string {

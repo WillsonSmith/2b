@@ -26,6 +26,7 @@ export function createProvider(model: string): LLMProvider {
         numCtx: process.env.OLLAMA_NUM_CTX
           ? Number(process.env.OLLAMA_NUM_CTX)
           : undefined,
+        think: true,
       },
     );
   }
