@@ -1,5 +1,5 @@
 import { CortexAgent } from "../core/CortexAgent.ts";
-import { createProvider } from "../providers/llm/createProvider.ts";
+import { createProvider, defaultModel } from "../providers/llm/createProvider.ts";
 import { MemoryPlugin } from "../plugins/MemoryPlugin.ts";
 import { SubAgentPlugin } from "../plugins/SubAgentPlugin.ts";
 import { CLIInputSource } from "./input-sources/CLIInputSource.ts";
@@ -64,7 +64,7 @@ export interface CreateAgentResult {
 export function createAgent(
   model?: string,
 ): CreateAgentResult {
-  const resolvedModel = model ?? process.env.MODEL ?? "qwen/qwen3.5-35b-a3b";
+  const resolvedModel = model ?? process.env.MODEL ?? defaultModel();
   if (!resolvedModel) throw new Error("MODEL env var is set but empty");
   const llm = createProvider(resolvedModel);
 

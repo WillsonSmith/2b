@@ -16,7 +16,7 @@ mock.module("./LMStudioProvider.ts", () => ({ LMStudioProvider: MockLMStudioProv
 mock.module("./OllamaProvider.ts", () => ({ OllamaProvider: MockOllamaProvider }));
 mock.module("./ModelCapabilityProvider.ts", () => ({ ModelCapabilityProvider: MockModelCapabilityProvider }));
 
-const { createProvider } = await import("./createProvider.ts");
+const { createProvider, defaultModel } = await import("./createProvider.ts");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -191,5 +191,27 @@ describe("Ollama backend", () => {
     expect(() => createProvider("test-model")).toThrow(
       'OLLAMA_THINK must be "true", "false", "high", "medium", or "low" — got "maybe"',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// defaultModel()
+// ---------------------------------------------------------------------------
+
+describe("defaultModel()", () => {
+  afterEach(() => clearEnv("PROVIDER"));
+
+  test("returns lmstudio model when PROVIDER is unset", () => {
+    expect(defaultModel()).toBe("qwen/qwen3.5-35b-a3b");
+  });
+
+  test("returns lmstudio model when PROVIDER=lmstudio", () => {
+    process.env.PROVIDER = "lmstudio";
+    expect(defaultModel()).toBe("qwen/qwen3.5-35b-a3b");
+  });
+
+  test("returns ollama model when PROVIDER=ollama", () => {
+    process.env.PROVIDER = "ollama";
+    expect(defaultModel()).toBe("qwen3.5:35b");
   });
 });
