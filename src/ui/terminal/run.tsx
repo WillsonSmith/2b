@@ -11,7 +11,7 @@
  */
 import { render } from "ink";
 import { CortexAgent } from "../../core/CortexAgent.ts";
-import { createProvider } from "../../providers/llm/createProvider.ts";
+import { createProvider, defaultModel } from "../../providers/llm/createProvider.ts";
 import { MemoryPlugin } from "../../plugins/MemoryPlugin.ts";
 import { SubAgentPlugin } from "../../plugins/SubAgentPlugin.ts";
 import { InkPermissionManager } from "./InkPermissionManager.ts";
@@ -30,7 +30,7 @@ import { RSSPlugin } from "../../plugins/RSSPlugin.ts";
 const args = process.argv.slice(2);
 const modelFlag = args.indexOf("--model");
 const modelArg = modelFlag !== -1 ? args[modelFlag + 1] : undefined;
-const model = modelArg ?? process.env["MODEL"] ?? "qwen/qwen3.5-35b-a3b";
+const model = modelArg ?? process.env["MODEL"] ?? defaultModel();
 
 // ── Inline tools ──────────────────────────────────────────────────────────────
 

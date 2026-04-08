@@ -7,6 +7,9 @@ import { ModelCapabilityProvider } from "./ModelCapabilityProvider.ts";
  *
  * Set PROVIDER=ollama to use Ollama, otherwise LMStudio is used.
  *
+ * Shared env vars:
+ *   MODEL           Chat model name. Defaults are provider-specific (see defaultModel()).
+ *
  * LMStudio env vars:
  *   LM_STUDIO_URL   WebSocket endpoint (default: ws://127.0.0.1:1234)
  *
@@ -91,4 +94,13 @@ export function defaultVisionBaseUrl(): string {
 export function defaultVisionModel(): string {
   const backend = (process.env.PROVIDER ?? "lmstudio").toLowerCase();
   return backend === "ollama" ? "gemma3:4b" : "google/gemma-3-4b";
+}
+
+/**
+ * Returns the default chat model name for the current provider.
+ * Used by agent factories when MODEL env var is not set.
+ */
+export function defaultModel(): string {
+  const backend = (process.env.PROVIDER ?? "lmstudio").toLowerCase();
+  return backend === "ollama" ? "qwen3.5:35b" : "qwen/qwen3.5-35b-a3b";
 }
