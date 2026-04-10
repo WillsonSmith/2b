@@ -26,6 +26,8 @@ export class CortexSubAgent {
   private readonly agentName: string;
   private readonly timeoutMs: number;
   private toolCallHandler?: (name: string, args: Record<string, unknown>) => void;
+  private stateChangeHandler?: (state: "idle" | "thinking") => void;
+  private errorHandler?: (err: Error) => void;
   private readyPromise: Promise<void>;
 
   // Serialize ask() calls so concurrent invocations don't cross-contaminate
@@ -41,10 +43,16 @@ export class CortexSubAgent {
       memoryDbPath: ":memory:", // session-scoped; no disk files
     });
 
-    // Forward the inner agent's subagent_tool_call events to the registered handler.
-    // The inner agent emits these when its own sub-agents call tools.
-    this.agent.on("subagent_tool_call", (_agentToolName, toolName, args) => {
+    // Forward inner agent events to registered handlers so DynamicAgentPlugin
+    // can surface them as parent-level lifecycle events.
+    this.agent.on("subagent_tool_call", (_agentName, _agentToolName, toolName, args) => {
       this.toolCallHandler?.(toolName, args);
+    });
+    this.agent.on("state_change", (state) => {
+      this.stateChangeHandler?.(state);
+    });
+    this.agent.on("error", (err) => {
+      this.errorHandler?.(err);
     });
 
     // Start the agent immediately; ask() awaits this before sending input.
@@ -55,6 +63,14 @@ export class CortexSubAgent {
 
   setToolCallHandler(fn: (name: string, args: Record<string, unknown>) => void): void {
     this.toolCallHandler = fn;
+  }
+
+  setStateChangeHandler(fn: (state: "idle" | "thinking") => void): void {
+    this.stateChangeHandler = fn;
+  }
+
+  setErrorHandler(fn: (err: Error) => void): void {
+    this.errorHandler = fn;
   }
 
   async stop(): Promise<void> {
@@ -82,7 +98,6 @@ export class CortexSubAgent {
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        // Remove the listener so it doesn't fire after timeout.
         this.agent.off("speak", onSpeak);
         this.agent.off("error", onError);
         reject(new Error(`CortexSubAgent "${agentName}" timed out after ${timeoutMs}ms`));

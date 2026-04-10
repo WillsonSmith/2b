@@ -347,9 +347,22 @@ export class DynamicAgentPlugin implements AgentPlugin {
 
     if (this.parentAgent) {
       const parent = this.parentAgent;
+
       agent.setToolCallHandler((toolName, toolArgs) => {
-        parent.emit("subagent_tool_call", name, toolName, toolArgs);
+        parent.emit("subagent_tool_call", name, "call_agent", toolName, toolArgs);
       });
+
+      if (agentType === "cortex") {
+        const cortexAgent = agent as CortexSubAgent;
+        cortexAgent.setStateChangeHandler((state) => {
+          parent.emit("agent_state_change", name, state);
+        });
+        cortexAgent.setErrorHandler((err) => {
+          parent.emit("agent_error", name, err);
+        });
+      }
+
+      parent.emit("agent_spawned", name, agentType, capabilities);
     }
 
     this.registry.set(name, { agent, type: agentType, capabilities, createdAt: new Date() });

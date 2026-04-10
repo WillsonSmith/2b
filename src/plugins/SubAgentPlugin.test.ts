@@ -104,8 +104,10 @@ describe("tool call forwarding", () => {
 
     const toolCallEvents = parent.emitted.filter((e) => e.event === "subagent_tool_call");
     expect(toolCallEvents).toHaveLength(1);
-    expect(toolCallEvents[0]!.args[0]).toBe("run_task");
-    expect(toolCallEvents[0]!.args[1]).toBe("search");
+    // args: [agentName, agentToolName, toolName, toolArgs]
+    expect(toolCallEvents[0]!.args[0]).toBe("run_task"); // agentName
+    expect(toolCallEvents[0]!.args[1]).toBe("run_task"); // agentToolName
+    expect(toolCallEvents[0]!.args[2]).toBe("search");   // toolName
   });
 });
 
