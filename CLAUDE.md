@@ -3,13 +3,13 @@
 
 | Directory | CLAUDE.md |
 |-----------|-----------|
-| `src/core/` | BaseAgent, CortexAgent, HeadlessAgent, Plugin interface, PermissionManager, types |
+| `src/core/` | BaseAgent, CortexAgent, CortexSubAgent, HeadlessAgent, Plugin interface, PermissionManager, types, AgentEventMap |
 | `src/providers/llm/` | LLMProvider interface, LMStudioProvider, StructuredToolCaller |
 | `src/providers/audio/` | AudioProvider, VoiceActivityDetector, TranscriptionProvider, AudioSystem |
-| `src/agents/` | AgentFactory, orchestrator pattern, how to add agents |
-| `src/agents/sub-agents/` | Sub-agent factory pattern, domain agents |
+| `src/agents/` | AgentFactory, dynamic agent pattern, orchestrator setup |
+| `src/agents/sub-agents/` | Sub-agent factory pattern, domain agents, preset system |
 | `src/agents/input-sources/` | CLIInputSource, MicrophoneInputSource |
-| `src/plugins/` | Full plugin catalog, lifecycle, writing new plugins |
+| `src/plugins/` | Full plugin catalog (incl. DynamicAgentPlugin, InMemoryDatabasePlugin), lifecycle, writing new plugins |
 | `src/memory/` | MemoryProvider interface (legacy) |
 | `src/utils/` | deviceSelector, stream-tts |
 | `src/cli/` | memory-cmd |
