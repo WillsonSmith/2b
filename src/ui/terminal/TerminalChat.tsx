@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Box, Static, useInput, useApp } from "ink";
 import type { ChatSession } from "../ChatSession.ts";
-import type { ActiveTool, ChatMessage, AgentState } from "../types.ts";
+import type { ActiveTool, ChatMessage, AgentState, DynamicAgentRecord } from "../types.ts";
 import { MessageItem } from "./MessageItem.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 import { InputBar } from "./InputBar.tsx";
@@ -27,6 +27,7 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
 
   const [agentState, setAgentState] = useState<AgentState>("idle");
   const [activeToolCalls, setActiveToolCalls] = useState<ActiveTool[]>([]);
+  const [dynamicAgents, setDynamicAgents] = useState<DynamicAgentRecord[]>([]);
   const [input, setInput] = useState("");
   const [permissionQueue, setPermissionQueue] = useState<PendingPermission[]>([]);
 
@@ -62,16 +63,22 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
       setActiveToolCalls(tools);
     };
 
+    const onDynamicAgentsChanged = (agents: readonly DynamicAgentRecord[]) => {
+      setDynamicAgents([...agents]);
+    };
+
     session.on("message", onMessage);
     session.on("message_updated", onMessageUpdated);
     session.on("state_change", onStateChange);
     session.on("active_tools_changed", onActiveToolsChanged);
+    session.on("dynamic_agents_changed", onDynamicAgentsChanged);
 
     return () => {
       session.off("message", onMessage);
       session.off("message_updated", onMessageUpdated);
       session.off("state_change", onStateChange);
       session.off("active_tools_changed", onActiveToolsChanged);
+      session.off("dynamic_agents_changed", onDynamicAgentsChanged);
     };
   }, [session]);
 
@@ -171,7 +178,7 @@ export function TerminalChat({ session, model = "", systemPrompt = "", onModelCh
       )}
 
       {/* Status + input */}
-      <StatusBar state={agentState} activeToolCalls={activeToolCalls} model={currentModel} />
+      <StatusBar state={agentState} activeToolCalls={activeToolCalls} dynamicAgents={dynamicAgents} model={currentModel} />
       <InputBar
         value={input}
         onChange={setInput}

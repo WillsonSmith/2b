@@ -1,34 +1,36 @@
 import { useEffect, useState } from "react";
 import { Box, Text } from "ink";
-import type { ActiveTool, AgentState } from "../types.ts";
+import type { ActiveTool, AgentState, DynamicAgentRecord } from "../types.ts";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 interface StatusBarProps {
   state: AgentState;
   activeToolCalls: ActiveTool[];
+  dynamicAgents: DynamicAgentRecord[];
   model?: string;
 }
 
 function ToolLabel({ tool }: { tool: ActiveTool }) {
+  const label = tool.agentName ? `[${tool.agentName}]` : `[${tool.name}]`;
   if (tool.currentSubTool) {
     return (
       <Box gap={1}>
-        <Text color="yellow">{`[${tool.name}]`}</Text>
-        <Text color="gray">running</Text>
+        <Text color="yellow">{label}</Text>
+        <Text color="gray">→</Text>
         <Text color="cyan">{tool.currentSubTool}</Text>
       </Box>
     );
   }
   return (
     <Box gap={1}>
-      <Text color="yellow">{`[${tool.name}]`}</Text>
+      <Text color="yellow">{label}</Text>
       <Text color="gray">running</Text>
     </Box>
   );
 }
 
-export function StatusBar({ state, activeToolCalls, model }: StatusBarProps) {
+export function StatusBar({ state, activeToolCalls, dynamicAgents, model }: StatusBarProps) {
   const [spinnerFrame, setSpinnerFrame] = useState(0);
 
   useEffect(() => {
@@ -41,6 +43,8 @@ export function StatusBar({ state, activeToolCalls, model }: StatusBarProps) {
 
   const isThinking = state === "thinking";
   const spinner = SPINNER_FRAMES[spinnerFrame] ?? "⠋";
+
+  const activeAgents = dynamicAgents.filter((a) => a.state !== "idle");
 
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -55,6 +59,28 @@ export function StatusBar({ state, activeToolCalls, model }: StatusBarProps) {
         >
           {activeToolCalls.map((tool, i) => (
             <ToolLabel key={i} tool={tool} />
+          ))}
+        </Box>
+      )}
+
+      {/* Active dynamic agents panel */}
+      {activeAgents.length > 0 && (
+        <Box
+          flexDirection="column"
+          borderStyle="single"
+          borderColor="magenta"
+          paddingX={1}
+          marginBottom={1}
+        >
+          <Text color="magenta" dimColor>agents</Text>
+          {activeAgents.map((a) => (
+            <Box key={a.name} gap={1}>
+              <Text color="magenta">{`[${a.name}]`}</Text>
+              <Text color={a.state === "error" ? "red" : "gray"}>
+                {a.state === "error" ? "error" : a.state === "thinking" ? "thinking" : "idle"}
+              </Text>
+              <Text color="gray" dimColor>{a.type}</Text>
+            </Box>
           ))}
         </Box>
       )}

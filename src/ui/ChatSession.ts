@@ -1,35 +1,41 @@
 import { EventEmitter } from "node:events";
-import type { ActiveTool, AgentState, ChatMessage, ToolCallRecord } from "./types.ts";
+import type { AgentEventMap } from "../core/types.ts";
+import type {
+  ActiveTool,
+  AgentState,
+  ChatMessage,
+  ChatSessionSnapshot,
+  DynamicAgentRecord,
+  ToolCallRecord,
+} from "./types.ts";
 
 /**
  * Minimal interface satisfied by both BaseAgent and CortexAgent.
- * ChatSession is decoupled from concrete agent implementations.
+ * Derived from AgentEventMap so event signatures can't drift.
  */
-export interface AgentLike {
+export type AgentLike = {
   addDirect(text: string): void;
   interrupt(): void;
   setTokenCallback(fn: (token: string, isReasoning: boolean) => void): void;
-  on(event: "speak", listener: (response: string) => void): this;
-  on(event: "thought", listener: (text: string) => void): this;
-  on(event: "state_change", listener: (state: AgentState) => void): this;
-  on(event: "tool_call", listener: (name: string, args: Record<string, unknown>) => void): this;
-  on(event: "tool_result", listener: (name: string) => void): this;
-  on(event: "subagent_tool_call", listener: (agentToolName: string, toolName: string, args: Record<string, unknown>) => void): this;
-  on(event: "error", listener: (err: Error) => void): this;
-}
+} & {
+  on<K extends keyof AgentEventMap>(event: K, listener: (...args: AgentEventMap[K]) => void): AgentLike;
+  off<K extends keyof AgentEventMap>(event: K, listener: (...args: AgentEventMap[K]) => void): AgentLike;
+  once<K extends keyof AgentEventMap>(event: K, listener: (...args: AgentEventMap[K]) => void): AgentLike;
+};
 
 /**
  * Framework-agnostic chat session adapter.
  *
- * Wraps an agent and normalises its events into a list of ChatMessages
- * and a simple event stream. UIs (terminal, web) subscribe to this
- * instead of the agent directly.
+ * Wraps an agent and normalises its events into a list of ChatMessages,
+ * a dynamic agent registry, and a simple event stream. UIs (terminal, web)
+ * subscribe to this instead of the agent directly.
  *
  * Usage:
  *   const session = new ChatSession(agent);
  *   session.on("message", (msg) => render(msg));
  *   session.on("message_updated", (msg) => update(msg));
  *   session.on("state_change", (state) => setSpinner(state === "thinking"));
+ *   session.on("dynamic_agents_changed", (agents) => renderAgentPanel(agents));
  *   session.send("Hello!");
  */
 export class ChatSession extends EventEmitter {
@@ -37,6 +43,7 @@ export class ChatSession extends EventEmitter {
   private _state: AgentState = "idle";
   private _pendingAssistantId: string | null = null;
   private _activeTools: ActiveTool[] = [];
+  private _dynamicAgents = new Map<string, DynamicAgentRecord>();
 
   constructor(private readonly agent: AgentLike) {
     super();
@@ -51,7 +58,7 @@ export class ChatSession extends EventEmitter {
     return this._messages;
   }
 
-  /** Current agent state. */
+  /** Current orchestrator state. */
   get state(): AgentState {
     return this._state;
   }
@@ -59,6 +66,27 @@ export class ChatSession extends EventEmitter {
   /** Snapshot of tools currently executing. */
   get activeTools(): readonly ActiveTool[] {
     return this._activeTools;
+  }
+
+  /** Snapshot of all dynamically spawned agents and their current states. */
+  get dynamicAgents(): readonly DynamicAgentRecord[] {
+    return Array.from(this._dynamicAgents.values());
+  }
+
+  /**
+   * Full serialization-safe snapshot of current session state.
+   * Safe to send over WebSocket or SSE — all Dates are ISO strings.
+   */
+  getSnapshot(): ChatSessionSnapshot {
+    return {
+      messages: this._messages.map((m) => ({
+        ...m,
+        timestamp: m.timestamp.toISOString(),
+      })),
+      state: this._state,
+      activeTools: [...this._activeTools],
+      dynamicAgents: Array.from(this._dynamicAgents.values()),
+    };
   }
 
   /**
@@ -149,12 +177,13 @@ export class ChatSession extends EventEmitter {
       this.emit("active_tools_changed", [...this._activeTools]);
     });
 
-    // When a sub-agent starts one of its own tools, annotate its parent entry.
-    this.agent.on("subagent_tool_call", (agentToolName, toolName) => {
+    // When a sub-agent starts one of its own tools, annotate its parent entry
+    // with the agent name and the child tool it's running.
+    this.agent.on("subagent_tool_call", (agentName, agentToolName, toolName) => {
       const idx = this._activeTools.findIndex((t) => t.name === agentToolName);
       if (idx !== -1) {
         const updated = [...this._activeTools];
-        updated[idx] = { ...updated[idx]!, currentSubTool: toolName };
+        updated[idx] = { ...updated[idx]!, agentName, currentSubTool: toolName };
         this._activeTools = updated;
         this.emit("active_tools_changed", [...this._activeTools]);
       }
@@ -192,6 +221,36 @@ export class ChatSession extends EventEmitter {
       this.patchPending({ status: "error" });
       this._pendingAssistantId = null;
       this.emit("error", err);
+    });
+
+    // ── Dynamic agent lifecycle ───────────────────────────────────────────────
+
+    this.agent.on("agent_spawned", (agentName, agentType, capabilities) => {
+      const record: DynamicAgentRecord = {
+        name: agentName,
+        type: agentType,
+        capabilities,
+        state: "idle",
+        createdAt: new Date().toISOString(),
+      };
+      this._dynamicAgents.set(agentName, record);
+      this.emit("dynamic_agents_changed", this.dynamicAgents);
+    });
+
+    this.agent.on("agent_state_change", (agentName, state) => {
+      const record = this._dynamicAgents.get(agentName);
+      if (record) {
+        this._dynamicAgents.set(agentName, { ...record, state });
+        this.emit("dynamic_agents_changed", this.dynamicAgents);
+      }
+    });
+
+    this.agent.on("agent_error", (agentName) => {
+      const record = this._dynamicAgents.get(agentName);
+      if (record) {
+        this._dynamicAgents.set(agentName, { ...record, state: "error" });
+        this.emit("dynamic_agents_changed", this.dynamicAgents);
+      }
     });
   }
 
