@@ -18,30 +18,40 @@ This directory contains agent factory functions and input sources. The core agen
 **HeadlessAgent** (`src/core/HeadlessAgent.ts`) is a stateless, single-call agent with no tick loop or input sources. It exposes one method — `ask(task: string): Promise<string>` — and is used as the building block for sub-agents. Plugins that rely on `onMessage`, `getMessages`, or `augmentResponse` are not invoked; the agent is task-in/result-out.
 
 **Agent Factories** compose an agent with specific plugins for a use case:
-- `AgentFactory.ts` — 2b CLI chat agent; orchestrates four domain sub-agents via `SubAgentPlugin` plus `MinimalTools` (inline plain-object plugin — not a class or standalone file) and `MemoryPlugin`
+- `AgentFactory.ts` — 2b CLI chat agent; registers `DynamicAgentPlugin` (with preset agents), `FileSystemPlugin`, `ShellPlugin`, `MinimalTools`, `ScratchPlugin`, and `MemoryPlugin` directly on the orchestrator
 
-## Orchestrator + Sub-agent Pattern
+## Orchestrator + Dynamic Agent Pattern
 
-The 2b agent uses an **orchestrator with sub-agents as tools** pattern. Rather than registering all capability plugins directly, the orchestrator registers `SubAgentPlugin` instances that each wrap a `HeadlessAgent`:
+The 2b agent uses a **dynamic agent system** rather than statically-registered sub-agents. The orchestrator has direct access to core capabilities and can spawn specialized sub-agents on demand via `DynamicAgentPlugin`:
 
 ```
 User → Orchestrator (CortexAgent)
-           ├── media_agent  → HeadlessAgent [YtDlp, FFmpeg, ImageVision]
-           ├── web_agent    → HeadlessAgent [WebSearch, WebReader]
-           ├── system_agent → HeadlessAgent [Shell, FileIO, Clipboard, CodeSandbox]
-           ├── info_agent   → HeadlessAgent [TMDB, Weather, Wikipedia]
-           ├── MinimalTools (get_current_time, echo)
+           ├── FileSystemPlugin    (direct — filesystem is infrastructure)
+           ├── ShellPlugin         (direct — git/system queries)
+           ├── DynamicAgentPlugin  (create_agent, call_agent, list_agents, list_capabilities)
+           │     ├── preset: media      → HeadlessAgent [YtDlp, FFmpeg, ImageVision, Download]
+           │     ├── preset: info       → HeadlessAgent [TMDB, Weather, Wikipedia, RSS]
+           │     └── runtime agents     → HeadlessAgent or CortexSubAgent, created on demand
+           ├── explore_codebase    → SubAgentPlugin wrapping CodeReaderAgent (static — owns its own LLM)
+           ├── MinimalTools        (get_current_time, echo)
+           ├── ScratchPlugin
            └── MemoryPlugin
 ```
 
-Sub-agent tool calls are forwarded to the orchestrator's `tool_call` event via `setToolCallHandler`, so they appear in the same `[tool]` output as primary agent calls.
+Preset agents are created at plugin init time (before the first user message) and are available immediately via `call_agent`. The AI can also create new specialized agents at runtime using `create_agent` with any combination of capability plugins.
 
-Sub-agent factories live in `src/agents/sub-agents/`. Each factory takes an `LLMProvider` and returns a `HeadlessAgent` configured with a focused system prompt.
+Sub-agent tool calls are forwarded to the parent orchestrator's `subagent_tool_call` event, which carries `(agentName, agentToolName, toolName, args)` so the UI can attribute activity to the correct agent.
 
-### Adding a new sub-agent
+### Two dynamic agent types
 
-1. Create `src/agents/sub-agents/create<Name>Agent.ts` — instantiate `HeadlessAgent` with the relevant plugins and a focused system prompt
-2. Register it in `AgentFactory.ts` via `new SubAgentPlugin({ toolName, description, agent, inactivityTimeoutMs?, absoluteTimeoutMs? })`
+| Type | Class | Memory | Use case |
+|------|-------|--------|----------|
+| `"headless"` | `HeadlessAgent` | `InMemoryDatabasePlugin` KV store only | Isolated one-shot tasks |
+| `"cortex"` | `CortexSubAgent` | Full semantic memory, conversation history | Ongoing collaboration across multiple `call_agent` calls |
+
+### The static exception: explore_codebase
+
+`createCodeReaderAgent` instantiates its own `LLMProvider` with a code-specific model (`qwen2.5-coder-7b-instruct-mlx`, overridable via `CODE_READER_MODEL`). Because it owns its own model connection it cannot be replicated through the generic capability system and remains a static `SubAgentPlugin`.
 
 ### Timeout options on SubAgentPlugin
 

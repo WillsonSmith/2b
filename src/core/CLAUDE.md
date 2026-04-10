@@ -8,6 +8,7 @@ Foundation of the agent framework. Everything else is built on top of these prim
 |------|---------|
 | `BaseAgent.ts` | Event-driven orchestrator — input queues, plugin lifecycle, tool dispatch, LLM calls, tick loop |
 | `CortexAgent.ts` | Wraps `BaseAgent` with `CortexMemoryPlugin` + `ThoughtPlugin` pre-registered; preferred for all new agents |
+| `CortexSubAgent.ts` | Wraps a `CortexAgent` with a `Promise`-based `ask()` interface; enables persistent CortexAgent instances to be used as callable sub-agents by `DynamicAgentPlugin` |
 | `HeadlessAgent.ts` | Stateless single-call agent; no loop, no history — building block for sub-agents |
 | `InputSource.ts` | Abstract base class for input providers (CLI, microphone) |
 | `Plugin.ts` | `AgentPlugin` interface + `ToolDefinition` type |
@@ -36,6 +37,12 @@ Each tick drains both queues, assembles a system prompt, calls the LLM, and emit
 - `speak` — final LLM response text
 - `thought` — extracted reasoning text (from `<think>` blocks)
 - `tool_call` — `(name, args)` for every tool invocation
+- `tool_result` — `(name)` after a tool completes
+- `tool_call_blocked` — `(name, args, reason)` when a tool is vetoed
+- `subagent_tool_call` — `(agentName, agentToolName, toolName, args)` forwarded from a sub-agent; `agentName` identifies which dynamic agent is running
+- `agent_spawned` — `(agentName, agentType, capabilities)` when `DynamicAgentPlugin` creates a new agent
+- `agent_state_change` — `(agentName, state)` when a cortex sub-agent transitions thinking/idle
+- `agent_error` — `(agentName, err)` when a cortex sub-agent errors
 - `log` — structured log message
 - `interrupt` — barge-in fired
 - `error` — error from plugin or LLM
@@ -144,6 +151,27 @@ interface AgentConfig {
   permissionManager?: PermissionManager;
 }
 ```
+
+## CortexSubAgent
+
+Wraps a `CortexAgent` with a `Promise`-based `ask()` interface so it can be used as a callable sub-agent by `DynamicAgentPlugin`. Unlike `HeadlessAgent`, it preserves full CortexAgent capabilities across calls: semantic memory, conversation history, thought/behavior persistence.
+
+```typescript
+const sub = new CortexSubAgent(llm, {
+  name: "researcher",
+  cortexName: "researcher",
+  model: "...",
+  systemPrompt: "You are a research specialist...",
+}, { permissionManager });
+
+await sub.ask("Summarize neural network history");
+await sub.ask("What were the key papers you mentioned?"); // remembers prior context
+```
+
+- Uses `memoryDbPath: ":memory:"` — session-scoped SQLite, no disk files
+- `ask()` calls are serialized internally to prevent listener cross-contamination
+- Supports `setToolCallHandler`, `setStateChangeHandler`, `setErrorHandler` so `DynamicAgentPlugin` can forward inner events to the parent agent's event stream
+- Default timeout: 120s per `ask()` call
 
 ## Gotchas
 
