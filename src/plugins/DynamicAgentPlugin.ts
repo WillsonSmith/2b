@@ -52,15 +52,18 @@ const CAPABILITY_REGISTRY: Record<string, CapabilityDef> = {
     build: () => [new WebSearchPlugin(), new WebReaderPlugin()],
   },
   files: {
-    description: "Local filesystem: read, write, list, move, copy, delete, glob. Paths sandboxed to working directory.",
+    description:
+      "Local filesystem: read, write, list, move, copy, delete, glob. Paths sandboxed to working directory.",
     build: () => [new FileSystemPlugin()],
   },
   shell: {
-    description: "Read-only shell commands: git, ls, cat, grep, df, ps. No write operators.",
+    description:
+      "Read-only shell commands: git, ls, cat, grep, df, ps. No write operators.",
     build: () => [new ShellPlugin()],
   },
   wikipedia: {
-    description: "Search and read Wikipedia articles, list sections, follow links.",
+    description:
+      "Search and read Wikipedia articles, list sections, follow links.",
     build: () => [new WikipediaPlugin()],
   },
   rss: {
@@ -68,15 +71,18 @@ const CAPABILITY_REGISTRY: Record<string, CapabilityDef> = {
     build: () => [new RSSPlugin()],
   },
   weather: {
-    description: "Current weather conditions for any location via Open-Meteo. No API key required.",
+    description:
+      "Current weather conditions for any location via Open-Meteo. No API key required.",
     build: () => [new WeatherPlugin()],
   },
   tmdb: {
-    description: "Movie and TV show lookup, cast, credits, recommendations via The Movie Database. Requires TMDB_API_KEY.",
+    description:
+      "Movie and TV show lookup, cast, credits, recommendations via The Movie Database. Requires TMDB_API_KEY.",
     build: () => [new TMDBPlugin()],
   },
   download: {
-    description: "Download files from HTTPS URLs to the local downloads/ directory. Max 100 MB.",
+    description:
+      "Download files from HTTPS URLs to the local downloads/ directory. Max 100 MB.",
     build: () => [new DownloadPlugin()],
   },
   clipboard: {
@@ -84,31 +90,35 @@ const CAPABILITY_REGISTRY: Record<string, CapabilityDef> = {
     build: () => [new ClipboardPlugin()],
   },
   notes: {
-    description: "Create, list, read, and delete persistent markdown notes in the notes/ directory.",
+    description:
+      "Create, list, read, and delete persistent markdown notes in the notes/ directory.",
     build: () => [new NotesPlugin()],
   },
   scratch: {
-    description: "Session-scoped scratch pad: save and retrieve text snippets by name across turns.",
+    description:
+      "Session-scoped scratch pad: save and retrieve text snippets by name across turns.",
     build: () => [new ScratchPlugin()],
   },
   image_vision: {
-    description: "Analyze images from URLs or local file paths using a local vision model.",
-    build: (opts) => [new ImageVisionPlugin(opts.visionModel, opts.visionBaseUrl)],
+    description:
+      "Analyze images from URLs or local file paths using a local vision model.",
+    build: (opts) => [
+      new ImageVisionPlugin(opts.visionModel, opts.visionBaseUrl),
+    ],
   },
   media: {
-    description: "Download video clips (yt-dlp) and edit video files (FFmpeg): trim, convert, extract audio, resize, concatenate. Requires yt-dlp and ffmpeg in PATH.",
+    description:
+      "Download video clips (yt-dlp) and edit video files (FFmpeg): trim, convert, extract audio, resize, concatenate. Requires yt-dlp and ffmpeg in PATH.",
     build: () => [new YtDlpPlugin(), new FFmpegPlugin()],
   },
-  code_sandbox: {
-    description: "Execute Python 3.11 in an isolated container. Requires Docker or Apple Container runtime.",
-    build: () => [new CodeSandboxPlugin()],
-  },
   bun_sandbox: {
-    description: "Execute TypeScript directly in an isolated Bun container. The agent writes the code itself — no code-gen model. Requires Docker or Apple Container runtime.",
+    description:
+      "Execute TypeScript directly in an isolated Bun container. The agent writes the code itself — no code-gen model. Requires Docker or Apple Container runtime.",
     build: () => [new BunSandboxPlugin()],
   },
   source_reader: {
-    description: "Read-only access to this agent's own source code: read files, browse directories, grep for definitions.",
+    description:
+      "Read-only access to this agent's own source code: read files, browse directories, grep for definitions.",
     build: (opts) => [new SourceReaderPlugin({ sourceRoot: opts.sourceRoot })],
   },
 };
@@ -117,7 +127,9 @@ const CAPABILITY_REGISTRY: Record<string, CapabilityDef> = {
 
 interface AskableAgent {
   ask(task: string): Promise<string>;
-  setToolCallHandler(fn: (name: string, args: Record<string, unknown>) => void): void;
+  setToolCallHandler(
+    fn: (name: string, args: Record<string, unknown>) => void,
+  ): void;
 }
 
 type AgentType = "headless" | "cortex";
@@ -200,10 +212,19 @@ export class DynamicAgentPlugin implements AgentPlugin {
 
     for (const [name, preset] of Object.entries(this.presets)) {
       try {
-        this.spawnAgent(name, preset.system_prompt, "headless", preset.capabilities);
+        this.spawnAgent(
+          name,
+          preset.system_prompt,
+          "headless",
+          preset.capabilities,
+        );
         logger.info("DynamicAgent", `Preset agent "${name}" ready`);
       } catch (e) {
-        logger.error("DynamicAgent", `Failed to create preset agent "${name}":`, e);
+        logger.error(
+          "DynamicAgent",
+          `Failed to create preset agent "${name}":`,
+          e,
+        );
       }
     }
   }
@@ -268,7 +289,7 @@ export class DynamicAgentPlugin implements AgentPlugin {
               type: "array",
               items: { type: "string" },
               description:
-                'Plugin capabilities for this agent. Use list_capabilities to see options. Ignored for cortex agents (they use their built-in memory stack). Always included for headless agents: a KV store (agent_memory_set/get/delete/list).',
+                "Plugin capabilities for this agent. Use list_capabilities to see options. Ignored for cortex agents (they use their built-in memory stack). Always included for headless agents: a KV store (agent_memory_set/get/delete/list).",
             },
           },
           required: ["name", "system_prompt", "agent_type"],
@@ -296,7 +317,8 @@ export class DynamicAgentPlugin implements AgentPlugin {
       },
       {
         name: "list_agents",
-        description: "List all active agents: pre-created presets and dynamically spawned ones.",
+        description:
+          "List all active agents: pre-created presets and dynamically spawned ones.",
         parameters: {
           type: "object",
           properties: {},
@@ -306,7 +328,10 @@ export class DynamicAgentPlugin implements AgentPlugin {
     ];
   }
 
-  async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  async executeTool(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> {
     switch (name) {
       case "list_capabilities":
         return this.listCapabilities();
@@ -327,10 +352,12 @@ export class DynamicAgentPlugin implements AgentPlugin {
   }
 
   private listCapabilities(): unknown {
-    const capabilities = Object.entries(CAPABILITY_REGISTRY).map(([key, def]) => ({
-      name: key,
-      description: def.description,
-    }));
+    const capabilities = Object.entries(CAPABILITY_REGISTRY).map(
+      ([key, def]) => ({
+        name: key,
+        description: def.description,
+      }),
+    );
     return { capabilities };
   }
 
@@ -351,7 +378,9 @@ export class DynamicAgentPlugin implements AgentPlugin {
       );
     }
     if (agentType !== "headless" && agentType !== "cortex") {
-      throw new Error(`Invalid agent_type "${agentType}". Must be "headless" or "cortex".`);
+      throw new Error(
+        `Invalid agent_type "${agentType}". Must be "headless" or "cortex".`,
+      );
     }
 
     const agent =
@@ -363,7 +392,13 @@ export class DynamicAgentPlugin implements AgentPlugin {
       const parent = this.parentAgent;
 
       agent.setToolCallHandler((toolName, toolArgs) => {
-        parent.emit("subagent_tool_call", name, "call_agent", toolName, toolArgs);
+        parent.emit(
+          "subagent_tool_call",
+          name,
+          "call_agent",
+          toolName,
+          toolArgs,
+        );
       });
 
       if (agentType === "cortex") {
@@ -379,8 +414,16 @@ export class DynamicAgentPlugin implements AgentPlugin {
       parent.emit("agent_spawned", name, agentType, capabilities);
     }
 
-    this.registry.set(name, { agent, type: agentType, capabilities, createdAt: new Date() });
-    logger.info("DynamicAgent", `Spawned ${agentType} agent "${name}" caps=[${capabilities.join(", ")}]`);
+    this.registry.set(name, {
+      agent,
+      type: agentType,
+      capabilities,
+      createdAt: new Date(),
+    });
+    logger.info(
+      "DynamicAgent",
+      `Spawned ${agentType} agent "${name}" caps=[${capabilities.join(", ")}]`,
+    );
     return { created: name, type: agentType };
   }
 
@@ -397,7 +440,9 @@ export class DynamicAgentPlugin implements AgentPlugin {
       { permissionManager: this.permissionManager },
     );
     if (this.parentMemory) {
-      agent.registerPlugin(new ParentMemoryBridgePlugin(this.parentMemory, name));
+      agent.registerPlugin(
+        new ParentMemoryBridgePlugin(this.parentMemory, name),
+      );
     }
     return agent;
   }
@@ -446,12 +491,14 @@ export class DynamicAgentPlugin implements AgentPlugin {
   }
 
   private listAgents(): unknown {
-    const agents = Array.from(this.registry.entries()).map(([agentName, entry]) => ({
-      name: agentName,
-      type: entry.type,
-      capabilities: entry.capabilities,
-      createdAt: entry.createdAt.toISOString(),
-    }));
+    const agents = Array.from(this.registry.entries()).map(
+      ([agentName, entry]) => ({
+        name: agentName,
+        type: entry.type,
+        capabilities: entry.capabilities,
+        createdAt: entry.createdAt.toISOString(),
+      }),
+    );
     return { agents };
   }
 }
