@@ -23,6 +23,8 @@ import { FFmpegPlugin } from "./FFmpegPlugin.ts";
 import { CodeSandboxPlugin } from "./CodeSandboxPlugin.ts";
 import { SourceReaderPlugin } from "./SourceReaderPlugin.ts";
 import { logger } from "../logger.ts";
+import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
+import { ParentMemoryBridgePlugin } from "./ParentMemoryBridgePlugin.ts";
 
 // ── Capability registry ───────────────────────────────────────────────────────
 
@@ -143,6 +145,11 @@ interface DynamicAgentPluginOptions {
    * These headless agents are available via call_agent before the AI ever calls create_agent.
    */
   presets?: Record<string, AgentPreset>;
+  /**
+   * If provided, cortex sub-agents will receive a ParentMemoryBridgePlugin that
+   * allows them to persist facts and procedures to this parent memory store.
+   */
+  parentMemory?: CortexMemoryPlugin;
 }
 
 // ── Plugin ────────────────────────────────────────────────────────────────────
@@ -168,12 +175,14 @@ export class DynamicAgentPlugin implements AgentPlugin {
   private readonly model: string;
   private readonly pluginBuildOptions: PluginBuildOptions;
   private readonly presets: Record<string, AgentPreset>;
+  private readonly parentMemory: CortexMemoryPlugin | undefined;
 
   constructor(llm: LLMProvider, options: DynamicAgentPluginOptions = {}) {
     this.llm = llm;
     this.permissionManager = options.permissionManager;
     this.model = options.model ?? "";
     this.presets = options.presets ?? {};
+    this.parentMemory = options.parentMemory;
     this.pluginBuildOptions = {
       sourceRoot: options.sourceRoot,
       visionModel: options.visionModel,
@@ -371,7 +380,7 @@ export class DynamicAgentPlugin implements AgentPlugin {
   }
 
   private buildCortexAgent(name: string, systemPrompt: string): CortexSubAgent {
-    return new CortexSubAgent(
+    const agent = new CortexSubAgent(
       this.llm,
       {
         name,
@@ -382,6 +391,10 @@ export class DynamicAgentPlugin implements AgentPlugin {
       },
       { permissionManager: this.permissionManager },
     );
+    if (this.parentMemory) {
+      agent.registerPlugin(new ParentMemoryBridgePlugin(this.parentMemory, name));
+    }
+    return agent;
   }
 
   private buildHeadlessAgent(

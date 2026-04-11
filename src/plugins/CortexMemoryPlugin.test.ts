@@ -476,7 +476,13 @@ describe("onMessage conflict resolution", () => {
     await plugin.executeTool("save_memory", { content: "new position", type: "factual" });
     await plugin.onMessage("assistant", "revised my old position", "assistant");
 
+    // Old memory should have status='superseded', text unchanged
     const mem = await plugin.db.getMemoryById(oldId);
-    expect(mem?.text).toContain("[SUPERSEDED]");
+    expect(mem).not.toBeNull();
+    expect(mem?.text).toBe("old position");
+    const row = (plugin.db as any).db
+      .prepare("SELECT status FROM memories WHERE id = ?")
+      .get(oldId) as { status: string } | null;
+    expect(row?.status).toBe("superseded");
   });
 });
