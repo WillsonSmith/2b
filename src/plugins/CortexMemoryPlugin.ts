@@ -224,14 +224,12 @@ export class CortexMemoryPlugin implements AgentPlugin {
       }
 
       const pick = remaining[bestIndex]!;
+      remaining.splice(bestIndex, 1);
       if (pick.text.length <= budgetRemaining) {
         selected.push(pick);
         budgetRemaining -= pick.text.length;
-      } else {
-        // Text too long to fit in remaining budget — stop
-        break;
       }
-      remaining.splice(bestIndex, 1);
+      // If too large, skip it but continue — a smaller candidate may still fit
     }
 
     return selected.map(({ id, text, score }) => ({ id, text, score }));
@@ -562,14 +560,26 @@ export class CortexMemoryPlugin implements AgentPlugin {
     const id = await this.db.addMemory(content, args.type ?? "factual", args.tags ?? []);
     this.savedThisTurn.add(id);
     logger.info(this.name, `save_memory SUCCESS id=${id}`);
-    // Link to top 3 similar existing memories
+    // Supersede near-duplicate active memories (score >= 0.9) using the saved content as query
+    const nearDups = await this.db.search(content, 5, 0.9, args.type ?? "factual");
+    let supersededCount = 0;
+    const supersededIds = new Set<string>();
+    for (const s of nearDups) {
+      if (s.id !== id) {
+        await this.db.updateMemoryStatus(s.id, "superseded");
+        supersededIds.add(s.id);
+        supersededCount++;
+      }
+    }
+    if (supersededCount > 0) {
+      logger.info(this.name, `save_memory: superseded ${supersededCount} near-duplicate(s)`);
+    }
+    // Link to top 3 similar active memories (excluding superseded ones)
     const similar = await this.db.search(content, 3, 0.5);
-    logger.debug(
-      this.name,
-      `save_memory linking to ${similar.filter(s => s.id !== id).length} similar memories`,
-    );
-    for (const s of similar) {
-      if (s.id !== id) await this.db.linkMemories(id, s.id);
+    const linkable = similar.filter(s => s.id !== id && !supersededIds.has(s.id));
+    logger.debug(this.name, `save_memory linking to ${linkable.length} similar memories`);
+    for (const s of linkable) {
+      await this.db.linkMemories(id, s.id);
     }
     return `Memory saved (type: ${args.type ?? "factual"}, id: ${id}).`;
   }
@@ -697,10 +707,30 @@ export class CortexMemoryPlugin implements AgentPlugin {
   private async handleHybridSearch(args: any): Promise<string> {
     logger.info(this.name, `hybrid_search: "${args.query}"`);
     const filter: MemoryFilter = this.buildFilter(args);
-    const results = await this.db.hybridSearch(args.query, filter, args.limit ?? 5, 0.4);
+    const limit = args.limit ?? 5;
+    // Fetch more candidates than needed so MMR has room to diversify
+    const candidateLimit = Math.max(limit * 2, 10);
+    const candidates = await this.db.hybridSearch(args.query, filter, candidateLimit, 0.4);
+
+    // Apply MMR diversity selection using stored embeddings
+    let finalResults = candidates;
+    if (candidates.length > 1) {
+      const embeddingMap = this.db.getEmbeddingsByIds(candidates.map(r => r.id));
+      const withEmbeddings = candidates
+        .filter(r => embeddingMap.has(r.id))
+        .map(r => ({ ...r, embedding: embeddingMap.get(r.id)! }));
+      if (withEmbeddings.length > 0) {
+        // Pass MAX_SAFE_INTEGER as budget to disable char-budget constraint — only diversity/count matters here
+        const mmrSelected = this.selectWithMMR(withEmbeddings, Number.MAX_SAFE_INTEGER, limit, 0.6);
+        const orderedIds = mmrSelected.map(s => s.id);
+        const idToResult = new Map(candidates.map(r => [r.id, r]));
+        finalResults = orderedIds.map(id => idToResult.get(id)!).filter(Boolean);
+      }
+    }
+
     const retrievalMethod = filter.contains ? "hybrid" : "semantic";
     this.searchMetaBuffer.set("hybrid_search", {
-      total_candidates: results.length,
+      total_candidates: candidates.length,
       retrieval_method: retrievalMethod,
       filter_applied: [
         ...(filter.types ?? []).map(t => `type=${t}`),
@@ -708,9 +738,9 @@ export class CortexMemoryPlugin implements AgentPlugin {
         ...(filter.contains ? [`contains=${filter.contains}`] : []),
       ],
     });
-    logger.debug(this.name, `hybrid_search found ${results.length} results (method: ${retrievalMethod})`);
-    if (results.length === 0) return "No memories match the given query and filters.";
-    return results
+    logger.debug(this.name, `hybrid_search: ${candidates.length} candidates → ${finalResults.length} after MMR (method: ${retrievalMethod})`);
+    if (finalResults.length === 0) return "No memories match the given query and filters.";
+    return finalResults
       .map(r => {
         const raw = r.text.trim();
         const text =
