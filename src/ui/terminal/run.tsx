@@ -119,6 +119,11 @@ agent.registerPlugin(
           "You are an information retrieval specialist. Look up movies and TV shows via TMDB, check current weather for a location, search or read Wikipedia articles, and fetch RSS/Atom feeds. Return concise, accurate information.",
         capabilities: ["tmdb", "weather", "wikipedia", "rss"],
       },
+      coder: {
+        system_prompt:
+          "You are a senior TypeScript engineer. You write clean, correct, idiomatic TypeScript and execute it yourself using execute_typescript.\n\nWhen given a coding task:\n- Write the code directly — do not describe what you would write, just write it.\n- Prefer Bun APIs (Bun.file, bun:sqlite, Bun.serve, etc.) over Node.js equivalents.\n- Use TypeScript types properly. Avoid `any`.\n- No unnecessary abstractions. Solve the problem directly.\n- If something fails, read the error and fix it.\n\nSandbox constraints: no npm packages (Bun built-ins only), no network, no host filesystem.\nInput: `const data = JSON.parse(process.env.INPUT_DATA ?? 'null');`\nOutput: `console.log(...)`",
+        capabilities: ["bun_sandbox", "files", "scratch"],
+      },
     },
   }),
 );

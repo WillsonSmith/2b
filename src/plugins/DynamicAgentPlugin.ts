@@ -21,6 +21,7 @@ import { ImageVisionPlugin } from "./ImageVisionPlugin.ts";
 import { YtDlpPlugin } from "./YtDlpPlugin.ts";
 import { FFmpegPlugin } from "./FFmpegPlugin.ts";
 import { CodeSandboxPlugin } from "./CodeSandboxPlugin.ts";
+import { BunSandboxPlugin } from "./BunSandboxPlugin.ts";
 import { SourceReaderPlugin } from "./SourceReaderPlugin.ts";
 import { logger } from "../logger.ts";
 import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
@@ -101,6 +102,10 @@ const CAPABILITY_REGISTRY: Record<string, CapabilityDef> = {
   code_sandbox: {
     description: "Execute Python 3.11 in an isolated container. Requires Docker or Apple Container runtime.",
     build: () => [new CodeSandboxPlugin()],
+  },
+  bun_sandbox: {
+    description: "Execute TypeScript directly in an isolated Bun container. The agent writes the code itself — no code-gen model. Requires Docker or Apple Container runtime.",
+    build: () => [new BunSandboxPlugin()],
   },
   source_reader: {
     description: "Read-only access to this agent's own source code: read files, browse directories, grep for definitions.",
