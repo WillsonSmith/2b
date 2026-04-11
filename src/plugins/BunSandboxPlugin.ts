@@ -53,7 +53,7 @@ export class BunSandboxPlugin implements AgentPlugin {
 
     const pullCmd =
       this.runtime === "apple-container"
-        ? ["container", "pull", CONTAINER_IMAGE]
+        ? ["container", "image", "pull", CONTAINER_IMAGE]
         : ["docker", "pull", CONTAINER_IMAGE];
 
     logger.info("BunSandbox", `Pre-pulling ${CONTAINER_IMAGE}...`);
@@ -223,6 +223,7 @@ export class BunSandboxPlugin implements AgentPlugin {
         "container",
         "run",
         "--rm",
+        "-i",
         "--no-dns",
         "--memory",
         "512M",
