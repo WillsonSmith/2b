@@ -11,6 +11,7 @@ import {
 import { createMediaAgent } from "./sub-agents/createMediaAgent.ts";
 import { createFileSystemAgent } from "./sub-agents/createFileSystemAgent.ts";
 import { createCodeReaderAgent } from "./sub-agents/createCodeReaderAgent.ts";
+import { DynamicAgentPlugin } from "../plugins/DynamicAgentPlugin.ts";
 
 // ── Inline tools ─────────────────────────────────────────────────────────────
 
@@ -120,6 +121,7 @@ export function createAgent(
     }),
   );
 
+  agent.registerPlugin(new DynamicAgentPlugin(llm, { permissionManager, model: resolvedModel }));
   agent.registerPlugin(minimalToolsPlugin);
   agent.registerPlugin(
     new MemoryPlugin(llm, { cortexMemory: agent.memoryPlugin }),

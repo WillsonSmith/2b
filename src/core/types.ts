@@ -11,8 +11,11 @@ export interface AgentEventMap {
   speak: [response: string];
   tool_call: [name: string, args: Record<string, unknown>];
   tool_result: [name: string];
-  subagent_tool_call: [agentToolName: string, toolName: string, args: Record<string, unknown>];
+  subagent_tool_call: [agentName: string, agentToolName: string, toolName: string, args: Record<string, unknown>];
   tool_call_blocked: [name: string, args: Record<string, unknown>, reason: string];
+  agent_spawned: [agentName: string, agentType: "headless" | "cortex", capabilities: string[]];
+  agent_state_change: [agentName: string, state: "idle" | "thinking"];
+  agent_error: [agentName: string, err: Error];
 }
 
 export type Message = {
