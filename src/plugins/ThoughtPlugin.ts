@@ -36,8 +36,9 @@ If it does not: reply with exactly the word SKIP and nothing else.`;
       if (!thought?.trim()) return;
       logger.debug("ThoughtPlugin", `Storing thought (${thought.length} chars)`);
       try {
-        const text = `[THOUGHT] ${new Date().toISOString()}: ${thought}`;
-        await this.memoryPlugin.db.addMemory(text, "thought");
+        // Store the raw thought text — no prefix or timestamp injected into text.
+        // The type column records 'thought' and the timestamp column records when.
+        await this.memoryPlugin.db.addMemory(thought.trim(), "thought", [], "thought-plugin");
         logger.debug("ThoughtPlugin", "Thought stored successfully");
       } catch (e) {
         logger.error("ThoughtPlugin", "Failed to store thought:", e);
@@ -45,7 +46,7 @@ If it does not: reply with exactly the word SKIP and nothing else.`;
 
       // Fire-and-forget: synthesize behavioral insight without blocking
       if (this.synthesisProvider) {
-        this.synthesizeAndStore(thought).catch((e) =>
+        this.synthesizeAndStore(thought).catch(e =>
           logger.error("ThoughtPlugin", "Synthesis failed:", e),
         );
       }
@@ -56,10 +57,13 @@ If it does not: reply with exactly the word SKIP and nothing else.`;
     const insight = await this.synthesizeThought(thought);
     if (!insight) return;
 
-    // Deduplicate against all stored behavior memories to avoid window gaps
-    const existing = this.memoryPlugin.db.getRecentMemories(Number.MAX_SAFE_INTEGER, "behavior");
-    if (existing.some((m) => m.text === insight)) {
-      logger.debug("ThoughtPlugin", `Behavior insight already stored, skipping: "${insight}"`);
+    // Semantic deduplication: skip if a highly similar behavior already exists
+    const similar = await this.memoryPlugin.db.search(insight, 1, 0.92, "behavior");
+    if (similar.length > 0) {
+      logger.debug(
+        "ThoughtPlugin",
+        `Behavior insight skipped — near-duplicate found (score=${similar[0]!.score.toFixed(3)}): "${insight}"`,
+      );
       return;
     }
 
@@ -121,7 +125,10 @@ If it does not: reply with exactly the word SKIP and nothing else.`;
         const limit = args.limit ?? 5;
         const recent = this.memoryPlugin.db.getRecentMemories(limit, "thought");
         if (recent.length === 0) return "No recent thoughts found.";
-        return recent.map((t) => t.text).join("\n");
+        // Format timestamp at read time — not baked into text
+        return recent
+          .map(t => `[${new Date(t.timestamp).toISOString()}] ${t.text}`)
+          .join("\n");
       }
     } catch (e) {
       logger.error("ThoughtPlugin", `Tool error (${name}):`, e);

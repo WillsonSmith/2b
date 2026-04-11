@@ -47,7 +47,7 @@ function makeSynthesisProvider(response: string) {
 // ---------------------------------------------------------------------------
 
 describe("thought storage (via agent 'thought' event)", () => {
-  test("thought content is stored with [THOUGHT] prefix and timestamp", async () => {
+  test("thought content is stored as raw text without prefix", async () => {
     const mem = makeMemoryPlugin();
     const plugin = new ThoughtPlugin(mem, null);
     const agent = makeAgent();
@@ -57,7 +57,7 @@ describe("thought storage (via agent 'thought' event)", () => {
 
     const memories = mem.db.queryMemories({ types: ["thought"] });
     expect(memories).toHaveLength(1);
-    expect(memories[0].text).toMatch(/^\[THOUGHT\] \d{4}-\d{2}-\d{2}T.*: I wonder about the universe$/);
+    expect(memories[0].text).toBe("I wonder about the universe");
   });
 
   test("empty or whitespace-only thought is not stored", async () => {
@@ -221,7 +221,7 @@ describe("get_recent_thoughts tool", () => {
     expect(result).toBe("No recent thoughts found.");
   });
 
-  test("returns stored thought texts joined by newline", async () => {
+  test("returns stored thought texts with ISO timestamp prefix joined by newline", async () => {
     const mem = makeMemoryPlugin();
     const plugin = new ThoughtPlugin(mem, null);
     const agent = makeAgent();
@@ -231,6 +231,8 @@ describe("get_recent_thoughts tool", () => {
     await agent.emit("thought", "second thought");
 
     const result = (await plugin.executeTool("get_recent_thoughts", { limit: 5 })) as string;
+    // Each line has format: [ISO timestamp] thought text
+    expect(result).toMatch(/\[\d{4}-\d{2}-\d{2}T/);
     expect(result).toContain("first thought");
     expect(result).toContain("second thought");
   });
