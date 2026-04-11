@@ -5,6 +5,7 @@ import React, {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { marked } from "marked";
 import type {
   ActiveTool,
   AgentState,
@@ -58,6 +59,13 @@ const HELP_TEXT = `Available slash commands:
   /export [filename] — save the conversation to a file
   /system            — show the current system prompt`;
 
+// ── Markdown renderer ─────────────────────────────────────────────────────────
+
+function MarkdownContent({ content }: { content: string }) {
+  const html = marked.parse(content) as string;
+  return <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function ThinkingBlock({ thought, inProgress }: { thought: string; inProgress: boolean }) {
@@ -106,9 +114,14 @@ function MessageItem({ message, showReasoning }: { message: ChatMessage; showRea
           <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}>…</span>
         ) : message.status === "error" ? (
           <span style={{ color: "var(--red)" }}>Error — something went wrong.</span>
-        ) : (
+        ) : isUser ? (
           <>
             {message.content.trimStart()}
+            {message.status === "streaming" && <span className="cursor">▌</span>}
+          </>
+        ) : (
+          <>
+            <MarkdownContent content={message.content.trimStart()} />
             {message.status === "streaming" && <span className="cursor">▌</span>}
           </>
         )}
