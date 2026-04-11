@@ -582,6 +582,20 @@ export class CortexMemoryDatabase {
     return results;
   }
 
+  /** Fetch stored embeddings for a batch of memory IDs. Returns a Map from id → Float32Array. */
+  public getEmbeddingsByIds(ids: string[]): Map<string, Float32Array> {
+    if (ids.length === 0) return new Map();
+    const placeholders = ids.map(() => "?").join(", ");
+    const rows = this.db
+      .prepare(`SELECT id, embedding_bin FROM memories WHERE id IN (${placeholders})`)
+      .all(...ids) as { id: string; embedding_bin: Buffer }[];
+    const result = new Map<string, Float32Array>();
+    for (const row of rows) {
+      if (row.embedding_bin) result.set(row.id, bufferToFloat32Array(row.embedding_bin));
+    }
+    return result;
+  }
+
   /** Create a bidirectional link between two memories. */
   public async linkMemories(idA: string, idB: string): Promise<void> {
     const stmt = this.db.prepare(

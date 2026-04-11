@@ -5,7 +5,9 @@
       "Bash(find /Users/willsonsmith/Developer/AI/2b/src -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" \\\\\\) -exec wc -l {} +)",
       "Skill(explain-module)",
       "Skill(explain-module:*)",
-      "Bash(bunx tsc:*)"
+      "Bash(bunx tsc:*)",
+      "Bash(git stash:*)",
+      "Bash(bun test:*)"
     ]
   }
 }

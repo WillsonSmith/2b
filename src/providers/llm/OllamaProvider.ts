@@ -179,7 +179,7 @@ export class OllamaProvider implements LLMProvider {
     tools: ToolDefinition[],
     onToken?: (token: string, isReasoning: boolean) => void,
   ): Promise<ChatResponse> {
-    const MAX_ROUNDS = 10;
+    const MAX_ROUNDS = 100;
     const toolMap = new Map(tools.map((t) => [t.name, t]));
     const history = [...messages];
 
