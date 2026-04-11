@@ -30,11 +30,15 @@ TMDB_API_KEY=your_key_here
 
 ## Running
 
+**Interactive terminal UI** (recommended):
+
 ```bash
-bun run index.ts
+bun src/ui/terminal/run.tsx
 ```
 
-**One-shot mode** — pass a message as an argument or pipe stdin:
+Renders a full Ink-based terminal chat UI with inline permission prompts, streaming output, and dynamic agent observability.
+
+**One-shot CLI mode** — pass a message as an argument or pipe stdin:
 
 ```bash
 bun run index.ts "what time is it?"
@@ -42,17 +46,18 @@ echo "summarize this" | bun run index.ts --quiet
 cat error.log | bun run index.ts "explain this error"
 ```
 
-**Flags:**
+**Flags (both modes):**
 
 | Flag | Description |
 |------|-------------|
-| `-m, --model <name>` | Override the model (e.g. `qwen3:8b`) |
-| `-q, --quiet` | Output response text only, no labels or colors |
-| `--no-reasoning` | Suppress `<think>` reasoning output |
-| `-t, --tools` | Print tool calls to stderr as they happen |
-| `-h, --help` | Show help |
+| `--model <name>` | Override the model (e.g. `qwen3:8b`) |
+| `-m, --model <name>` | Override the model (CLI mode only) |
+| `-q, --quiet` | Output response text only, no labels or colors (CLI mode only) |
+| `--no-reasoning` | Suppress `<think>` reasoning output (CLI mode only) |
+| `-t, --tools` | Print tool calls to stderr as they happen (CLI mode only) |
+| `-h, --help` | Show help (CLI mode only) |
 
-**Memory subcommands:**
+**Memory subcommands (CLI mode):**
 
 ```bash
 bun run index.ts memory list
@@ -63,23 +68,27 @@ bun run index.ts memory clear
 With debug logging:
 
 ```bash
-LOG_LEVEL=DEBUG bun run index.ts
+LOG_LEVEL=DEBUG bun src/ui/terminal/run.tsx
 ```
 
 ## Architecture
 
 ```
-index.ts
-  └── AgentFactory → CortexAgent (wraps BaseAgent + memory)
-        ├── Sub-agents (via SubAgentPlugin)
-        │     ├── media_agent  → HeadlessAgent [YtDlp, FFmpeg, ImageVision]
-        │     ├── web_agent    → HeadlessAgent [WebSearch, WebReader, Wikipedia, RSS]
-        │     ├── system_agent → HeadlessAgent [Shell, FileIO, Clipboard, CodeSandbox]
-        │     └── info_agent   → HeadlessAgent [TMDB, Weather, Notes]
-        ├── MemoryPlugin (short-term conversation history)
-        ├── MinimalTools (get_current_time, echo)
-        ├── CLIInputSource
-        └── LMStudioProvider (LLM backend)
+src/ui/terminal/run.tsx
+  └── CortexAgent (wraps BaseAgent + memory)
+        ├── CortexMemoryPlugin   (auto — long-term semantic memory)
+        ├── ThoughtPlugin        (auto — captures <think> blocks)
+        ├── MetacognitionPlugin  (auto — cognitive state tracking)
+        ├── explore_codebase     → SubAgentPlugin [CodeReaderAgent, own LLM]
+        ├── DynamicAgentPlugin   (create_agent, call_agent, list_agents)
+        │     ├── preset: media  → HeadlessAgent [YtDlp, FFmpeg, ImageVision, Download]
+        │     └── preset: info   → HeadlessAgent [TMDB, Weather, Wikipedia, RSS]
+        ├── FileSystemPlugin     (sandboxed to cwd)
+        ├── ShellPlugin          (read-only shell commands)
+        ├── MinimalTools         (get_current_time, echo)
+        ├── ScratchPlugin        (session scratch pad)
+        ├── MemoryPlugin         (short-term conversation history)
+        └── LMStudioProvider     (LLM backend, shared with sub-agents)
 ```
 
 The central `BaseAgent` manages two input queues:
@@ -89,9 +98,13 @@ The central `BaseAgent` manages two input queues:
 
 Each tick, the agent collects history and context from all plugins, assembles a fresh system prompt, calls the LLM, and emits the response via a `"speak"` event.
 
-**`CortexAgent`** wraps `BaseAgent` and automatically registers `CortexMemoryPlugin` (long-term semantic memory) and `ThoughtPlugin` (reasoning capture).
+**`CortexAgent`** wraps `BaseAgent` and automatically registers `CortexMemoryPlugin` (long-term semantic memory), `ThoughtPlugin` (reasoning capture), and `MetacognitionPlugin` (cognitive state tracking and tool saturation detection).
 
-**Sub-agents** are domain-specific `HeadlessAgent` instances registered as single tools on the orchestrator via `SubAgentPlugin`. The orchestrator routes tasks to the appropriate sub-agent; sub-agent tool calls are surfaced on the parent's `tool_call` event.
+**`DynamicAgentPlugin`** replaces the old static sub-agent roster. Two preset agents (`media`, `info`) are created at startup and are immediately callable. The orchestrator can also spawn new `HeadlessAgent` or `CortexSubAgent` instances at runtime via `create_agent` using any combination of capability plugins. Sub-agent tool calls bubble up as `subagent_tool_call` events, surfaced in the terminal UI.
+
+**`explore_codebase`** remains a static `SubAgentPlugin` because its `CodeReaderAgent` instantiates its own LLM connection (a code-specific model) that cannot be replicated through the generic capability system.
+
+**Terminal UI** is built with [Ink](https://github.com/vadimdemedes/ink). Ink owns stdin — there is no `CLIInputSource` in this mode. `InkPermissionManager` prompts inline when tools require permission.
 
 ## Plugins
 
@@ -101,9 +114,12 @@ Plugins implement the `AgentPlugin` interface and contribute system prompt fragm
 |--------|-------------|
 | `CortexMemoryPlugin` | Persistent semantic memory with embedding-based search — auto-registered by `CortexAgent`; tools: `search_memory`, `save_memory`, `save_behavior`, `save_procedure`, `edit_memory`, `delete_memory`, and more |
 | `ThoughtPlugin` | Auto-captures `<think>` reasoning blocks as thought memories — auto-registered by `CortexAgent` |
+| `MetacognitionPlugin` | Tracks cognitive state per turn; detects tool saturation; tools: `introspect`, `memory_status`, `show_active_rules`, `list_registered_plugins`, `list_available_tools`, `get_system_prompt` — auto-registered by `CortexAgent` |
 | `MemoryPlugin` | Short-term conversation history (max 15 messages, auto-summarize) |
 | `SubAgentPlugin` | Wraps a `HeadlessAgent` as a single callable tool on the orchestrator |
-| `FileIOPlugin` | File read/write/download tools (HTTPS downloads capped at 100 MB, local paths restricted to cwd) |
+| `DynamicAgentPlugin` | Spawns and calls sub-agents at runtime from a capability registry; preset agents (`media`, `info`) are created at startup; tools: `create_agent`, `call_agent`, `list_agents`, `list_capabilities` |
+| `ScratchPlugin` | Session-scoped scratch pad in `/tmp/agent-{sessionId}/`; tools: `scratch_write`, `scratch_read`, `scratch_list`, `scratch_delete` |
+| `FileSystemPlugin` | File read/write/copy/move/delete tools sandboxed to cwd |
 | `ImageVisionPlugin` | Image analysis via a local vision model; tools: `analyze_image_url`, `analyze_image_file` |
 | `WebSearchPlugin` | Web search via DuckDuckGo instant answers |
 | `WebReaderPlugin` | Fetch and extract readable content from HTTPS pages |
@@ -143,9 +159,13 @@ Four memory types:
 
 ## Extending
 
-**Add a plugin** — implement `AgentPlugin` (see `src/plugins/CLAUDE.md` for the full lifecycle reference) and register it in `src/agents/AgentFactory.ts`.
+**Add a plugin** — implement `AgentPlugin` (see `src/plugins/CLAUDE.md` for the full lifecycle reference) and register it in `src/ui/terminal/run.tsx`.
 
-**Add a sub-agent** — create a factory in `src/agents/sub-agents/`, then register it via `SubAgentPlugin` in `AgentFactory.ts`. See `src/agents/sub-agents/CLAUDE.md`.
+**Add a capability** — add a new entry to the capability registry in `DynamicAgentPlugin` so the agent can include it when spawning runtime sub-agents.
+
+**Add a preset sub-agent** — add an entry to the `presets` map in `DynamicAgentPlugin` in `src/ui/terminal/run.tsx` with a system prompt and capability list.
+
+**Add a static sub-agent** (when it needs its own LLM or specialized setup) — create a factory in `src/agents/sub-agents/`, then register it via `SubAgentPlugin` in `run.tsx`. See `src/agents/sub-agents/CLAUDE.md`.
 
 **Swap the LLM backend** — implement `LLMProvider` from `src/providers/llm/LLMProvider.ts` and pass it to `BaseAgent` or `CortexAgent`.
 
