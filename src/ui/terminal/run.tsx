@@ -107,6 +107,7 @@ agent.registerPlugin(
     permissionManager,
     model,
     sourceRoot,
+    parentMemory: agent.memoryPlugin,
     presets: {
       media: {
         system_prompt:

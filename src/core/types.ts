@@ -36,6 +36,11 @@ export interface AgentConfig {
   cortexName?: string;
   /** Override the SQLite file path used by CortexMemoryPlugin. Pass ":memory:" in tests. */
   memoryDbPath?: string;
+  /** Tune CortexMemoryPlugin context injection budgets. */
+  memoryOptions?: {
+    factualContextBudgetChars?: number;
+    procedureContextBudgetChars?: number;
+  };
   /** Permission manager for tools that declare permission !== "none". */
   permissionManager?: import("./PermissionManager.ts").PermissionManager;
 }

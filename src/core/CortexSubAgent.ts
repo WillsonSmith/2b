@@ -1,6 +1,7 @@
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import type { AgentConfig } from "./types.ts";
 import type { PermissionManager } from "./PermissionManager.ts";
+import type { AgentPlugin } from "./Plugin.ts";
 import { CortexAgent } from "./CortexAgent.ts";
 import { logger } from "../logger.ts";
 
@@ -59,6 +60,15 @@ export class CortexSubAgent {
     this.readyPromise = this.agent.start().then(() => {
       logger.info("CortexSubAgent", `${this.agentName} started`);
     });
+  }
+
+  /**
+   * Register an additional plugin with the inner CortexAgent.
+   * Plugins registered after construction will not have onInit called — only
+   * use this for plugins that don't require onInit (e.g. tool-only plugins).
+   */
+  registerPlugin(plugin: AgentPlugin): void {
+    this.agent.registerPlugin(plugin);
   }
 
   setToolCallHandler(fn: (name: string, args: Record<string, unknown>) => void): void {
