@@ -227,7 +227,7 @@ export class BunSandboxPlugin implements AgentPlugin {
         "--memory",
         "512M",
         "--cpus",
-        "1.0",
+        "1",
         "--ulimit",
         "nproc=128:128",
         "--uid",
