@@ -196,23 +196,16 @@ export class OllamaProvider implements LLMProvider {
       });
 
       const assistantMsg = response.message;
-      history.push(assistantMsg);
 
       if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
-        const content = assistantMsg.content ?? "";
-        const reasoning = assistantMsg.thinking ?? "";
-        if (onToken && reasoning) onToken(reasoning, true);
-        if (onToken && content) onToken(content, false);
         logger.debug(
           "Ollama",
           `actWithTools() finished after ${round + 1} round(s)`,
         );
-        return {
-          response: content,
-          nonReasoningContent: content,
-          reasoningText: reasoning,
-        };
+        return await this.respond(history, onToken);
       }
+
+      history.push(assistantMsg);
 
       logger.info(
         "Ollama",
