@@ -13,6 +13,26 @@ if (rawArgs[0] === "memory") {
   process.exit(0);
 }
 
+if (rawArgs[0] === "coder") {
+  const { createCodingAgent } = await import("./src/agents/CodingAgentFactory.ts");
+  const { agent: coderAgent } = createCodingAgent();
+  const GREEN = "\x1b[32m";
+  coderAgent.setTokenCallback((token, isReasoning) => {
+    if (isReasoning) process.stdout.write(`${GRAY}${token}`);
+    else process.stdout.write(`${CYAN}${token}`);
+  });
+  coderAgent.on("speak", () => {
+    process.stdout.write(`${RESET}\n\n${BOLD}You:${RESET} `);
+  });
+  console.log(`\n${GREEN}${BOLD}coder${RESET} — TypeScript/Bun coding agent. Ctrl+C to quit.\n`);
+  process.stdout.write(`${BOLD}You:${RESET} `);
+  await coderAgent.start();
+  // Keep the process alive until Ctrl+C (SIGINT). CLIInputSource holds stdin
+  // open, but without this gate the top-level script would fall through and
+  // start a second agent.
+  await new Promise<never>(() => {});
+}
+
 // Flags
 let quiet = false;
 let noReasoning = false;
