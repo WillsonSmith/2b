@@ -2,7 +2,7 @@
   "name": "2b",
   "module": "index.ts",
   "bin": {
-    "2b": "./src/ui/terminal/run.tsx"
+    "2b": "./2b.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
@@ -11,6 +11,7 @@
     "typescript": "^5"
   },
   "scripts": {
+    "2b": "bun 2b.ts",
     "backup": "bun scripts/backup.ts"
   },
   "private": true,
