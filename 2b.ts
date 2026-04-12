@@ -17,7 +17,7 @@ import { SubAgentPlugin } from "./src/plugins/SubAgentPlugin.ts";
 import { InkPermissionManager } from "./src/ui/terminal/InkPermissionManager.ts";
 import { WebPermissionManager } from "./src/ui/web/WebPermissionManager.ts";
 import type { AgentPlugin, ToolDefinition } from "./src/core/Plugin.ts";
-import { createCodeReaderAgent } from "./src/agents/sub-agents/createCodeReaderAgent.ts";
+import { createCodebaseExplainerAgent } from "./src/agents/sub-agents/createCodebaseExplainerAgent.ts";
 import { ScratchPlugin } from "./src/plugins/ScratchPlugin.ts";
 import { DynamicAgentPlugin } from "./src/plugins/DynamicAgentPlugin.ts";
 import { FileSystemPlugin } from "./src/plugins/FileSystemPlugin.ts";
@@ -102,7 +102,7 @@ agent.registerPlugin(
     toolName: "explore_codebase",
     description:
       "Use when the user asks how this agent works, wants to trace a data flow, understand a plugin, or look up implementation details in this agent's own source code. Scoped only to this agent's source — not for exploring other projects or general coding tasks.",
-    agent: createCodeReaderAgent(llm, { sourceRoot }),
+    agent: createCodebaseExplainerAgent(llm, { sourceRoot }),
   }),
 );
 
