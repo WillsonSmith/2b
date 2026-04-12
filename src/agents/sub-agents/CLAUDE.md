@@ -25,6 +25,7 @@ The factory handles all plugin construction. Callers just pass `llm` and optiona
 | `createInfoAgent` | `InfoAgent` | `TMDBPlugin`, `WeatherPlugin`, `WikipediaPlugin` | `DynamicAgentPlugin` preset (`info`) |
 | `createFileSystemAgent` | `FileSystemAgent` | `FileSystemPlugin`, `ShellPlugin` | Available but not registered — filesystem is now a direct plugin on the orchestrator |
 | `createCodeReaderAgent` | `CodeReaderAgent` | `SourceReaderPlugin` | Static `SubAgentPlugin` (`explore_codebase`) — owns its own code-specific LLM |
+| `createCodebaseExplainerAgent` | `CodebaseExplainerAgent` | `SourceReaderPlugin` | Static `SubAgentPlugin` (`explain_codebase`) — educational explanations with code samples |
 | `createWebAgent` | `WebAgent` | `WebSearchPlugin`, `WebReaderPlugin`, `WikipediaPlugin`, `RSSPlugin` | Available, not currently registered |
 | `createSystemAgent` | `SystemAgent` | `ShellPlugin`, `FileSystemPlugin`, `DownloadPlugin`, `ClipboardPlugin`, `CodeSandboxPlugin` | Available, not currently registered |
 
