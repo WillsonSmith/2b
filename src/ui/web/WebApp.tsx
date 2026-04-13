@@ -89,6 +89,23 @@ function ThinkingBlock({ thought, inProgress }: { thought: string; inProgress: b
   );
 }
 
+function CopyButton({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [content]);
+
+  return (
+    <button className={`copy-btn ${copied ? "copy-btn--copied" : ""}`} onClick={handleCopy} title="Copy raw markdown">
+      {copied ? "copied" : "copy"}
+    </button>
+  );
+}
+
 function MessageItem({ message, showReasoning }: { message: ChatMessage; showReasoning: boolean }) {
   if (message.role === "system") {
     return (
@@ -100,10 +117,14 @@ function MessageItem({ message, showReasoning }: { message: ChatMessage; showRea
 
   const isUser = message.role === "user";
   const inProgress = message.status === "streaming";
+  const showCopy = !isUser && message.status === "complete" && message.content.length > 0;
 
   return (
     <div className={`message message--${isUser ? "user" : "assistant"} message--${message.status}`}>
-      <div className="message-label">{isUser ? "You" : "2b"}</div>
+      <div className="message-label">
+        {isUser ? "You" : "2b"}
+        {showCopy && <CopyButton content={message.content} />}
+      </div>
 
       {showReasoning && message.thought && (
         <ThinkingBlock thought={message.thought} inProgress={inProgress} />
