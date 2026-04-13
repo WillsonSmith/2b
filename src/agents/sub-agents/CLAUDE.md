@@ -7,10 +7,9 @@ Domain-specific `HeadlessAgent` factories. Each creates a focused agent with a c
 Each file exports a single `create<Name>Agent(llm, options?)` function that returns a `HeadlessAgent`:
 
 ```typescript
-export function createMediaAgent(llm: LLMProvider, options: MediaAgentOptions = {}): HeadlessAgent {
-  return new HeadlessAgent(llm, [plugin1, plugin2, plugin3], "Focused system prompt...", {
-    agentName: "MediaAgent",
-    permissionManager: options.permissionManager,
+export function createCodebaseExplainerAgent(llm: LLMProvider, options: Options = {}): HeadlessAgent {
+  return new HeadlessAgent(llm, [new SourceReaderPlugin(options)], "Focused system prompt...", {
+    agentName: "CodebaseExplainerAgent",
   });
 }
 ```
@@ -21,27 +20,9 @@ The factory handles all plugin construction. Callers just pass `llm` and optiona
 
 | Factory | Agent Name | Plugins | Used by |
 |---------|-----------|---------|---------|
-| `createMediaAgent` | `MediaAgent` | `YtDlpPlugin`, `FFmpegPlugin`, `ImageVisionPlugin` | `DynamicAgentPlugin` preset (`media`) |
-| `createInfoAgent` | `InfoAgent` | `TMDBPlugin`, `WeatherPlugin`, `WikipediaPlugin` | `DynamicAgentPlugin` preset (`info`) |
-| `createFileSystemAgent` | `FileSystemAgent` | `FileSystemPlugin`, `ShellPlugin` | Available but not registered — filesystem is now a direct plugin on the orchestrator |
-| `createCodeReaderAgent` | `CodeReaderAgent` | `SourceReaderPlugin` | Static `SubAgentPlugin` (`explore_codebase`) — owns its own code-specific LLM |
-| `createCodebaseExplainerAgent` | `CodebaseExplainerAgent` | `SourceReaderPlugin` | Static `SubAgentPlugin` (`explain_codebase`) — educational explanations with code samples |
-| `createWebAgent` | `WebAgent` | `WebSearchPlugin`, `WebReaderPlugin`, `WikipediaPlugin`, `RSSPlugin` | Available, not currently registered |
-| `createSystemAgent` | `SystemAgent` | `ShellPlugin`, `FileSystemPlugin`, `DownloadPlugin`, `ClipboardPlugin`, `CodeSandboxPlugin` | Available, not currently registered |
+| `createCodebaseExplainerAgent` | `CodebaseExplainerAgent` | `SourceReaderPlugin` | Static `SubAgentPlugin` (`explore_codebase`) in `2b.ts` |
 
-> **Note:** Most sub-agent functionality is now handled by `DynamicAgentPlugin` using the capability registry rather than static factories. The factories above are still usable but new domain agents should be added as capability entries in `DynamicAgentPlugin`'s `CAPABILITY_REGISTRY` rather than new factory files.
-
-`createCodeReaderAgent` creates its own `LMStudioProvider` internally (defaults to `qwen2.5-coder-7b-instruct-mlx`, overridable via `CODE_READER_MODEL` env var or `model` option). It does not take the orchestrator's `llm` — it owns its own model connection.
-
-## Options Pattern
-
-Each factory accepts an options object. Common options:
-
-| Option | Type | Purpose |
-|---|---|---|
-| `permissionManager` | `PermissionManager` | Forwarded to `HeadlessAgent`; tools with `permission !== "none"` require approval |
-
-`createMediaAgent` additionally accepts `visionModel` and `visionBaseUrl` to configure `ImageVisionPlugin`.
+> **Note:** Domain sub-agent functionality is handled by `DynamicAgentPlugin` using the capability registry. Add new domain agents as capability entries in `DynamicAgentPlugin`'s `CAPABILITY_REGISTRY` rather than new factory files here.
 
 ## How Presets Work (DynamicAgentPlugin)
 

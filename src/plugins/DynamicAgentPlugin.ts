@@ -20,7 +20,6 @@ import { ScratchPlugin } from "./ScratchPlugin.ts";
 import { ImageVisionPlugin } from "./ImageVisionPlugin.ts";
 import { YtDlpPlugin } from "./YtDlpPlugin.ts";
 import { FFmpegPlugin } from "./FFmpegPlugin.ts";
-import { CodeSandboxPlugin } from "./CodeSandboxPlugin.ts";
 import { BunSandboxPlugin } from "./BunSandboxPlugin.ts";
 import { SourceReaderPlugin } from "./SourceReaderPlugin.ts";
 import { logger } from "../logger.ts";
