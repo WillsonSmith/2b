@@ -26,6 +26,7 @@ const SYSTEM_PROMPT = [
 
 export interface CodebaseExplainerAgentOptions {
   sourceRoot?: string;
+  onToken?: (token: string, isReasoning: boolean) => void;
 }
 
 export function createCodebaseExplainerAgent(
@@ -36,6 +37,6 @@ export function createCodebaseExplainerAgent(
     llm,
     [new SourceReaderPlugin({ sourceRoot: options.sourceRoot })],
     SYSTEM_PROMPT,
-    { agentName: "CodebaseExplainerAgent" },
+    { agentName: "CodebaseExplainerAgent", onToken: options.onToken },
   );
 }

@@ -37,6 +37,14 @@ const portFlag = args.indexOf("--port");
 const portArg = portFlag !== -1 ? Number(args[portFlag + 1]) : undefined;
 const port = portArg ?? (process.env["PORT"] ? Number(process.env["PORT"]) : 3000);
 
+const debugTokens = args.includes("--debug-tokens") || process.env["DEBUG_TOKENS"] === "1";
+const debugTokenCallback = debugTokens
+  ? (token: string, isReasoning: boolean) => {
+      // Gray for reasoning, plain for response tokens
+      process.stdout.write(isReasoning ? `\x1b[90m${token}\x1b[0m` : token);
+    }
+  : undefined;
+
 // ── Inline tools ──────────────────────────────────────────────────────────────
 
 const minimalTools: ToolDefinition[] = [
@@ -102,7 +110,7 @@ agent.registerPlugin(
     toolName: "explore_codebase",
     description:
       "Use when the user asks how this agent works, wants to trace a data flow, understand a plugin, or look up implementation details in this agent's own source code. Scoped only to this agent's source — not for exploring other projects or general coding tasks.",
-    agent: createCodebaseExplainerAgent(llm, { sourceRoot }),
+    agent: createCodebaseExplainerAgent(llm, { sourceRoot, onToken: debugTokenCallback }),
   }),
 );
 

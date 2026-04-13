@@ -9,6 +9,8 @@ export interface HeadlessAgentOptions {
   permissionManager?: PermissionManager;
   /** Display name used in permission prompts. Defaults to "HeadlessAgent". */
   agentName?: string;
+  /** Optional token streaming callback. Called for each token as the model produces it. */
+  onToken?: (token: string, isReasoning: boolean) => void;
 }
 
 /**
@@ -22,13 +24,21 @@ export interface HeadlessAgentOptions {
  */
 export class HeadlessAgent {
   private toolCallHandler?: (name: string, args: Record<string, unknown>) => void;
+  private onToken?: (token: string, isReasoning: boolean) => void;
 
   constructor(
     private readonly llm: LLMProvider,
     private readonly plugins: AgentPlugin[],
     private readonly systemPromptBase: string,
     private readonly options: HeadlessAgentOptions = {},
-  ) {}
+  ) {
+    this.onToken = options.onToken;
+  }
+
+  /** Override the token callback at runtime (used by SubAgentPlugin to forward tokens as events). */
+  setOnToken(fn: (token: string, isReasoning: boolean) => void): void {
+    this.onToken = fn;
+  }
 
   setToolCallHandler(fn: (name: string, args: Record<string, unknown>) => void): void {
     this.toolCallHandler = fn;
@@ -97,7 +107,7 @@ export class HeadlessAgent {
     const messages: Message[] = [{ role: "user", content: task }];
     logger.info("HeadlessAgent", `ask() [${agentName}] — tools=[${tools.map((t) => t.name).join(", ")}]`);
 
-    const { nonReasoningContent } = await this.llm.chat(messages, systemPrompt, undefined, tools);
+    const { nonReasoningContent } = await this.llm.chat(messages, systemPrompt, undefined, tools, this.onToken);
 
     return nonReasoningContent;
   }

@@ -177,6 +177,13 @@ export class ChatSession extends EventEmitter {
       this.emit("active_tools_changed", [...this._activeTools]);
     });
 
+    // Stream sub-agent tokens into the pending assistant message (non-reasoning only).
+    this.agent.on("subagent_token", (_agentName, token, isReasoning) => {
+      if (isReasoning || !this._pendingAssistantId) return;
+      const msg = this.getPending();
+      if (msg) this.patchPending({ content: msg.content + token, status: "streaming" });
+    });
+
     // When a sub-agent starts one of its own tools, annotate its parent entry
     // with the agent name and the child tool it's running.
     this.agent.on("subagent_tool_call", (agentName, agentToolName, toolName) => {
