@@ -408,6 +408,89 @@ describe("query_memories", () => {
 });
 
 // ---------------------------------------------------------------------------
+// get_linked_memories — link_type filter
+// ---------------------------------------------------------------------------
+
+describe("get_linked_memories link_type filter", () => {
+  test("returns all links with link_type field when no filter given", async () => {
+    const plugin = makePlugin();
+    const saveA = (await plugin.executeTool("save_memory", { content: "A", type: "factual" })) as string;
+    const saveB = (await plugin.executeTool("save_memory", { content: "B", type: "factual" })) as string;
+    const idA = saveA.match(/id: ([0-9a-f-]{36})/)![1];
+    const idB = saveB.match(/id: ([0-9a-f-]{36})/)![1];
+    await plugin.db.linkMemories(idA, idB, "depends_on");
+    const result = (await plugin.executeTool("get_linked_memories", { id: idA })) as string;
+    expect(result).toContain("(depends_on)");
+    expect(result).toContain("B");
+  });
+
+  test("filters linked memories by link_type", async () => {
+    // Use db.addMemory directly to avoid save_memory's auto-supersession logic,
+    // which would mark earlier memories as superseded (score >= 0.9 with identical embeddings)
+    // and prevent them from appearing in getLinkedMemories (which filters on status='active').
+    const plugin = makePlugin();
+    const idA = await plugin.db.addMemory("A", "factual");
+    const idB = await plugin.db.addMemory("B", "factual");
+    const idC = await plugin.db.addMemory("C", "factual");
+    await plugin.db.linkMemories(idA, idB, "depends_on");
+    await plugin.db.linkMemories(idA, idC, "related");
+
+    const dependsOn = (await plugin.executeTool("get_linked_memories", { id: idA, link_type: "depends_on" })) as string;
+    expect(dependsOn).toContain("B");
+    expect(dependsOn).not.toContain("C");
+
+    const related = (await plugin.executeTool("get_linked_memories", { id: idA, link_type: "related" })) as string;
+    expect(related).toContain("C");
+    expect(related).not.toContain("B");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// save_memory — supersedes param
+// ---------------------------------------------------------------------------
+
+describe("save_memory supersedes", () => {
+  test("marks the superseded memory and sets its forward pointer", async () => {
+    const plugin = makePlugin();
+    const saveOld = (await plugin.executeTool("save_memory", { content: "old fact", type: "factual" })) as string;
+    const oldId = saveOld.match(/id: ([0-9a-f-]{36})/)![1];
+
+    await plugin.executeTool("save_memory", { content: "new fact", type: "factual", supersedes: oldId });
+
+    const oldMem = await plugin.db.getMemoryById(oldId);
+    expect(oldMem?.status).toBe("superseded");
+    expect(oldMem?.superseded_by_id).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// get_memory_lineage tool
+// ---------------------------------------------------------------------------
+
+describe("get_memory_lineage", () => {
+  test("returns lineage JSON for a chained memory", async () => {
+    const plugin = makePlugin();
+    const v1Id = await plugin.db.addMemory("v1", "factual");
+    // v2 reconstructed from v1: sets v2.reconstructed_from_id = v1Id so v1 is an ancestor of v2
+    const v2Id = await plugin.db.addMemory("v2", "factual", [], undefined, undefined, undefined, v1Id);
+
+    const result = (await plugin.executeTool("get_memory_lineage", { id: v2Id })) as string;
+    const parsed = JSON.parse(result);
+    expect(parsed.current.id).toBe(v2Id);
+    expect(parsed.ancestors).toHaveLength(1);
+    expect(parsed.ancestors[0].id).toBe(v1Id);
+    expect(parsed.descendants).toHaveLength(0);
+  });
+
+  test("returns null current for unknown id", async () => {
+    const plugin = makePlugin();
+    const result = (await plugin.executeTool("get_memory_lineage", { id: "nonexistent" })) as string;
+    const parsed = JSON.parse(result);
+    expect(parsed.current).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // onMessage – conflict resolution
 // ---------------------------------------------------------------------------
 

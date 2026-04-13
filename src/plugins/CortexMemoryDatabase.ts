@@ -136,6 +136,34 @@ export class CortexMemoryDatabase {
       }
     }
 
+    // Phase 5 migrations: lineage columns
+    const hasSupersededBy = columns.some(c => c.name === "superseded_by_id");
+    if (!hasSupersededBy) {
+      this.db.run(`ALTER TABLE memories ADD COLUMN superseded_by_id TEXT`);
+    }
+
+    const hasReconstructedFrom = columns.some(c => c.name === "reconstructed_from_id");
+    if (!hasReconstructedFrom) {
+      this.db.run(`ALTER TABLE memories ADD COLUMN reconstructed_from_id TEXT`);
+    }
+
+    const hasVersionRank = columns.some(c => c.name === "version_rank");
+    if (!hasVersionRank) {
+      this.db.run(`ALTER TABLE memories ADD COLUMN version_rank INTEGER NOT NULL DEFAULT 1`);
+    }
+
+    // memory_links link_type
+    const linkColumns = this.db.prepare("PRAGMA table_info(memory_links)").all() as { name: string }[];
+    const hasLinkType = linkColumns.some(c => c.name === "link_type");
+    if (!hasLinkType) {
+      this.db.run(`ALTER TABLE memory_links ADD COLUMN link_type TEXT NOT NULL DEFAULT 'related'`);
+    }
+
+    // Bump schema version
+    if (version < 3) {
+      this.db.run(`UPDATE schema_version SET version = 3, updated_at = ${Date.now()}`);
+    }
+
     // Phase 3 migration: strip [THOUGHT] prefix from thought memory text — idempotent
     const migrated = this.migrateThoughtTextPrefixes();
     if (migrated > 0) {
@@ -253,6 +281,8 @@ export class CortexMemoryDatabase {
     tags: string[] = [],
     source?: string,
     confidence?: number,
+    supersededById?: string,
+    reconstructedFromId?: string,
   ): Promise<string> {
     logger.debug("CortexDB", `addMemory type=${type}: getting embedding for "${text.slice(0, 80)}"`);
     const embedding = await this.chunkAndEmbed(text);
@@ -260,11 +290,36 @@ export class CortexMemoryDatabase {
     const embeddingBin = new Float32Array(embedding);
     logger.debug("CortexDB", `addMemory: embedding received (dim=${embedding.length}), inserting into DB`);
     const id = randomUUID();
+
+    // Derive version_rank: if superseding an existing memory, increment its rank
+    let versionRank = 1;
+    if (supersededById) {
+      const prev = this.db
+        .prepare("SELECT version_rank FROM memories WHERE id = ?")
+        .get(supersededById) as { version_rank: number } | null;
+      if (prev) versionRank = prev.version_rank + 1;
+    }
+
     this.db
       .prepare(
-        "INSERT INTO memories (id, text, embedding_bin, timestamp, type, tags, status, source, confidence, scope) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, 'global')",
+        `INSERT INTO memories
+          (id, text, embedding_bin, timestamp, type, tags, status, source, confidence, scope,
+           superseded_by_id, reconstructed_from_id, version_rank)
+         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, 'global', ?, ?, ?)`,
       )
-      .run(id, text, embeddingBin, Date.now(), type, JSON.stringify(tags), source ?? null, confidence ?? 1.0);
+      .run(
+        id, text, embeddingBin, Date.now(), type,
+        JSON.stringify(tags), source ?? null, confidence ?? 1.0,
+        supersededById ?? null, reconstructedFromId ?? null, versionRank,
+      );
+
+    // If superseding, mark the old memory and set its forward pointer
+    if (supersededById) {
+      this.db
+        .prepare("UPDATE memories SET status = 'superseded', superseded_by_id = ? WHERE id = ?")
+        .run(id, supersededById);
+    }
+
     this.db.prepare("INSERT INTO memories_fts(memory_id, text) VALUES (?, ?)").run(id, text);
     logger.debug("CortexDB", `addMemory: inserted id=${id.slice(0, 8)}`);
     return id;
@@ -597,25 +652,37 @@ export class CortexMemoryDatabase {
   }
 
   /** Create a bidirectional link between two memories. */
-  public async linkMemories(idA: string, idB: string): Promise<void> {
+  public async linkMemories(idA: string, idB: string, linkType: string = "related"): Promise<void> {
     const stmt = this.db.prepare(
-      "INSERT OR IGNORE INTO memory_links (memory_id, linked_id) VALUES (?, ?)",
+      "INSERT OR IGNORE INTO memory_links (memory_id, linked_id, link_type) VALUES (?, ?, ?)",
     );
-    stmt.run(idA, idB);
-    stmt.run(idB, idA);
+    stmt.run(idA, idB, linkType);
+    stmt.run(idB, idA, linkType);
   }
 
-  /** Return all active memories linked to the given ID. */
+  /** Return all active memories linked to the given ID, optionally filtered by link type. */
   public async getLinkedMemories(
     id: string,
-  ): Promise<Array<{ id: string; text: string }>> {
+    linkType?: string,
+  ): Promise<Array<{ id: string; text: string; link_type: string }>> {
+    if (linkType) {
+      return this.db
+        .prepare(
+          `SELECT m.id, m.text, l.link_type
+           FROM memories m
+           INNER JOIN memory_links l ON m.id = l.linked_id
+           WHERE l.memory_id = ? AND l.link_type = ? AND m.status = 'active'`,
+        )
+        .all(id, linkType) as { id: string; text: string; link_type: string }[];
+    }
     return this.db
       .prepare(
-        `SELECT m.id, m.text FROM memories m
+        `SELECT m.id, m.text, l.link_type
+         FROM memories m
          INNER JOIN memory_links l ON m.id = l.linked_id
          WHERE l.memory_id = ? AND m.status = 'active'`,
       )
-      .all(id) as { id: string; text: string }[];
+      .all(id) as { id: string; text: string; link_type: string }[];
   }
 
   /** Delete a memory and all its links. */
@@ -642,17 +709,79 @@ export class CortexMemoryDatabase {
     this.db.prepare("UPDATE memories SET status = ? WHERE id = ?").run(status, id);
   }
 
-  /** Retrieve a memory by ID, including its tags. */
-  public async getMemoryById(
-    id: string,
-  ): Promise<{ id: string; text: string; timestamp: number; type: string; tags: string[] } | null> {
+  /** Retrieve a memory by ID, including its tags and lineage columns. */
+  public async getMemoryById(id: string): Promise<{
+    id: string;
+    text: string;
+    timestamp: number;
+    type: string;
+    tags: string[];
+    status: string;
+    superseded_by_id: string | null;
+    reconstructed_from_id: string | null;
+    version_rank: number;
+  } | null> {
     const row = this.db
-      .prepare("SELECT id, text, timestamp, type, tags FROM memories WHERE id = ?")
-      .get(id) as { id: string; text: string; timestamp: number; type: string; tags: string } | null;
+      .prepare(
+        `SELECT id, text, timestamp, type, tags, status,
+                superseded_by_id, reconstructed_from_id, version_rank
+         FROM memories WHERE id = ?`,
+      )
+      .get(id) as {
+        id: string; text: string; timestamp: number; type: string; tags: string;
+        status: string; superseded_by_id: string | null;
+        reconstructed_from_id: string | null; version_rank: number;
+      } | null;
     if (!row) return null;
+    return { ...row, tags: JSON.parse(row.tags ?? "[]") as string[] };
+  }
+
+  /** Follow the supersession and reconstruction chain for a memory in both directions. */
+  public async getLineage(id: string): Promise<{
+    ancestors: Array<{ id: string; text: string; status: string; version_rank: number }>;
+    current: { id: string; text: string; status: string; version_rank: number } | null;
+    descendants: Array<{ id: string; text: string; status: string; version_rank: number }>;
+  }> {
+    const getRow = (rowId: string) =>
+      this.db
+        .prepare(
+          "SELECT id, text, status, version_rank, superseded_by_id, reconstructed_from_id FROM memories WHERE id = ?",
+        )
+        .get(rowId) as {
+          id: string; text: string; status: string; version_rank: number;
+          superseded_by_id: string | null; reconstructed_from_id: string | null;
+        } | null;
+
+    const root = getRow(id);
+    if (!root) return { ancestors: [], current: null, descendants: [] };
+
+    // Walk backward through reconstructed_from_id to find ancestors
+    const ancestors: Array<{ id: string; text: string; status: string; version_rank: number }> = [];
+    let cursor = root.reconstructed_from_id;
+    const seen = new Set<string>([id]);
+    while (cursor && !seen.has(cursor)) {
+      seen.add(cursor);
+      const row = getRow(cursor);
+      if (!row) break;
+      ancestors.unshift({ id: row.id, text: row.text, status: row.status, version_rank: row.version_rank });
+      cursor = row.reconstructed_from_id;
+    }
+
+    // Walk forward through superseded_by_id to find descendants
+    const descendants: Array<{ id: string; text: string; status: string; version_rank: number }> = [];
+    cursor = root.superseded_by_id;
+    while (cursor && !seen.has(cursor)) {
+      seen.add(cursor);
+      const row = getRow(cursor);
+      if (!row) break;
+      descendants.push({ id: row.id, text: row.text, status: row.status, version_rank: row.version_rank });
+      cursor = row.superseded_by_id;
+    }
+
     return {
-      ...row,
-      tags: JSON.parse(row.tags ?? "[]") as string[],
+      ancestors,
+      current: { id: root.id, text: root.text, status: root.status, version_rank: root.version_rank },
+      descendants,
     };
   }
 

@@ -7,19 +7,23 @@
  * Usage:
  *   bun 2b.ts
  *   bun 2b.ts --model google/gemma-3-4b
+ *   bun 2b.ts --web
+ *   bun 2b.ts --web --port 8080
  */
 import { CortexAgent } from "./src/core/CortexAgent.ts";
 import { createProvider, defaultModel } from "./src/providers/llm/createProvider.ts";
 import { MemoryPlugin } from "./src/plugins/MemoryPlugin.ts";
 import { SubAgentPlugin } from "./src/plugins/SubAgentPlugin.ts";
 import { InkPermissionManager } from "./src/ui/terminal/InkPermissionManager.ts";
+import { WebPermissionManager } from "./src/ui/web/WebPermissionManager.ts";
 import type { AgentPlugin, ToolDefinition } from "./src/core/Plugin.ts";
-import { createCodeReaderAgent } from "./src/agents/sub-agents/createCodeReaderAgent.ts";
+import { createCodebaseExplainerAgent } from "./src/agents/sub-agents/createCodebaseExplainerAgent.ts";
 import { ScratchPlugin } from "./src/plugins/ScratchPlugin.ts";
 import { DynamicAgentPlugin } from "./src/plugins/DynamicAgentPlugin.ts";
 import { FileSystemPlugin } from "./src/plugins/FileSystemPlugin.ts";
 import { ShellPlugin } from "./src/plugins/ShellPlugin.ts";
 import { startTerminalUI } from "./src/ui/terminal/run.tsx";
+import { startWebUI } from "./src/ui/web/server.ts";
 
 // ── Parse CLI args ────────────────────────────────────────────────────────────
 
@@ -27,6 +31,11 @@ const args = process.argv.slice(2);
 const modelFlag = args.indexOf("--model");
 const modelArg = modelFlag !== -1 ? args[modelFlag + 1] : undefined;
 const model = modelArg ?? process.env["MODEL"] ?? defaultModel();
+
+const useWeb = args.includes("--web");
+const portFlag = args.indexOf("--port");
+const portArg = portFlag !== -1 ? Number(args[portFlag + 1]) : undefined;
+const port = portArg ?? (process.env["PORT"] ? Number(process.env["PORT"]) : 3000);
 
 // ── Inline tools ──────────────────────────────────────────────────────────────
 
@@ -64,7 +73,7 @@ const minimalToolsPlugin: AgentPlugin = {
 
 const llm = createProvider(model);
 
-const permissionManager = new InkPermissionManager();
+const permissionManager = useWeb ? new WebPermissionManager() : new InkPermissionManager();
 
 const systemPrompt = [
   "You are a helpful assistant with access to tools. Think carefully before responding.",
@@ -93,7 +102,7 @@ agent.registerPlugin(
     toolName: "explore_codebase",
     description:
       "Use when the user asks how this agent works, wants to trace a data flow, understand a plugin, or look up implementation details in this agent's own source code. Scoped only to this agent's source — not for exploring other projects or general coding tasks.",
-    agent: createCodeReaderAgent(llm, { sourceRoot }),
+    agent: createCodebaseExplainerAgent(llm, { sourceRoot }),
   }),
 );
 
@@ -133,10 +142,21 @@ agent.registerPlugin(
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
-await startTerminalUI({
-  agent,
-  model,
-  systemPrompt,
-  permissionManager,
-  onModelChange: (newModel) => llm.setModel(newModel),
-});
+if (useWeb) {
+  await startWebUI({
+    agent,
+    model,
+    systemPrompt,
+    permissionManager: permissionManager as WebPermissionManager,
+    onModelChange: (newModel) => llm.setModel(newModel),
+    port,
+  });
+} else {
+  await startTerminalUI({
+    agent,
+    model,
+    systemPrompt,
+    permissionManager: permissionManager as InkPermissionManager,
+    onModelChange: (newModel) => llm.setModel(newModel),
+  });
+}

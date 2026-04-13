@@ -11,6 +11,7 @@ import {
 import { createMediaAgent } from "./sub-agents/createMediaAgent.ts";
 import { createFileSystemAgent } from "./sub-agents/createFileSystemAgent.ts";
 import { createCodeReaderAgent } from "./sub-agents/createCodeReaderAgent.ts";
+import { createCodebaseExplainerAgent } from "./sub-agents/createCodebaseExplainerAgent.ts";
 import { DynamicAgentPlugin } from "../plugins/DynamicAgentPlugin.ts";
 
 // ── Inline tools ─────────────────────────────────────────────────────────────
@@ -118,6 +119,17 @@ export function createAgent(
       agent: createCodeReaderAgent(llm, { sourceRoot }),
       inactivityTimeoutMs: 30_000,
       absoluteTimeoutMs: 60_000,
+    }),
+  );
+
+  agent.registerPlugin(
+    new SubAgentPlugin({
+      toolName: "explain_codebase",
+      description:
+        "Get an educational explanation of how a part of this codebase works. Returns a structured learning document with architecture overview, key components, data flow, notable patterns, and annotated code examples. Example: 'Explain how the plugin lifecycle works' or 'Walk me through how a tool call flows from the LLM to a plugin.'",
+      agent: createCodebaseExplainerAgent(llm, { sourceRoot }),
+      inactivityTimeoutMs: 45_000,
+      absoluteTimeoutMs: 120_000,
     }),
   );
 
