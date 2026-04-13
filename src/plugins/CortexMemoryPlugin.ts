@@ -69,7 +69,9 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "Use `save_procedure` after successfully completing a non-trivial task to record the steps taken.",
       "Use `edit_memory` to update the text of an existing memory by its ID.",
       "Use `delete_memory` to remove a memory. Single form: `{ id }`. Batch form: `{ ids: [id1, id2, ...] }` — deletes multiple memories in one call and triggers one cache invalidation regardless of how many IDs are provided.",
-      "Use `get_linked_memories` to follow chains of related ideas.",
+      "Use `get_linked_memories` to follow chains of related ideas. Pass `link_type: \"depends_on\"` to find what a procedure relies on.",
+      "Use `get_memory_lineage` to trace how a memory has evolved over time — what it replaced, and what has since replaced it.",
+      "When saving a memory that updates a prior one, use `supersedes` to preserve the lineage rather than deleting the old memory.",
       "Use `query_memories` to filter memories by type, tags, date range, or full-text content.",
       "Use `hybrid_search` to combine semantic similarity search with metadata filters.",
       "Use `aggregate_memories` to understand the shape and distribution of your memories.",
@@ -274,6 +276,10 @@ export class CortexMemoryPlugin implements AgentPlugin {
               items: { type: "string" },
               description: "Optional tags to categorize this memory",
             },
+            supersedes: {
+              type: "string",
+              description: "ID of an existing memory this one replaces. The old memory will be marked superseded and linked forward to this new one.",
+            },
           },
           required: ["content", "type"],
         },
@@ -361,6 +367,21 @@ export class CortexMemoryPlugin implements AgentPlugin {
               type: "string",
               description: "The memory ID to look up links for",
             },
+            link_type: {
+              type: "string",
+              description: "Filter to only links of a specific type: 'related', 'depends_on', 'supersedes', 'reconstructed_from'",
+            },
+          },
+          required: ["id"],
+        },
+      },
+      {
+        name: "get_memory_lineage",
+        description: "Follow the supersession and reconstruction chain for a memory. Returns the full lineage: ancestors (what it was built from), the memory itself, and descendants (what has since replaced it).",
+        parameters: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "The memory ID to trace" },
           },
           required: ["id"],
         },
@@ -516,6 +537,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       if (name === "edit_memory") return await this.handleEditMemory(args);
       if (name === "delete_memory") return await this.handleDeleteMemory(args);
       if (name === "get_linked_memories") return await this.handleGetLinkedMemories(args);
+      if (name === "get_memory_lineage") return JSON.stringify(await this.db.getLineage(args.id), null, 2);
       if (name === "query_memories") return this.handleQueryMemories(args);
       if (name === "hybrid_search") return await this.handleHybridSearch(args);
       if (name === "aggregate_memories") return this.handleAggregateMemories(args);
@@ -557,7 +579,8 @@ export class CortexMemoryPlugin implements AgentPlugin {
       this.name,
       `save_memory type=${args.type ?? "factual"}: "${content.slice(0, 100)}"`,
     );
-    const id = await this.db.addMemory(content, args.type ?? "factual", args.tags ?? []);
+    const supersedes = typeof args.supersedes === "string" ? args.supersedes : undefined;
+    const id = await this.db.addMemory(content, args.type ?? "factual", args.tags ?? [], undefined, undefined, supersedes);
     this.savedThisTurn.add(id);
     logger.info(this.name, `save_memory SUCCESS id=${id}`);
     // Supersede near-duplicate active memories (score >= 0.9) using the saved content as query
@@ -677,11 +700,12 @@ export class CortexMemoryPlugin implements AgentPlugin {
     if (!args.id || typeof args.id !== "string") {
       return "get_linked_memories requires a valid memory id string.";
     }
-    logger.debug(this.name, `get_linked_memories id=${args.id}`);
-    const linked = await this.db.getLinkedMemories(args.id);
+    const linkType = typeof args.link_type === "string" ? args.link_type : undefined;
+    logger.debug(this.name, `get_linked_memories id=${args.id}${linkType ? ` link_type=${linkType}` : ""}`);
+    const linked = await this.db.getLinkedMemories(args.id, linkType);
     logger.debug(this.name, `get_linked_memories found ${linked.length} links`);
     if (linked.length === 0) return "No linked memories found.";
-    return linked.map(m => `[${m.id}] ${m.text.trim()}`).join("\n");
+    return linked.map(m => `[${m.id}] (${m.link_type}) ${m.text.trim()}`).join("\n");
   }
 
   private handleQueryMemories(args: any): string {

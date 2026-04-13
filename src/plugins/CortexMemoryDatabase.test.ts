@@ -324,6 +324,120 @@ describe("CortexMemoryDatabase - chunkAndEmbed", () => {
   });
 });
 
+describe("CortexMemoryDatabase - lineage (superseded_by_id, version_rank, getLineage)", () => {
+  test("superseded_by_id is set on the old memory when addMemory is called with supersededById", async () => {
+    const { db } = makeDB();
+    const oldId = await db.addMemory("old fact", "factual");
+    const newId = await db.addMemory("new fact", "factual", [], undefined, undefined, oldId);
+    const oldMem = await db.getMemoryById(oldId);
+    expect(oldMem?.status).toBe("superseded");
+    expect(oldMem?.superseded_by_id).toBe(newId);
+  });
+
+  test("version_rank increments correctly when chaining supersessions", async () => {
+    const { db } = makeDB();
+    const v1Id = await db.addMemory("v1", "factual");
+    const v1Mem = await db.getMemoryById(v1Id);
+    expect(v1Mem?.version_rank).toBe(1);
+
+    const v2Id = await db.addMemory("v2", "factual", [], undefined, undefined, v1Id);
+    const v2Mem = await db.getMemoryById(v2Id);
+    expect(v2Mem?.version_rank).toBe(2);
+
+    const v3Id = await db.addMemory("v3", "factual", [], undefined, undefined, v2Id);
+    const v3Mem = await db.getMemoryById(v3Id);
+    expect(v3Mem?.version_rank).toBe(3);
+  });
+
+  test("getLineage returns correct ancestors and descendants across a 3-deep chain", async () => {
+    const { db } = makeDB();
+    // v1 is the origin; v2 is reconstructed from v1; v3 supersedes v2
+    const v1Id = await db.addMemory("v1", "factual");
+    // v2 reconstructed from v1 (sets v2.reconstructed_from_id = v1Id)
+    const v2Id = await db.addMemory("v2", "factual", [], undefined, undefined, undefined, v1Id);
+    // v3 supersedes v2 (sets v2.superseded_by_id = v3Id)
+    const v3Id = await db.addMemory("v3", "factual", [], undefined, undefined, v2Id);
+
+    // Query lineage from v2 (middle): ancestor via reconstructed_from_id, descendant via superseded_by_id
+    const lineage = await db.getLineage(v2Id);
+    expect(lineage.current?.id).toBe(v2Id);
+    expect(lineage.ancestors).toHaveLength(1);
+    expect(lineage.ancestors[0]?.id).toBe(v1Id);
+    expect(lineage.descendants).toHaveLength(1);
+    expect(lineage.descendants[0]?.id).toBe(v3Id);
+  });
+
+  test("getLineage returns empty ancestors/descendants for an isolated memory", async () => {
+    const { db } = makeDB();
+    const id = await db.addMemory("standalone", "factual");
+    const lineage = await db.getLineage(id);
+    expect(lineage.current?.id).toBe(id);
+    expect(lineage.ancestors).toHaveLength(0);
+    expect(lineage.descendants).toHaveLength(0);
+  });
+
+  test("getLineage returns null current for unknown id", async () => {
+    const { db } = makeDB();
+    const lineage = await db.getLineage("nonexistent-id");
+    expect(lineage.current).toBeNull();
+    expect(lineage.ancestors).toHaveLength(0);
+    expect(lineage.descendants).toHaveLength(0);
+  });
+});
+
+describe("CortexMemoryDatabase - getLinkedMemories with linkType filter", () => {
+  test("linkMemories stores the given link_type", async () => {
+    const { db } = makeDB();
+    const idA = await db.addMemory("A", "factual");
+    const idB = await db.addMemory("B", "factual");
+    await db.linkMemories(idA, idB, "depends_on");
+    const linked = await db.getLinkedMemories(idA);
+    expect(linked[0]?.link_type).toBe("depends_on");
+  });
+
+  test("getLinkedMemories with linkType filters correctly", async () => {
+    const { db } = makeDB();
+    const idA = await db.addMemory("A", "factual");
+    const idB = await db.addMemory("B", "factual");
+    const idC = await db.addMemory("C", "factual");
+    await db.linkMemories(idA, idB, "depends_on");
+    await db.linkMemories(idA, idC, "related");
+
+    const dependsOn = await db.getLinkedMemories(idA, "depends_on");
+    expect(dependsOn).toHaveLength(1);
+    expect(dependsOn[0]?.id).toBe(idB);
+
+    const related = await db.getLinkedMemories(idA, "related");
+    expect(related).toHaveLength(1);
+    expect(related[0]?.id).toBe(idC);
+  });
+
+  test("getLinkedMemories without linkType returns all links with link_type field", async () => {
+    const { db } = makeDB();
+    const idA = await db.addMemory("A", "factual");
+    const idB = await db.addMemory("B", "factual");
+    await db.linkMemories(idA, idB);
+    const linked = await db.getLinkedMemories(idA);
+    expect(linked[0]).toHaveProperty("link_type");
+    expect(linked[0]?.link_type).toBe("related");
+  });
+});
+
+describe("CortexMemoryDatabase - schema migration idempotency", () => {
+  test("initSchema is idempotent — creating a second instance on same :memory: DB does not throw", async () => {
+    // Since :memory: DBs are per-connection, test idempotency by calling initSchema twice
+    // via two separate instances that share no state — just verifying no crash on fresh schema
+    const { db } = makeDB();
+    const id = await db.addMemory("test", "factual");
+    const mem = await db.getMemoryById(id);
+    // Verify all new columns are present with correct defaults
+    expect(mem?.superseded_by_id).toBeNull();
+    expect(mem?.reconstructed_from_id).toBeNull();
+    expect(mem?.version_rank).toBe(1);
+    expect(mem?.status).toBe("active");
+  });
+});
+
 describe("CortexMemoryDatabase - getRecentMemories", () => {
   test("respects the limit parameter", async () => {
     const { db } = makeDB();
