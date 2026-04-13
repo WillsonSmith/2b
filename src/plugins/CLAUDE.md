@@ -21,11 +21,9 @@ Modular agent capabilities. Each plugin implements `AgentPlugin` from `../core/P
 |--------|---------|
 | `CortexMemoryPlugin` | Long-term memory with types (factual/thought/behavior/procedure), semantic search, linking, editing, deletion, and autonomous conflict resolution; auto-surfaces relevant memories in context each turn — auto-registered by `CortexAgent`; tools: `search_memory`, `save_memory`, `save_behavior`, `save_procedure`, `edit_memory`, `delete_memory`, `get_linked_memories`, `query_memories`, `hybrid_search`, `aggregate_memories`, `get_memory_timeline` |
 | `ThoughtPlugin` | Persists `<think>` blocks as thought memories; exposes `get_recent_thoughts` — auto-registered by `CortexAgent` |
-| `SourceReaderPlugin` | Read-only access to the agent's own source code; tools: `read_source_file` (read file by project-relative path, max 500 KB), `list_source_dir` (browse directory tree), `grep_source` (ripgrep search, defaults to `src/**/*.ts`, max 5 matches per file); all paths sandboxed to `sourceRoot` (constructor option, defaults to `process.cwd()`); used by `CodeReaderAgent` (`explore_codebase` sub-agent) |
+| `SourceReaderPlugin` | Read-only access to the agent's own source code; tools: `read_source_file` (read file by project-relative path, max 500 KB), `list_source_dir` (browse directory tree), `grep_source` (ripgrep search, defaults to `src/**/*.ts`, max 5 matches per file); all paths sandboxed to `sourceRoot` (constructor option, defaults to `process.cwd()`); used by `createCodebaseExplainerAgent` (`explore_codebase` sub-agent) |
 | `MetacognitionPlugin` | Tracks per-turn cognitive state — auto-registered by `CortexAgent` (last, so it observes all other plugins); **cognitive state tools:** `introspect` (full turn state dump), `memory_status` (counts by type + saturation info), `show_active_rules` (all behavior memories); **runtime inspection tools:** `list_registered_plugins` (active plugins + tool counts), `list_available_tools` (all callable tools + descriptions), `get_system_prompt` (assembled system prompt from last LLM call); injects `[Metacognition]` context block every LLM call; detects tool saturation (configurable threshold, default 5) and hedged language in assistant responses |
 | `MemoryPlugin` | Short-term conversation history (max 15 messages, auto-summarises) |
-| `AudioPlugin` | Classifies microphone speech as direct/ambient via intent detection |
-| `TimePlugin` | Injects current time into context; exposes `get_current_time` tool |
 | `TMDBPlugin` | Movie and people lookup via The Movie Database API; tools: `search_movies`, `get_movie_details`, `get_movie_credits`, `get_movie_recommendations`, `get_trending_movies`, `search_person`, `get_person_details`; requires `TMDB_API_KEY` |
 | `FileSystemPlugin` | Local filesystem access; tools: `read_file` (text, max 1 MB, with offset/limit paging), `write_file` (create/overwrite), `append_file`, `list_directory`, `move_file`, `copy_file`, `delete_file`, `make_directory`, `stat_file` (metadata), `find_files` (glob search) — all paths restricted to working directory |
 | `DownloadPlugin` | HTTPS file downloads; tool: `download_file` (URL → `downloads/`, max 100 MB) — blocks private/internal addresses |
@@ -41,7 +39,6 @@ Modular agent capabilities. Each plugin implements `AgentPlugin` from `../core/P
 | `ClipboardPlugin` | macOS clipboard read/write via pbpaste/pbcopy; tools: `read_clipboard`, `write_clipboard` |
 | `NotesPlugin` | Persistent markdown notes saved to `notes/` directory; tools: `create_note`, `list_notes`, `read_note`, `delete_note` |
 | `WeatherPlugin` | Current weather conditions via Open-Meteo (no API key required); tool: `get_weather` (location) |
-| `CodeSandboxPlugin` | Executes Python 3.11 in an isolated container (`python:3.11-slim`); auto-detects Docker or Apple Container runtime on macOS; tool: `execute_code` (task description in plain language, optional input_data JSON, optional timeout_ms) — a dedicated coding model (`qwen2.5-coder-7b-instruct-mlx` by default, overridable via `CODE_MODEL` env var) generates the Python from the task description before execution; no network, no host fs, memory/cpu/pids limited, stdout/stderr + generatedCode returned, 15s default timeout, 60s max; lazy-initializes on first tool call (eager pre-pull when used under BaseAgent via `onInit`) |
 | `SubAgentPlugin` | Wraps a `HeadlessAgent` as a single tool on the orchestrator; constructor options: `toolName`, `description`, `agent`, optional `inactivityTimeoutMs` (resets on each tool call), optional `absoluteTimeoutMs` (hard cap); sub-agent tool calls are forwarded to the parent agent's `subagent_tool_call` event via `setToolCallHandler` |
 | `DynamicAgentPlugin` | Allows the orchestrator to spawn and call sub-agents at runtime; tools: `create_agent` (name, system_prompt, agent_type, capabilities[]), `call_agent` (name, task), `list_agents`, `list_capabilities`; supports `"headless"` (stateless, `HeadlessAgent` + `InMemoryDatabasePlugin` + capability plugins) and `"cortex"` (persistent, `CortexSubAgent` with full memory) types; accepts `presets` constructor option to pre-create headless agents at init; emits `agent_spawned`, `agent_state_change`, `agent_error` on the parent agent |
 | `InMemoryDatabasePlugin` | Session-scoped key-value store for headless agents; tools: `agent_memory_set`, `agent_memory_get`, `agent_memory_delete`, `agent_memory_list`; always included in headless agents created by `DynamicAgentPlugin` |
@@ -51,7 +48,7 @@ Modular agent capabilities. Each plugin implements `AgentPlugin` from `../core/P
 1. Create a class implementing `AgentPlugin`
 2. Only implement the hooks you actually need
 3. If exposing tools, define them in `getTools()` and handle in `executeTool()`
-4. Register in the relevant factory function
+4. Register in `2b.ts` or add as a capability in `DynamicAgentPlugin`'s `CAPABILITY_REGISTRY`
 
 ```typescript
 import type { AgentPlugin } from "../core/Plugin.ts";

@@ -1,6 +1,6 @@
 {
   "name": "2b",
-  "module": "index.ts",
+  "module": "2b.ts",
   "bin": {
     "2b": "./2b.ts"
   },

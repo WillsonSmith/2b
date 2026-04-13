@@ -1,6 +1,6 @@
 # Agents
 
-This directory contains agent factory functions and input sources. The core agent classes (`BaseAgent`, `CortexAgent`, `Plugin`) live in `src/core/`.
+This directory contains the sub-agent factory used by `2b.ts` and supporting utilities. The core agent classes (`BaseAgent`, `CortexAgent`, `Plugin`) live in `src/core/`.
 
 ## Architecture
 
@@ -17,9 +17,6 @@ This directory contains agent factory functions and input sources. The core agen
 
 **HeadlessAgent** (`src/core/HeadlessAgent.ts`) is a stateless, single-call agent with no tick loop or input sources. It exposes one method — `ask(task: string): Promise<string>` — and is used as the building block for sub-agents. Plugins that rely on `onMessage`, `getMessages`, or `augmentResponse` are not invoked; the agent is task-in/result-out.
 
-**Agent Factories** compose an agent with specific plugins for a use case:
-- `AgentFactory.ts` — 2b CLI chat agent; registers `DynamicAgentPlugin` (with preset agents), `FileSystemPlugin`, `ShellPlugin`, `MinimalTools`, `ScratchPlugin`, and `MemoryPlugin` directly on the orchestrator
-
 ## Orchestrator + Dynamic Agent Pattern
 
 The 2b agent uses a **dynamic agent system** rather than statically-registered sub-agents. The orchestrator has direct access to core capabilities and can spawn specialized sub-agents on demand via `DynamicAgentPlugin`:
@@ -32,7 +29,7 @@ User → Orchestrator (CortexAgent)
            │     ├── preset: media      → HeadlessAgent [YtDlp, FFmpeg, ImageVision, Download]
            │     ├── preset: info       → HeadlessAgent [TMDB, Weather, Wikipedia, RSS]
            │     └── runtime agents     → HeadlessAgent or CortexSubAgent, created on demand
-           ├── explore_codebase    → SubAgentPlugin wrapping CodeReaderAgent (static — owns its own LLM)
+           ├── explore_codebase    → SubAgentPlugin wrapping CodebaseExplainerAgent (static)
            ├── MinimalTools        (get_current_time, echo)
            ├── ScratchPlugin
            └── MemoryPlugin
@@ -48,10 +45,6 @@ Sub-agent tool calls are forwarded to the parent orchestrator's `subagent_tool_c
 |------|-------|--------|----------|
 | `"headless"` | `HeadlessAgent` | `InMemoryDatabasePlugin` KV store only | Isolated one-shot tasks |
 | `"cortex"` | `CortexSubAgent` | Full semantic memory, conversation history | Ongoing collaboration across multiple `call_agent` calls |
-
-### The static exception: explore_codebase
-
-`createCodeReaderAgent` instantiates its own `LLMProvider` with a code-specific model (`qwen2.5-coder-7b-instruct-mlx`, overridable via `CODE_READER_MODEL`). Because it owns its own model connection it cannot be replicated through the generic capability system and remains a static `SubAgentPlugin`.
 
 ### Timeout options on SubAgentPlugin
 
@@ -80,15 +73,9 @@ interface AgentPlugin {
 }
 ```
 
-`ToolDefinition` also supports an optional `implementation` field for inline tool handlers (used by the `MinimalTools` plugin in `AgentFactory.ts`).
+`ToolDefinition` also supports an optional `implementation` field for inline tool handlers (used by the `MinimalTools` inline plugin in `2b.ts`).
 
 Plugins never crash the agent — all plugin calls are wrapped in try-catch.
-
-## Input Sources
-
-Input sources extend the abstract `InputSource` class (`src/core/InputSource.ts`) and emit events that BaseAgent enqueues:
-- `CLIInputSource` — reads from stdin, emits all input as `direct_input`
-- `MicrophoneInputSource` — wraps AudioSystem, classifies speech as direct vs. ambient via AudioPlugin
 
 ## Direct vs. Ambient Input
 
@@ -118,9 +105,8 @@ Standalone `ToolDefinition` objects for the old LMStudio SDK tool format (pre-pl
 ## Adding a New Agent
 
 1. Create a factory function in `src/agents/<Name>AgentFactory.ts`
-2. Instantiate `CortexAgent(llm, config)` — `llm` is a `LMStudioProvider`, `config` has `name`, `cortexName`, `model`, `systemPrompt`
+2. Instantiate `CortexAgent(llm, config)` — `llm` is an `LLMProvider`, `config` has `name`, `cortexName`, `model`, `systemPrompt`
 3. Register plugins via `agent.registerPlugin(new SomePlugin())`
-4. Add an input source via `agent.addInputSource(new CLIInputSource())`
-5. Wire it up in `index.ts`
+4. Wire it up in `2b.ts` — input is handled by the terminal or web UI layer, not an input source class
 
 `cortexName` determines the SQLite database filename: `data/<cortexName>.cortex.sqlite`.
