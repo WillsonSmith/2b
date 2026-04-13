@@ -110,6 +110,35 @@ body {
   font-weight: bold;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.copy-btn {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+  line-height: 1.4;
+}
+
+.copy-btn:hover {
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+
+.copy-btn--copied {
+  color: var(--green);
+  border-color: var(--green);
 }
 
 .message--user .message-label {
