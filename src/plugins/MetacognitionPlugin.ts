@@ -368,7 +368,7 @@ export class MetacognitionPlugin implements AgentPlugin {
       }
     } else if (role === "assistant") {
       const hedgePattern =
-        /\b(i think|probably|i'm not sure|i believe|might be|may be|i guess|not certain)\b/i;
+        /\b(probably|i'm not sure|might be|may be|i guess|not certain)\b/i;
       if (
         hedgePattern.test(content) &&
         !this.currentTurn.uncertainty_markers.includes("hedged_language")
@@ -1023,7 +1023,7 @@ export class MetacognitionPlugin implements AgentPlugin {
   private turnHasRedundancy(turn: TurnState): boolean {
     const seen = new Set<string>();
     for (const tc of turn.tool_calls) {
-      const key = `${tc.tool}:${tc.args_summary.slice(0, 50)}`;
+      const key = `${tc.tool}:${tc.args_summary}`;
       if (seen.has(key)) return true;
       seen.add(key);
     }
