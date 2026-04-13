@@ -184,26 +184,53 @@ export class OllamaProvider implements LLMProvider {
     const history = [...messages];
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      const response = await this.client.chat({
+      // Stream to keep the connection alive during long tool executions.
+      // We must collect silently — tool_calls only appear on the final chunk,
+      // so we cannot know whether to emit tokens until the stream is complete.
+      const stream = await this.client.chat({
         model: this.model,
         messages: history,
         tools: ollamaTools,
-        stream: false,
+        stream: true,
         think: this.think,
         ...(this.numCtx !== undefined
           ? { options: { num_ctx: this.numCtx } }
           : {}),
       });
 
-      const assistantMsg = response.message;
+      let roundThinking = "";
+      let roundContent = "";
+      let toolCalls: OllamaMessage["tool_calls"] | undefined;
 
-      if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
+      for await (const chunk of stream) {
+        if (chunk.message.thinking) roundThinking += chunk.message.thinking;
+        if (chunk.message.content) roundContent += chunk.message.content;
+        if (chunk.message.tool_calls?.length) toolCalls = chunk.message.tool_calls;
+      }
+
+      if (!toolCalls || toolCalls.length === 0) {
+        // Final round: emit what we collected and return directly.
+        // Do NOT call respond() — re-invoking the model a second time was the
+        // root cause of "shows thinking but no content" bugs in past fix attempts.
         logger.debug(
           "Ollama",
           `actWithTools() finished after ${round + 1} round(s)`,
         );
-        return await this.respond(history, onToken);
+        if (roundThinking) onToken?.(roundThinking, true);
+        if (roundContent) onToken?.(roundContent, false);
+        return {
+          response: roundContent || roundThinking,
+          nonReasoningContent: roundContent,
+          reasoningText: roundThinking,
+        };
       }
+
+      const assistantMsg: OllamaMessage = {
+        role: "assistant",
+        content: roundContent,
+        thinking: roundThinking || undefined,
+        tool_calls: toolCalls,
+      };
 
       history.push(assistantMsg);
 
