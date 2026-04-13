@@ -102,13 +102,11 @@ new OllamaProvider(
 | `"native"` | Sends tools in OpenAI format; drives a manual agentic loop checking `tool_calls` on each response | Models with Ollama tool support (llama3, mistral, etc.) |
 | `"structured_output"` | Uses `buildToolSystemPromptAddition` + Ollama `format` (JSON schema) to constrain output | Any model that doesn't support native tools |
 
-**Reasoning extraction:** Ollama has no SDK-level reasoning markers. `parseStreamChunk()` manually detects `<think>...</think>` tags across streaming chunk boundaries:
-- Content inside `<think>...</think>` → `reasoningText`, streamed with `isReasoning: true`
-- All other content → `nonReasoningContent`, streamed with `isReasoning: false`
+**Reasoning extraction:** Ollama surfaces reasoning in `message.thinking` and the response in `message.content` as separate fields — no tag parsing needed. Chunks where `message.thinking` is set are emitted with `isReasoning: true`; chunks where `message.content` is set are emitted with `isReasoning: false`.
 
 **`numCtx` — optional:** Ollama automatically scales context length based on available system resources. Set `numCtx` only if you need to cap or guarantee a specific size.
 
-**Native tool-call loop:** `actWithTools()` runs up to 10 rounds. Each round sends the full message history with tools; if the response has `tool_calls`, executes them and appends `{ role: "tool", content }` messages before the next round. The final round with no `tool_calls` is returned as the response.
+**Native tool-call loop:** `actWithTools()` runs up to 100 rounds. Each round streams the full message history with tools, collecting chunks silently. If the accumulated response has `tool_calls`, executes them and appends `{ role: "tool", content }` messages before the next round. The final round with no `tool_calls` emits the collected thinking and content to `onToken` and returns directly — the model is not re-invoked.
 
 ## Gotchas
 
