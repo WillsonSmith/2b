@@ -33,7 +33,7 @@ const USER_UNCERTAINTY_PATTERN =
 
 interface CorrectionRecord {
   id: string;
-  trigger: "saturation" | "redundancy" | "hedged_no_search";
+  trigger: "saturation" | "redundancy" | "hedged_no_search" | "dead_search";
   rule_saved: string;
   behavior_memory_id: string;
   applied_at: Date;
@@ -107,7 +107,7 @@ export class MetacognitionPlugin implements AgentPlugin {
         );
         if (
           !trigger ||
-          !["saturation", "redundancy", "hedged_no_search"].includes(trigger)
+          !["saturation", "redundancy", "hedged_no_search", "dead_search"].includes(trigger)
         )
           continue;
 
@@ -174,7 +174,7 @@ export class MetacognitionPlugin implements AgentPlugin {
         }
         const meta = this.memoryPlugin.searchMetaBuffer.get(name);
         if (meta) {
-          record.result_meta = meta;
+          record.result_meta = meta as unknown as Record<string, unknown>;
           this.memoryPlugin.searchMetaBuffer.delete(name);
         }
       }
@@ -668,6 +668,12 @@ export class MetacognitionPlugin implements AgentPlugin {
         "User expressed uncertainty but you didn't search memory. A targeted retrieval might have produced a more grounded response.",
       );
     }
+    const emptySearches = this.turnEmptySearchCount(t);
+    if (emptySearches >= 2) {
+      suggestions.push(
+        `${emptySearches} memory searches returned no results this turn. The information may not exist in memory yet — consider saving what you know rather than re-searching.`,
+      );
+    }
     if (suggestions.length === 0) {
       suggestions.push("No specific inefficiencies detected this turn.");
     }
@@ -768,6 +774,18 @@ export class MetacognitionPlugin implements AgentPlugin {
       );
     }
 
+    // Dead-search pattern: multiple empty memory searches per turn, repeatedly
+    const deadSearchCount = window.filter(
+      (t) => this.turnEmptySearchCount(t) >= 2,
+    ).length;
+    if (deadSearchCount >= PATTERN_THRESHOLD) {
+      await this.saveCorrectiveRule(
+        "dead_search",
+        "Multiple memory searches returned no results this turn. Before re-searching with similar queries, consider that the information may not be in memory yet. Save what you know, adjust your query significantly, or synthesize from available context rather than issuing further empty searches.",
+        window.length,
+      );
+    }
+
     // Hedged-no-search pattern: hedging without consulting memory, repeatedly
     const hedgedNoSearchCount = window.filter(
       (t) =>
@@ -846,6 +864,9 @@ export class MetacognitionPlugin implements AgentPlugin {
       }
       if (trigger === "redundancy") {
         return this.turnHasRedundancy(t);
+      }
+      if (trigger === "dead_search") {
+        return this.turnEmptySearchCount(t) >= 2;
       }
       // hedged_no_search
       return (
@@ -1018,6 +1039,15 @@ export class MetacognitionPlugin implements AgentPlugin {
     };
     for (const c of this.correctionHistory) counts[c.effectiveness]++;
     return counts;
+  }
+
+  private turnEmptySearchCount(turn: TurnState): number {
+    return turn.tool_calls.filter(
+      (tc) =>
+        tc.category === "memory" &&
+        typeof tc.result_meta?.result_count === "number" &&
+        tc.result_meta.result_count === 0,
+    ).length;
   }
 
   private turnHasRedundancy(turn: TurnState): boolean {
