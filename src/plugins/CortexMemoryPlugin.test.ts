@@ -569,3 +569,119 @@ describe("onMessage conflict resolution", () => {
     expect(row?.status).toBe("superseded");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Performance: per-turn embedding cache
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Helper that exposes the underlying getEmbedding mock so tests can assert
+ * on how many times it was called. Uses in-memory SQLite so there's no disk I/O.
+ */
+function makePluginWithEmbeddingMock() {
+  const getEmbedding = mock(async (_text: string) => [1, 0, 0, 0]);
+  const llm = { getEmbedding };
+  const plugin = new CortexMemoryPlugin(llm as any, "test", ":memory:");
+  return { plugin, getEmbedding };
+}
+
+describe("CortexMemoryPlugin - embedding cache (perf)", () => {
+  test("getEmbedding is called once when getSystemPromptFragment and getContext receive the same query", async () => {
+    // BaseAgent joins allInputs with " " before passing to both hooks, so the
+    // strings match and the cache hit should eliminate the second embedding call.
+    const { plugin, getEmbedding } = makePluginWithEmbeddingMock();
+
+    const query = "what is the capital of France";
+    await plugin.getSystemPromptFragment(query);   // populates cache
+    await plugin.getContext([query]);               // should reuse cached embedding
+
+    expect(getEmbedding).toHaveBeenCalledTimes(1);
+  });
+
+  test("getEmbedding is called twice when queries differ between the two hooks", async () => {
+    // A query mismatch (e.g. the plugin is called standalone, not via BaseAgent)
+    // must correctly fall back to computing a fresh embedding.
+    const { plugin, getEmbedding } = makePluginWithEmbeddingMock();
+
+    await plugin.getSystemPromptFragment("query A");
+    await plugin.getContext(["query B"]);  // different string → cache miss
+
+    expect(getEmbedding).toHaveBeenCalledTimes(2);
+  });
+
+  test("getContext works correctly when called without a prior getSystemPromptFragment call", async () => {
+    // getContext must populate the cache itself when it is the first caller.
+    const { plugin, getEmbedding } = makePluginWithEmbeddingMock();
+
+    const ctx = await plugin.getContext(["some events"]);
+
+    expect(typeof ctx).toBe("string"); // did not throw
+    expect(getEmbedding).toHaveBeenCalledTimes(1);
+  });
+
+  test("cache is reused on repeated getContext calls with the same query", async () => {
+    const { plugin, getEmbedding } = makePluginWithEmbeddingMock();
+
+    const query = "stable query";
+    await plugin.getSystemPromptFragment(query);
+    await plugin.getContext([query]);
+    await plugin.getContext([query]);  // third call, still same query
+
+    expect(getEmbedding).toHaveBeenCalledTimes(1);
+  });
+
+  test("cache is invalidated when the query changes on a subsequent call", async () => {
+    const { plugin, getEmbedding } = makePluginWithEmbeddingMock();
+
+    await plugin.getContext(["turn one"]);   // call 1
+    await plugin.getContext(["turn two"]);   // different query → call 2
+
+    expect(getEmbedding).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Performance: selectWithMMR correctness after swap-to-end refactor
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("CortexMemoryPlugin - selectWithMMR correctness (perf)", () => {
+  test("returned memories do not contain duplicates", async () => {
+    // Save more memories than maxCount (5) so MMR must iterate multiple rounds.
+    // With identical embeddings each round selects from a shrinking pool —
+    // a broken swap-to-end would introduce duplicates.
+    const plugin = makePlugin();
+    for (let i = 1; i <= 7; i++) {
+      await plugin.executeTool("save_memory", { content: `fact ${i}`, type: "factual" });
+    }
+
+    const ctx = await plugin.getContext(["some query"]);
+    const lines = ctx
+      .split("\n")
+      .filter(l => l.startsWith("- ["))
+      .map(l => l.trim());
+
+    const unique = new Set(lines);
+    expect(unique.size).toBe(lines.length);  // no duplicate lines
+  });
+
+  test("at most maxCount (5) factual memories are returned", async () => {
+    const plugin = makePlugin();
+    for (let i = 1; i <= 8; i++) {
+      await plugin.executeTool("save_memory", { content: `fact ${i} `.repeat(10), type: "factual" });
+    }
+
+    const ctx = await plugin.getContext(["query"]);
+    const lines = ctx.split("\n").filter(l => l.startsWith("- ["));
+    expect(lines.length).toBeLessThanOrEqual(5);
+  });
+
+  test("selection still works when the pool has exactly one candidate (bestIndex === last index)", async () => {
+    // When remaining.length === 1, bestIndex is 0 and remaining.length-1 is also 0,
+    // so the swap is a self-assignment — a no-op. This must not corrupt the result.
+    const plugin = makePlugin();
+    await plugin.executeTool("save_memory", { content: "only fact", type: "factual" });
+
+    const ctx = await plugin.getContext(["query"]);
+    expect(ctx).toContain("only fact");
+  });
+});

@@ -390,3 +390,248 @@ describe("BaseAgent - tick scheduling", () => {
     await agent.stop();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Performance: tool caching
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BaseAgent - tool caching (perf)", () => {
+  test("getTools is called only once across two ticks when no plugin is added between them", async () => {
+    const getTools = mock(() => [{ name: "t", description: "", parameters: {} }]);
+    const plugin: AgentPlugin = { name: "P", getTools, executeTool: mock(async () => "ok") };
+
+    const agent = new BaseAgent(makeLLM(), makeConfig());
+    agent.registerPlugin(plugin);
+
+    agent.addDirect("first");
+    await waitForIdle(agent);
+    agent.addDirect("second");
+    await waitForIdle(agent);
+
+    // Cache should have been populated on the first tick and reused on the second.
+    expect(getTools).toHaveBeenCalledTimes(1);
+    agent.stop();
+  });
+
+  test("getTools is called again after registerPlugin invalidates the cache", async () => {
+    const getTools = mock(() => [{ name: "t", description: "", parameters: {} }]);
+    const plugin: AgentPlugin = { name: "P", getTools, executeTool: mock(async () => "ok") };
+
+    const agent = new BaseAgent(makeLLM(), makeConfig());
+    agent.registerPlugin(plugin);
+
+    // First tick — builds cache.
+    agent.addDirect("first");
+    await waitForIdle(agent);
+    expect(getTools).toHaveBeenCalledTimes(1);
+
+    // Adding a second plugin invalidates cachedTools.
+    agent.registerPlugin({ name: "P2", getTools: mock(() => []) });
+
+    // Second tick — must rebuild.
+    agent.addDirect("second");
+    await waitForIdle(agent);
+    expect(getTools).toHaveBeenCalledTimes(2);
+    agent.stop();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Performance: concurrent onInit
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BaseAgent - concurrent plugin onInit (perf)", () => {
+  test("async onInit calls from different plugins overlap in time", async () => {
+    const timeline: string[] = [];
+
+    // P1 takes 30ms; P2 takes 10ms. If sequential, P2 can only start after P1 finishes.
+    // If concurrent, P2 finishes before P1.
+    const p1: AgentPlugin = {
+      name: "P1",
+      onInit: async () => {
+        timeline.push("P1:start");
+        await new Promise(r => setTimeout(r, 30));
+        timeline.push("P1:end");
+      },
+    };
+    const p2: AgentPlugin = {
+      name: "P2",
+      onInit: async () => {
+        timeline.push("P2:start");
+        await new Promise(r => setTimeout(r, 10));
+        timeline.push("P2:end");
+      },
+    };
+
+    const agent = new BaseAgent(makeLLM(), makeConfig());
+    agent.registerPlugin(p1).registerPlugin(p2);
+    await agent.start();
+
+    // Concurrent order: P1:start → P2:start → P2:end → P1:end
+    // Sequential order would be: P1:start → P1:end → P2:start → P2:end
+    expect(timeline).toEqual(["P1:start", "P2:start", "P2:end", "P1:end"]);
+    await agent.stop();
+  });
+
+  test("async onInit rejection in one plugin does not prevent others from initializing", async () => {
+    const p2Inited = mock(() => {});
+
+    const p1: AgentPlugin = {
+      name: "P1",
+      onInit: async () => { throw new Error("P1 init failed"); },
+    };
+    const p2: AgentPlugin = {
+      name: "P2",
+      onInit: async () => { p2Inited(); },
+    };
+
+    const agent = new BaseAgent(makeLLM(), makeConfig());
+    agent.registerPlugin(p1).registerPlugin(p2);
+
+    // start() should not throw — Promise.allSettled absorbs the rejection.
+    await agent.start();
+    expect(p2Inited).toHaveBeenCalledTimes(1);
+    await agent.stop();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Performance: concurrent collectMessages
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BaseAgent - concurrent collectMessages (perf)", () => {
+  test("messages are assembled in plugin registration order even when a slow plugin resolves last", async () => {
+    // P1 takes 30ms, P2 resolves immediately — but P1 is registered first so its
+    // messages must appear before P2's in the final array.
+    const p1: AgentPlugin = {
+      name: "P1",
+      getMessages: async () => {
+        await new Promise(r => setTimeout(r, 30));
+        return [{ role: "assistant" as const, content: "from-P1" }];
+      },
+    };
+    const p2: AgentPlugin = {
+      name: "P2",
+      getMessages: async () => [{ role: "assistant" as const, content: "from-P2" }],
+    };
+
+    const llm = makeLLM();
+    const agent = new BaseAgent(llm, makeConfig());
+    agent.registerPlugin(p1).registerPlugin(p2);
+    agent.addDirect("hi");
+    await waitForIdle(agent, 500);
+
+    const messages: Array<{ role: string; content: string }> =
+      (llm.chat as ReturnType<typeof mock>).mock.calls[0][0];
+    const p1Idx = messages.findIndex(m => m.content === "from-P1");
+    const p2Idx = messages.findIndex(m => m.content === "from-P2");
+    expect(p1Idx).toBeGreaterThanOrEqual(0);
+    expect(p2Idx).toBeGreaterThanOrEqual(0);
+    expect(p1Idx).toBeLessThan(p2Idx);
+    agent.stop();
+  });
+
+  test("a getMessages rejection in one plugin does not drop other plugins' messages", async () => {
+    const p1: AgentPlugin = {
+      name: "P1",
+      getMessages: async () => { throw new Error("DB unavailable"); },
+    };
+    const p2: AgentPlugin = {
+      name: "P2",
+      getMessages: async () => [{ role: "assistant" as const, content: "from-P2" }],
+    };
+
+    const llm = makeLLM();
+    const agent = new BaseAgent(llm, makeConfig());
+    agent.registerPlugin(p1).registerPlugin(p2);
+    agent.addDirect("hi");
+    await waitForIdle(agent);
+
+    const messages: Array<{ role: string; content: string }> =
+      (llm.chat as ReturnType<typeof mock>).mock.calls[0][0];
+    expect(messages.some(m => m.content === "from-P2")).toBe(true);
+    agent.stop();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Performance: concurrent collectSystemPrompt
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BaseAgent - concurrent collectSystemPrompt (perf)", () => {
+  test("fragments from all plugins appear in registration order despite different resolution times", async () => {
+    // P1 (slow) is registered first — its fragment must still appear before P2's (fast).
+    const p1: AgentPlugin = {
+      name: "P1",
+      getSystemPromptFragment: async () => {
+        await new Promise(r => setTimeout(r, 30));
+        return "FRAG_SLOW";
+      },
+    };
+    const p2: AgentPlugin = {
+      name: "P2",
+      getSystemPromptFragment: async () => "FRAG_FAST",
+    };
+
+    const llm = makeLLM();
+    const agent = new BaseAgent(llm, makeConfig());
+    agent.registerPlugin(p1).registerPlugin(p2);
+    agent.addDirect("hi");
+    await waitForIdle(agent, 500);
+
+    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0][1];
+    expect(systemPrompt).toContain("FRAG_SLOW");
+    expect(systemPrompt).toContain("FRAG_FAST");
+    expect(systemPrompt.indexOf("FRAG_SLOW")).toBeLessThan(systemPrompt.indexOf("FRAG_FAST"));
+    agent.stop();
+  });
+
+  test("within a single plugin, getSystemPromptFragment completes before getContext starts", async () => {
+    // This ordering is required so that plugins can cache an embedding computed in
+    // getSystemPromptFragment and reuse it in getContext (see CortexMemoryPlugin).
+    const callOrder: string[] = [];
+
+    const p: AgentPlugin = {
+      name: "P",
+      getSystemPromptFragment: async () => {
+        callOrder.push("fragment:start");
+        await new Promise(r => setTimeout(r, 20));
+        callOrder.push("fragment:end");
+        return "FRAG";
+      },
+      getContext: async () => {
+        callOrder.push("context:start");
+        return "CTX";
+      },
+    };
+
+    const agent = new BaseAgent(makeLLM(), makeConfig());
+    agent.registerPlugin(p);
+    agent.addDirect("hi");
+    await waitForIdle(agent, 500);
+
+    expect(callOrder).toEqual(["fragment:start", "fragment:end", "context:start"]);
+    agent.stop();
+  });
+
+  test("a getContext rejection in one plugin does not drop other plugins' context", async () => {
+    const p1: AgentPlugin = {
+      name: "P1",
+      getContext: async () => { throw new Error("context failed"); },
+    };
+    const p2: AgentPlugin = {
+      name: "P2",
+      getContext: async () => "CTX_FROM_P2",
+    };
+
+    const llm = makeLLM();
+    const agent = new BaseAgent(llm, makeConfig());
+    agent.registerPlugin(p1).registerPlugin(p2);
+    agent.addDirect("hi");
+    await waitForIdle(agent);
+
+    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0][1];
+    expect(systemPrompt).toContain("CTX_FROM_P2");
+    agent.stop();
+  });
+});
