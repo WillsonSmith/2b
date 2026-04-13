@@ -40,6 +40,9 @@ export class SubAgentPlugin implements AgentPlugin {
       for (const reset of this.onActivityResetHandlers) reset();
       agent.emit("subagent_tool_call", this.toolName, this.toolName, name, args);
     });
+    this.agent.setOnToken((token, isReasoning) => {
+      agent.emit("subagent_token", this.toolName, token, isReasoning);
+    });
   }
 
   getSystemPromptFragment(): string {

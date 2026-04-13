@@ -12,6 +12,7 @@ export interface AgentEventMap {
   tool_call: [name: string, args: Record<string, unknown>];
   tool_result: [name: string];
   subagent_tool_call: [agentName: string, agentToolName: string, toolName: string, args: Record<string, unknown>];
+  subagent_token: [agentName: string, token: string, isReasoning: boolean];
   tool_call_blocked: [name: string, args: Record<string, unknown>, reason: string];
   agent_spawned: [agentName: string, agentType: "headless" | "cortex", capabilities: string[]];
   agent_state_change: [agentName: string, state: "idle" | "thinking"];
