@@ -13,6 +13,12 @@ export class BaseAgent extends EventEmitter {
   private ambientQueue: string[] = [];
   private tickTimer: ReturnType<typeof setTimeout> | null = null;
   private plugins: AgentPlugin[] = [];
+  /**
+   * Tool list built once from all registered plugins and reused every tick.
+   * Set to null by registerPlugin() so the next tick rebuilds it automatically
+   * if plugins are added after start(). Tools never change mid-tick.
+   */
+  private cachedTools: ToolDefinition[] | null = null;
   private inputSources: InputSource[] = [];
   private currentAbortController: AbortController | null = null;
   private readonly IGNORE_KEYWORD = "[IGNORE]";
@@ -33,6 +39,8 @@ export class BaseAgent extends EventEmitter {
 
   public registerPlugin(plugin: AgentPlugin): this {
     this.plugins.push(plugin);
+    // Invalidate the tool cache so the next tick includes this plugin's tools.
+    this.cachedTools = null;
     return this;
   }
 
@@ -121,9 +129,9 @@ export class BaseAgent extends EventEmitter {
 
   public async start() {
     logger.info("BaseAgent", `Starting ${this.name} with ${this.plugins.length} plugins`);
-    for (const plugin of this.plugins) {
-      plugin.onInit?.(this);
-    }
+    // Initialize all plugins concurrently. allSettled is used instead of all so
+    // a single failing plugin doesn't block the others from starting.
+    await Promise.allSettled(this.plugins.map(p => p.onInit?.(this)));
     for (const source of this.inputSources) {
       await source.start();
     }
@@ -195,16 +203,22 @@ export class BaseAgent extends EventEmitter {
   }
 
   private async collectMessages(allInputs: string[]): Promise<{ messages: Message[]; userContent: string }> {
+    // Fetch history from all plugins concurrently — each plugin's store is independent.
+    // allSettled keeps iteration order so message sequence matches plugin registration order
+    // even when some calls finish before others.
+    const pluginsWithMessages = this.plugins.filter(p => p.getMessages);
+    const results = await Promise.allSettled(
+      pluginsWithMessages.map(p => p.getMessages!(this.config.historyLimit ?? 20)),
+    );
     const messages: Message[] = [];
-    for (const plugin of this.plugins) {
-      if (plugin.getMessages) {
-        try {
-          const pluginMessages = await plugin.getMessages(this.config.historyLimit ?? 20);
-          logger.debug("BaseAgent", `Plugin ${plugin.name} provided ${pluginMessages.length} messages`);
-          messages.push(...(pluginMessages as Message[]));
-        } catch (e) {
-          logger.error("BaseAgent", `Plugin error in ${plugin.name}:`, e);
-        }
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i]!;
+      const plugin = pluginsWithMessages[i]!;
+      if (result.status === "fulfilled") {
+        logger.debug("BaseAgent", `Plugin ${plugin.name} provided ${result.value.length} messages`);
+        messages.push(...(result.value as Message[]));
+      } else {
+        logger.error("BaseAgent", `Plugin error in ${plugin.name}:`, result.reason);
       }
     }
     const userContent = allInputs.join("\n");
@@ -217,26 +231,48 @@ export class BaseAgent extends EventEmitter {
     allInputs: string[],
     mustRespond: boolean,
   ): Promise<{ systemPrompt: string; systemPromptFragments: string[] }> {
+    const inputContext = allInputs.join(" ");
+
+    // All plugins run concurrently to overlap their async work (e.g. embedding calls,
+    // DB queries). Within each plugin, getSystemPromptFragment is awaited before
+    // getContext — this ordering lets plugins that compute an embedding in
+    // getSystemPromptFragment cache and reuse it in getContext (see CortexMemoryPlugin).
+    // allSettled preserves plugin registration order in results, so fragment and context
+    // are assembled in a deterministic sequence regardless of which plugin finishes first.
+    const results = await Promise.allSettled(
+      this.plugins.map(async (plugin) => {
+        let fragment: string | undefined;
+        let ctx: string | undefined;
+        if (plugin.getSystemPromptFragment) {
+          try {
+            const f = await plugin.getSystemPromptFragment(inputContext);
+            if (f) fragment = f;
+          } catch (e) {
+            logger.error("BaseAgent", `Plugin error in ${plugin.name} getSystemPromptFragment:`, e);
+          }
+        }
+        if (plugin.getContext) {
+          try {
+            logger.debug("BaseAgent", `Collecting context from ${plugin.name}`);
+            const c = await plugin.getContext(allInputs);
+            if (c) ctx = c;
+          } catch (e) {
+            logger.error("BaseAgent", `Plugin error in ${plugin.name} getContext:`, e);
+          }
+        }
+        return { plugin, fragment, ctx };
+      }),
+    );
+
     const systemPromptFragments: string[] = [];
     let pluginContext = "";
-
-    const inputContext = allInputs.join(" ");
-    for (const plugin of this.plugins) {
-      if (plugin.getSystemPromptFragment) {
-        const fragment = await plugin.getSystemPromptFragment(inputContext);
-        if (fragment) systemPromptFragments.push(fragment);
-      }
-      if (plugin.getContext) {
-        try {
-          logger.debug("BaseAgent", `Collecting context from ${plugin.name}`);
-          const ctx = await plugin.getContext(allInputs);
-          if (ctx) {
-            logger.debug("BaseAgent", `Context from ${plugin.name}: "${ctx.slice(0, 120)}${ctx.length > 120 ? "…" : ""}"`);
-            pluginContext += `\n${plugin.name}: ${ctx.trim()}`;
-          }
-        } catch (e) {
-          logger.error("BaseAgent", `Plugin error in ${plugin.name}:`, e);
-        }
+    for (const result of results) {
+      if (result.status === "rejected") continue;
+      const { plugin, fragment, ctx } = result.value;
+      if (fragment) systemPromptFragments.push(fragment);
+      if (ctx) {
+        logger.debug("BaseAgent", `Context from ${plugin.name}: "${ctx.slice(0, 120)}${ctx.length > 120 ? "…" : ""}"`);
+        pluginContext += `\n${plugin.name}: ${ctx.trim()}`;
       }
     }
 
@@ -245,14 +281,19 @@ export class BaseAgent extends EventEmitter {
     return { systemPrompt, systemPromptFragments };
   }
 
-  private collectTools(): ToolDefinition[] {
+  /**
+   * Assembles the complete tool list from all plugins, wrapping each tool with
+   * permission checks and veto logic. Called once at startup (or after a new
+   * plugin is registered) and cached by collectTools().
+   */
+  private buildTools(): ToolDefinition[] {
     const tools: ToolDefinition[] = [];
     for (const plugin of this.plugins) {
       if (plugin.getTools) {
         const pluginTools = plugin.getTools();
         for (const rawTool of pluginTools) {
-          // Fix #1: shallow-copy before mutating to avoid stale closure capture
-          // if a plugin returns the same object references across calls.
+          // Shallow-copy before mutating so plugins that return cached object
+          // references don't have their originals modified.
           const t: ToolDefinition = { ...rawTool };
           if (!t.implementation && plugin.executeTool) {
             const toolName = t.name;
@@ -291,6 +332,18 @@ export class BaseAgent extends EventEmitter {
       }
     }
     return tools;
+  }
+
+  /**
+   * Returns the cached tool list, building it first if necessary.
+   * The cache is invalidated by registerPlugin() so dynamically added plugins
+   * are picked up on the next tick without rebuilding every turn.
+   */
+  private collectTools(): ToolDefinition[] {
+    if (!this.cachedTools) {
+      this.cachedTools = this.buildTools();
+    }
+    return this.cachedTools;
   }
 
   private async act(direct: string[], ambient: string[]) {
