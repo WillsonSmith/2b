@@ -49,6 +49,15 @@ export class CortexMemoryPlugin implements AgentPlugin {
   private readonly factualBudget: number;
   private readonly procedureBudget: number;
 
+  /**
+   * Per-turn embedding cache. Both getSystemPromptFragment() and getContext() embed
+   * the same user input string to do their respective semantic searches. Without this
+   * cache, each turn would make two embedding round-trips to the LLM provider for
+   * identical text. The cache is keyed by query string and overwritten whenever the
+   * query changes (i.e. on every new turn).
+   */
+  private embeddingCache: { query: string; embedding: Float32Array } | null = null;
+
   constructor(llmProvider: LLMProvider, name: string, dbPath?: string, options?: CortexMemoryPluginOptions) {
     this.db = new CortexMemoryDatabase(llmProvider, name, dbPath);
     this.factualBudget = options?.factualContextBudgetChars ?? 1200;
@@ -94,8 +103,13 @@ export class CortexMemoryPlugin implements AgentPlugin {
       const coreIds = new Set(this.coreBehaviorCache.map(b => b.id));
 
       if (context?.trim()) {
-        const embedding = await this.db.getEmbedding(context);
-        const results = this.db.searchWithEmbedding(embedding, 15, 0.35, "behavior");
+        // Populate the cache if this is the first call this turn or the query changed.
+        // getContext() runs next (BaseAgent calls fragment before context within each plugin)
+        // and will reuse this embedding rather than issuing a second LLM request.
+        if (!this.embeddingCache || this.embeddingCache.query !== context) {
+          this.embeddingCache = { query: context, embedding: await this.db.getEmbedding(context) };
+        }
+        const results = this.db.searchWithEmbedding(this.embeddingCache.embedding, 15, 0.35, "behavior");
         contextualBehaviors = results.filter(r => !coreIds.has(r.id));
         logger.debug(
           this.name,
@@ -134,7 +148,13 @@ export class CortexMemoryPlugin implements AgentPlugin {
       if (!query.trim()) return "";
 
       logger.debug(this.name, `getContext() searching: "${query.slice(0, 80)}…"`);
-      const embedding = await this.db.getEmbedding(query);
+      // Reuse the embedding computed by getSystemPromptFragment() if the query matches.
+      // When both hooks are called in the same turn (the normal path), this skips the
+      // second LLM embedding call entirely.
+      if (!this.embeddingCache || this.embeddingCache.query !== query) {
+        this.embeddingCache = { query, embedding: await this.db.getEmbedding(query) };
+      }
+      const embedding = this.embeddingCache.embedding;
 
       // Retrieve candidates for MMR selection (up to 8 factual) and top-1 procedure
       const factualCandidates = this.db.searchWithEmbedding(embedding, 8, 0.5, ["factual"], true);
@@ -226,12 +246,16 @@ export class CortexMemoryPlugin implements AgentPlugin {
       }
 
       const pick = remaining[bestIndex]!;
-      remaining.splice(bestIndex, 1);
+      // Swap-to-end then pop: O(1) removal vs O(n) for splice. Order in `remaining`
+      // doesn't matter because every iteration re-scores all candidates anyway.
+      remaining[bestIndex] = remaining[remaining.length - 1]!;
+      remaining.pop();
       if (pick.text.length <= budgetRemaining) {
         selected.push(pick);
         budgetRemaining -= pick.text.length;
       }
-      // If too large, skip it but continue — a smaller candidate may still fit
+      // If the picked candidate is too large for the remaining budget, skip it
+      // but continue — a shorter candidate may still fit within the budget.
     }
 
     return selected.map(({ id, text, score }) => ({ id, text, score }));
