@@ -579,7 +579,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       `search_memory: "${args.query}"${args.type ? ` type=${args.type}` : ""}`,
     );
     const { results, meta } = await this.db.searchWithStats(args.query, 5, 0.4, args.type);
-    this.searchMetaBuffer.set("search_memory", meta);
+    this.searchMetaBuffer.set("search_memory", { ...meta, result_count: results.length });
     logger.debug(this.name, `search_memory found ${results.length} results`);
     if (results.length === 0) return "No relevant memories found.";
     return results
@@ -779,6 +779,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     const retrievalMethod = filter.contains ? "hybrid" : "semantic";
     this.searchMetaBuffer.set("hybrid_search", {
       total_candidates: candidates.length,
+      result_count: finalResults.length,
       retrieval_method: retrievalMethod,
       filter_applied: [
         ...(filter.types ?? []).map(t => `type=${t}`),
