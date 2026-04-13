@@ -232,6 +232,59 @@ function PermissionDialog({
   );
 }
 
+// ── ChatInput ─────────────────────────────────────────────────────────────────
+
+function ChatInput({
+  isBlocked,
+  agentState,
+  onSubmit,
+}: {
+  isBlocked: boolean;
+  agentState: AgentState;
+  onSubmit: (text: string) => void;
+}) {
+  const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const handleSubmit = useCallback(() => {
+    const text = input.trim();
+    if (!text) return;
+    setInput("");
+    onSubmit(text);
+  }, [input, onSubmit]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  }, [handleSubmit]);
+
+  return (
+    <div className="input-area">
+      <div className="input-row">
+        <textarea
+          ref={inputRef}
+          className="input-field"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={isBlocked ? (agentState === "thinking" ? "thinking…" : "waiting for permission…") : "Type a message… (/ for commands)"}
+          disabled={isBlocked}
+          rows={1}
+        />
+        <button
+          className="send-btn"
+          onClick={handleSubmit}
+          disabled={isBlocked || !input.trim()}
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 
 function App() {
@@ -240,15 +293,13 @@ function App() {
   const [activeTools, setActiveTools] = useState<ActiveTool[]>([]);
   const [dynamicAgents, setDynamicAgents] = useState<DynamicAgentRecord[]>([]);
   const [pendingPermission, setPendingPermission] = useState<PermissionRequest | null>(null);
-  const [input, setInput] = useState("");
   const [showReasoning, setShowReasoning] = useState(true);
   const [currentModel, setCurrentModel] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [connected, setConnected] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -426,15 +477,11 @@ function App() {
 
   // ── Submit ───────────────────────────────────────────────────────────────────
 
-  const handleSubmit = useCallback(() => {
-    const text = input.trim();
-    if (!text) return;
-    setInput("");
-
+  const handleSubmit = useCallback((text: string) => {
     if (!handleSlash(text)) {
       sendToWs({ type: "send", text });
     }
-  }, [input, handleSlash, sendToWs]);
+  }, [handleSlash, sendToWs]);
 
   // ── Permission response ──────────────────────────────────────────────────────
 
@@ -442,15 +489,6 @@ function App() {
     setPendingPermission(null);
     sendToWs({ type: "permission_response", response });
   }, [sendToWs]);
-
-  // ── Input key handling ───────────────────────────────────────────────────────
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  }, [handleSubmit]);
 
   const isBlocked = state === "thinking" || !!pendingPermission;
 
@@ -470,27 +508,7 @@ function App() {
 
       <StatusArea state={state} activeTools={activeTools} dynamicAgents={dynamicAgents} model="" />
 
-      <div className="input-area">
-        <div className="input-row">
-          <textarea
-            ref={inputRef}
-            className="input-field"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isBlocked ? (state === "thinking" ? "thinking…" : "waiting for permission…") : "Type a message… (/ for commands)"}
-            disabled={isBlocked}
-            rows={1}
-          />
-          <button
-            className="send-btn"
-            onClick={handleSubmit}
-            disabled={isBlocked || !input.trim()}
-          >
-            Send
-          </button>
-        </div>
-      </div>
+      <ChatInput isBlocked={isBlocked} agentState={state} onSubmit={handleSubmit} />
 
       {pendingPermission && (
         <PermissionDialog request={pendingPermission} onRespond={handlePermission} />
