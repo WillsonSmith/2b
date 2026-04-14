@@ -202,3 +202,119 @@ describe("HeadlessAgent.ask()", () => {
     expect(result).toBe("final answer");
   });
 });
+
+describe("HeadlessAgent consecutive tool call circuit breaker", () => {
+  function makeToolPlugin(name = "my_tool") {
+    const executeTool = mock(async () => "result");
+    const plugin: AgentPlugin = {
+      name: "ToolPlugin",
+      getTools: () => [{ name, description: "", parameters: {}, permission: "none" }],
+      executeTool,
+    };
+    return { plugin, executeTool };
+  }
+
+  async function getWrappedTool(agent: HeadlessAgent, llm: LLMProvider) {
+    await agent.ask("task");
+    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
+    return tools[0].implementation!;
+  }
+
+  test("allows calls up to the default limit (5)", async () => {
+    const llm = makeLLM("done");
+    const { plugin, executeTool } = makeToolPlugin();
+    const agent = new HeadlessAgent(llm, [plugin], "base");
+    const call = await getWrappedTool(agent, llm);
+
+    for (let i = 0; i < 5; i++) await call({});
+
+    expect(executeTool).toHaveBeenCalledTimes(5);
+  });
+
+  test("blocks the call on the 6th consecutive invocation and returns error", async () => {
+    const llm = makeLLM("done");
+    const { plugin, executeTool } = makeToolPlugin();
+    const agent = new HeadlessAgent(llm, [plugin], "base");
+    const call = await getWrappedTool(agent, llm);
+
+    for (let i = 0; i < 5; i++) await call({});
+    const result = await call({});
+
+    expect(executeTool).toHaveBeenCalledTimes(5);
+    expect(result).toMatchObject({ error: expect.stringContaining("6 times in a row") });
+  });
+
+  test("continues blocking beyond the limit", async () => {
+    const llm = makeLLM("done");
+    const { plugin, executeTool } = makeToolPlugin();
+    const agent = new HeadlessAgent(llm, [plugin], "base");
+    const call = await getWrappedTool(agent, llm);
+
+    for (let i = 0; i < 8; i++) await call({});
+
+    expect(executeTool).toHaveBeenCalledTimes(5);
+  });
+
+  test("switching tools resets the consecutive counter", async () => {
+    const llm = makeLLM("done");
+    const execA = mock(async () => "a");
+    const execB = mock(async () => "b");
+    const plugin: AgentPlugin = {
+      name: "MultiToolPlugin",
+      getTools: () => [
+        { name: "tool_a", description: "", parameters: {}, permission: "none" },
+        { name: "tool_b", description: "", parameters: {}, permission: "none" },
+      ],
+      executeTool: mock(async (name: string) => (name === "tool_a" ? execA() : execB())),
+    };
+    const agent = new HeadlessAgent(llm, [plugin], "base");
+    await agent.ask("task");
+    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
+    const callA = tools[0].implementation!;
+    const callB = tools[1].implementation!;
+
+    // Call tool_a 5 times (hits limit)
+    for (let i = 0; i < 5; i++) await callA({});
+    // Switch to tool_b — counter resets
+    await callB({});
+    // Switch back to tool_a — counter resets again
+    const result = await callA({});
+
+    expect(execA).toHaveBeenCalledTimes(5 + 1); // 5 before switch + 1 after reset
+    expect(execB).toHaveBeenCalledTimes(1);
+    expect(result).toBe("a"); // not an error
+  });
+
+  test("respects custom maxConsecutiveToolCalls option", async () => {
+    const llm = makeLLM("done");
+    const { plugin, executeTool } = makeToolPlugin();
+    const agent = new HeadlessAgent(llm, [plugin], "base", { maxConsecutiveToolCalls: 2 });
+    const call = await getWrappedTool(agent, llm);
+
+    await call({});
+    await call({});
+    const result = await call({});
+
+    expect(executeTool).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ error: expect.stringContaining("3 times in a row") });
+  });
+
+  test("counter resets between separate ask() calls", async () => {
+    const llm = makeLLM("done");
+    const { plugin, executeTool } = makeToolPlugin();
+    const agent = new HeadlessAgent(llm, [plugin], "base");
+
+    // First ask: exhaust the limit
+    await agent.ask("first");
+    const toolsFirst: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
+    for (let i = 0; i < 6; i++) await toolsFirst[0].implementation!({});
+
+    // Second ask: counter should be fresh
+    await agent.ask("second");
+    const toolsSecond: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[1][3];
+    const result = await toolsSecond[0].implementation!({});
+
+    expect(result).toBe("result"); // not an error — fresh counter
+    expect(executeTool).toHaveBeenCalledTimes(5 + 1); // 5 from first ask + 1 from second
+  });
+});
