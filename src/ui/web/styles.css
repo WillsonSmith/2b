@@ -456,7 +456,7 @@ body {
   max-height: 120px;
   line-height: 1.4;
   transition: border-color 0.15s;
-  -webkit-appearance: none;
+  appearance: none;
 }
 
 .input-field:focus {
