@@ -31,6 +31,7 @@ export interface HeadlessAgentOptions {
 export class HeadlessAgent {
   private toolCallHandler?: (name: string, args: Record<string, unknown>) => void;
   private onToken?: (token: string, isReasoning: boolean) => void;
+  private currentAbortController: AbortController | null = null;
 
   constructor(
     private readonly llm: LLMProvider,
@@ -48,6 +49,10 @@ export class HeadlessAgent {
 
   setToolCallHandler(fn: (name: string, args: Record<string, unknown>) => void): void {
     this.toolCallHandler = fn;
+  }
+
+  interrupt(): void {
+    this.currentAbortController?.abort();
   }
 
   async ask(task: string): Promise<string> {
@@ -105,6 +110,9 @@ export class HeadlessAgent {
                 };
               }
 
+              if (this.currentAbortController?.signal.aborted) {
+                return { error: "Interrupted." };
+              }
               this.toolCallHandler?.(toolName, args as Record<string, unknown>);
               const result = await plugin.executeTool!(toolName, args as Record<string, unknown>);
               return result;
@@ -137,8 +145,12 @@ export class HeadlessAgent {
     const messages: Message[] = [{ role: "user", content: task }];
     logger.info("HeadlessAgent", `ask() [${agentName}] — tools=[${tools.map((t) => t.name).join(", ")}]`);
 
-    const { nonReasoningContent } = await this.llm.chat(messages, systemPrompt, undefined, tools, this.onToken);
-
-    return nonReasoningContent;
+    this.currentAbortController = new AbortController();
+    try {
+      const { nonReasoningContent } = await this.llm.chat(messages, systemPrompt, undefined, tools, this.onToken, this.currentAbortController.signal);
+      return nonReasoningContent;
+    } finally {
+      this.currentAbortController = null;
+    }
   }
 }
