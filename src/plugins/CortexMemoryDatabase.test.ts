@@ -438,6 +438,58 @@ describe("CortexMemoryDatabase - schema migration idempotency", () => {
   });
 });
 
+describe("CortexMemoryDatabase - FTS5 escaping (contains filter)", () => {
+  test("contains with a dot does not throw (regression: '2b.ts')", async () => {
+    const { db } = makeDB();
+    await db.addMemory("working on 2b.ts today", "factual");
+    expect(() => db.queryMemories({ contains: "2b.ts" })).not.toThrow();
+  });
+
+  test("contains with a dot matches the stored memory", async () => {
+    const { db } = makeDB();
+    await db.addMemory("working on 2b.ts today", "factual");
+    const results = db.queryMemories({ contains: "2b.ts" });
+    expect(results.some(r => r.text.includes("2b.ts"))).toBe(true);
+  });
+
+  test("contains with a hyphen does not throw", async () => {
+    const { db } = makeDB();
+    await db.addMemory("some-hyphenated-term here", "factual");
+    expect(() => db.queryMemories({ contains: "some-hyphenated-term" })).not.toThrow();
+  });
+
+  test("contains with FTS5 boolean operators does not throw", async () => {
+    const { db } = makeDB();
+    await db.addMemory("foo OR bar", "factual");
+    expect(() => db.queryMemories({ contains: "foo OR bar" })).not.toThrow();
+  });
+
+  test("contains with an embedded double quote does not throw", async () => {
+    const { db } = makeDB();
+    await db.addMemory('she said "hello" to me', "factual");
+    expect(() => db.queryMemories({ contains: '"hello"' })).not.toThrow();
+  });
+
+  test("contains with asterisk wildcard character does not throw", async () => {
+    const { db } = makeDB();
+    await db.addMemory("something interesting", "factual");
+    expect(() => db.queryMemories({ contains: "some*" })).not.toThrow();
+  });
+
+  test("hybridSearch with dotted contains filter does not throw", async () => {
+    const { db } = makeDB();
+    await db.addMemory("working on 2b.ts today", "factual");
+    await expect(db.hybridSearch("2b.ts", { contains: "2b.ts" }, 5, 0)).resolves.toBeArray();
+  });
+
+  test("hybridSearch with dotted contains returns matching memory", async () => {
+    const { db } = makeDB();
+    await db.addMemory("working on 2b.ts today", "factual");
+    const results = await db.hybridSearch("2b.ts", { contains: "2b.ts" }, 5, 0);
+    expect(results.some(r => r.text.includes("2b.ts"))).toBe(true);
+  });
+});
+
 describe("CortexMemoryDatabase - getRecentMemories", () => {
   test("respects the limit parameter", async () => {
     const { db } = makeDB();
