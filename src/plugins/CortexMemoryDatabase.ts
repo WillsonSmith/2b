@@ -17,6 +17,7 @@ export interface MemoryFilter {
 
 export interface SearchMeta {
   total_candidates: number;
+  result_count: number;
   retrieval_method: "semantic" | "fulltext" | "hybrid";
   filter_applied: string[];
 }
@@ -444,7 +445,7 @@ export class CortexMemoryDatabase {
 
     return {
       results: results.map(r => ({ ...r, confidence_score: r.score })),
-      meta: { total_candidates: totalCandidates, retrieval_method: "semantic", filter_applied: filterApplied },
+      meta: { total_candidates: totalCandidates, result_count: results.length, retrieval_method: "semantic", filter_applied: filterApplied },
     };
   }
 
