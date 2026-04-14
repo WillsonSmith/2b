@@ -239,41 +239,47 @@ export class OllamaProvider implements LLMProvider {
         `Tool calls in round ${round + 1}: ${assistantMsg.tool_calls.map((tc) => tc.function.name).join(", ")}`,
       );
 
-      for (const tc of assistantMsg.tool_calls) {
-        const tool = toolMap.get(tc.function.name);
-        let result: string;
+      const toolResults = await Promise.all(
+        assistantMsg.tool_calls.map(async (tc) => {
+          const tool = toolMap.get(tc.function.name);
+          let result: string;
 
-        if (!tool?.implementation) {
-          result = `Tool "${tc.function.name}" not found or has no implementation.`;
-          logger.warn("Ollama", result);
-        } else {
-          try {
-            logger.info(
-              "Ollama",
-              `Tool called by model: ${tc.function.name}`,
-              tc.function.arguments,
-            );
-            const raw = await tool.implementation(tc.function.arguments);
-            result =
-              typeof raw === "string" ? raw : JSON.stringify(raw ?? null);
-            logger.debug(
-              "Ollama",
-              `Tool result: ${tc.function.name}`,
-              result.slice(0, 200),
-            );
-          } catch (e) {
-            const errMsg = e instanceof Error ? e.message : String(e);
-            logger.error(
-              "Ollama",
-              `Tool threw: ${tc.function.name}: ${errMsg}`,
-            );
-            result = JSON.stringify({ error: errMsg });
+          if (!tool?.implementation) {
+            result = `Tool "${tc.function.name}" not found or has no implementation.`;
+            logger.warn("Ollama", result);
+          } else {
+            try {
+              logger.info(
+                "Ollama",
+                `Tool called by model: ${tc.function.name}`,
+                tc.function.arguments,
+              );
+              const raw = await tool.implementation(tc.function.arguments);
+              result =
+                typeof raw === "string" ? raw : JSON.stringify(raw ?? null);
+              logger.debug(
+                "Ollama",
+                `Tool result: ${tc.function.name}`,
+                result.slice(0, 200),
+              );
+            } catch (e) {
+              const errMsg = e instanceof Error ? e.message : String(e);
+              logger.error(
+                "Ollama",
+                `Tool threw: ${tc.function.name}: ${errMsg}`,
+              );
+              result = JSON.stringify({ error: errMsg });
+            }
           }
-        }
 
+          return { name: tc.function.name, result };
+        }),
+      );
+
+      for (const { name, result } of toolResults) {
         history.push({
           role: "tool",
-          tool_name: tc.function.name,
+          tool_name: name,
           content: result,
         });
       }
