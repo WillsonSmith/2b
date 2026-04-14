@@ -106,9 +106,11 @@ export async function startWebUI({
             }
             break;
           }
-          case "interrupt":
-            session.interrupt();
+          case "interrupt": {
+            const scope = msg.scope as "main" | "subagents" | "all" | undefined;
+            session.interrupt(scope ?? "all");
             break;
+          }
           case "clear":
             session.clear();
             break;

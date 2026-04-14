@@ -425,6 +425,35 @@ body {
   color: var(--red);
 }
 
+/* ── Stop button ── */
+
+.stop-area {
+  display: flex;
+  justify-content: center;
+  padding: 4px 12px;
+  flex-shrink: 0;
+}
+
+.stop-btn {
+  background: transparent;
+  color: var(--red, #ff6b6b);
+  border: 1px solid var(--red, #ff6b6b);
+  border-radius: 6px;
+  padding: 4px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.stop-btn:hover {
+  opacity: 0.75;
+}
+
+.stop-btn:active {
+  opacity: 0.5;
+}
+
 /* ── Input area ── */
 
 .input-area {

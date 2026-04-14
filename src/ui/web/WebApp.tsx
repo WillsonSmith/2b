@@ -64,7 +64,8 @@ const HELP_TEXT = `Available slash commands:
   /retry             — resend the last user message
   /copy              — copy the last response to clipboard
   /export [filename] — save the conversation to a file
-  /system            — show the current system prompt`;
+  /system            — show the current system prompt
+  /interrupt         — stop the agent mid-response (also available via ■ Stop button)`;
 
 // ── Markdown renderer ─────────────────────────────────────────────────────────
 
@@ -653,6 +654,17 @@ function App() {
         dynamicAgents={dynamicAgents}
         model=""
       />
+
+      {state === "thinking" && (
+        <div className="stop-area">
+          <button
+            className="stop-btn"
+            onClick={() => sendToWs({ type: "interrupt", scope: "all" })}
+          >
+            ■ Stop
+          </button>
+        </div>
+      )}
 
       <ChatInput
         isBlocked={isBlocked}

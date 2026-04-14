@@ -53,6 +53,9 @@ export class CortexSubAgent {
       this.stateChangeHandler?.(state);
     });
     this.agent.on("error", (err) => {
+      // Suppress errors that are just the side-effect of an intentional interrupt
+      // (e.g. "Ollama error: The operation was aborted" from aborting the fetch).
+      if (err?.message?.includes("aborted") || err?.message?.includes("[interrupted]")) return;
       this.errorHandler?.(err);
     });
 
@@ -83,6 +86,10 @@ export class CortexSubAgent {
     this.errorHandler = fn;
   }
 
+  interrupt(): void {
+    this.agent.interrupt();
+  }
+
   async stop(): Promise<void> {
     await this.agent.stop();
   }
@@ -93,7 +100,12 @@ export class CortexSubAgent {
    */
   ask(task: string): Promise<string> {
     // Chain onto the queue so calls are processed one at a time.
-    this.askQueue = this.askQueue.then(() => this.doAsk(task));
+    // The .catch() prevents a failed or interrupted ask from poisoning the queue:
+    // without it, any rejection (interrupt, timeout, error) would cause all
+    // future asks to immediately reject without ever calling doAsk().
+    this.askQueue = this.askQueue
+      .catch(() => {})
+      .then(() => this.doAsk(task));
     return this.askQueue as Promise<string>;
   }
 
@@ -110,6 +122,7 @@ export class CortexSubAgent {
         settled = true;
         this.agent.off("speak", onSpeak);
         this.agent.off("error", onError);
+        this.agent.off("interrupt", onInterrupt);
         reject(new Error(`CortexSubAgent "${agentName}" timed out after ${timeoutMs}ms`));
       }, timeoutMs);
 
@@ -118,6 +131,7 @@ export class CortexSubAgent {
         settled = true;
         clearTimeout(timer);
         this.agent.off("error", onError);
+        this.agent.off("interrupt", onInterrupt);
         resolve(response);
       };
 
@@ -126,11 +140,22 @@ export class CortexSubAgent {
         settled = true;
         clearTimeout(timer);
         this.agent.off("speak", onSpeak);
+        this.agent.off("interrupt", onInterrupt);
         reject(err);
+      };
+
+      const onInterrupt = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.agent.off("speak", onSpeak);
+        this.agent.off("error", onError);
+        reject(new Error("[interrupted]"));
       };
 
       this.agent.once("speak", onSpeak);
       this.agent.once("error", onError);
+      this.agent.once("interrupt", onInterrupt);
 
       logger.debug("CortexSubAgent", `${agentName} addDirect — task length: ${task.length}`);
       this.agent.addDirect(task);

@@ -45,6 +45,7 @@ export interface LLMProvider {
     schema?: unknown,
     tools?: ToolDefinition[],
     onToken?: (token: string, isReasoning: boolean) => void,
+    abortSignal?: AbortSignal,
   ): Promise<ChatResponse>;
 
   /**

@@ -86,6 +86,22 @@ export class BaseAgent extends EventEmitter {
     this.emit("interrupt");
   }
 
+  /** Interrupt all in-flight subagent asks without stopping the main agent. */
+  public interruptSubAgents(): void {
+    for (const plugin of this.plugins) {
+      if ("interruptAll" in plugin && typeof (plugin as { interruptAll: unknown }).interruptAll === "function") {
+        (plugin as { interruptAll(): void }).interruptAll();
+        return;
+      }
+    }
+  }
+
+  /** Interrupt all subagents and the main agent's current LLM call. */
+  public interruptAll(): void {
+    this.interruptSubAgents();
+    this.interrupt();
+  }
+
   /** Register a recurring background task. If task() returns a non-null string, it is enqueued as ambient input. */
   public scheduleProactiveTick(intervalMs: number, task: () => string | null): void {
     this.proactiveTasks.push({ intervalMs, task, lastRun: 0 });
@@ -321,6 +337,9 @@ export class BaseAgent extends EventEmitter {
                   }
                 }
               }
+              if (this.currentAbortController?.signal.aborted) {
+                return { error: "Interrupted." };
+              }
               this.emit("tool_call", toolName, args);
               const toolResult = await plugin.executeTool!(toolName, args);
               this.emit("tool_result", toolName);
@@ -362,7 +381,7 @@ export class BaseAgent extends EventEmitter {
 
     await this.dispatchMessage("user", userContent, "input");
 
-    const { response, nonReasoningContent, reasoningText } = await this.llm.chat(messages, systemPrompt, undefined, tools, this.tokenCallback);
+    const { response, nonReasoningContent, reasoningText } = await this.llm.chat(messages, systemPrompt, undefined, tools, this.tokenCallback, this.currentAbortController.signal);
     logger.info("BaseAgent", `LLM response received (${response.length} chars)`);
 
     if (reasoningText) logger.debug("BaseAgent", `Reasoning extracted (${reasoningText.length} chars)`);

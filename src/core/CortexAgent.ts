@@ -74,6 +74,16 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
     this.inner.interrupt();
   }
 
+  /** Interrupt all in-flight subagent asks without stopping the main agent. */
+  public interruptSubAgents(): void {
+    this.inner.interruptSubAgents();
+  }
+
+  /** Interrupt all subagents and the main agent's current LLM call. */
+  public interruptAll(): void {
+    this.inner.interruptAll();
+  }
+
   /** Register a callback that receives each token as the LLM streams its response. */
   public setTokenCallback(fn: (token: string, isReasoning: boolean) => void): void {
     this.inner.setTokenCallback(fn);

@@ -8,6 +8,8 @@ import type { ChatMessage } from "./types.ts";
 class MockAgent extends EventEmitter implements AgentLike {
   addDirect = mock(() => {});
   interrupt = mock(() => {});
+  interruptSubAgents = mock(() => {});
+  interruptAll = mock(() => {});
   tokenCallback: ((token: string, isReasoning: boolean) => void) | null = null;
 
   setTokenCallback(fn: (token: string, isReasoning: boolean) => void) {
@@ -182,7 +184,7 @@ describe("interrupt()", () => {
   test("calls agent.interrupt", () => {
     session.send("hi");
     session.interrupt();
-    expect(agent.interrupt).toHaveBeenCalled();
+    expect(agent.interruptAll).toHaveBeenCalled();
   });
 
   test("finalises the pending message as complete", () => {

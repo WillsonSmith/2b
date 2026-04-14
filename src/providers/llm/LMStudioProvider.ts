@@ -78,6 +78,7 @@ export class LMStudioProvider implements LLMProvider {
     schema?: LLMStructuredPredictionSetting,
     tools?: ToolDefinition[],
     onToken?: (token: string, isReasoning: boolean) => void,
+    abortSignal?: AbortSignal,
   ): Promise<ChatResponse> {
     logger.info(
       "LMStudio",
@@ -116,6 +117,7 @@ export class LMStudioProvider implements LLMProvider {
           chat,
           definedTools,
           onToken,
+          abortSignal,
         );
       }
 
@@ -132,7 +134,7 @@ export class LMStudioProvider implements LLMProvider {
         };
       }
 
-      return await this.respond(modelClient, chat, schema, onToken);
+      return await this.respond(modelClient, chat, schema, onToken, abortSignal);
     } catch (error) {
       logger.error("LMStudio", "Error communicating with local server:", error);
       const msg =
@@ -149,6 +151,7 @@ export class LMStudioProvider implements LLMProvider {
     chat: ChatLike,
     tools: ToolDefinition[],
     onToken?: (token: string, isReasoning: boolean) => void,
+    abortSignal?: AbortSignal,
   ): Promise<ChatResponse> {
     const lmstudioTools: Tool[] = tools.map((t) => {
       if (!t.parameters || typeof t.parameters !== "object") {
@@ -166,6 +169,9 @@ export class LMStudioProvider implements LLMProvider {
         description: t.description,
         parametersJsonSchema: normalizedSchema,
         implementation: async (params, _ctx) => {
+          if (abortSignal?.aborted) {
+            throw new Error("Interrupted.");
+          }
           logger.info("LMStudio", `Tool called by model: ${t.name}`, params);
           if (!t.implementation) {
             throw new Error("Tool implementation not provided.");
@@ -270,6 +276,7 @@ export class LMStudioProvider implements LLMProvider {
     chat: ChatLike,
     schema?: LLMStructuredPredictionSetting,
     onToken?: (token: string, isReasoning: boolean) => void,
+    abortSignal?: AbortSignal,
   ): Promise<ChatResponse> {
     const reasoningText = { value: "" };
     const responseContent = { value: "" };
@@ -277,6 +284,7 @@ export class LMStudioProvider implements LLMProvider {
     for await (const fragment of modelClient.respond(chat, {
       structured: schema,
     })) {
+      if (abortSignal?.aborted) break;
       processFragment(fragment, reasoningText, responseContent, onToken);
     }
 
