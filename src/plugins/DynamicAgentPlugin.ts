@@ -129,6 +129,7 @@ interface AskableAgent {
   setToolCallHandler(
     fn: (name: string, args: Record<string, unknown>) => void,
   ): void;
+  interrupt?(): void;
 }
 
 type AgentType = "headless" | "cortex";
@@ -186,6 +187,7 @@ export class DynamicAgentPlugin implements AgentPlugin {
   name = "DynamicAgent";
   private parentAgent?: BaseAgent;
   private readonly registry = new Map<string, DynamicAgentEntry>();
+  private readonly activeAsks = new Set<AskableAgent>();
   private readonly llm: LLMProvider;
   private readonly permissionManager?: PermissionManager;
   private readonly model: string;
@@ -486,7 +488,25 @@ export class DynamicAgentPlugin implements AgentPlugin {
       );
     }
     logger.debug("DynamicAgent", `Calling ${entry.type} agent "${name}"`);
-    return entry.agent.ask(task);
+    this.activeAsks.add(entry.agent);
+    try {
+      return await entry.agent.ask(task);
+    } finally {
+      this.activeAsks.delete(entry.agent);
+    }
+  }
+
+  interruptAll(): void {
+    for (const agent of this.activeAsks) {
+      agent.interrupt?.();
+    }
+  }
+
+  interruptAgent(name: string): void {
+    const entry = this.registry.get(name);
+    if (entry && this.activeAsks.has(entry.agent)) {
+      entry.agent.interrupt?.();
+    }
   }
 
   private listAgents(): unknown {

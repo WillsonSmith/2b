@@ -68,6 +68,7 @@ export class OllamaProvider implements LLMProvider {
     _schema?: unknown,
     tools?: ToolDefinition[],
     onToken?: (token: string, isReasoning: boolean) => void,
+    abortSignal?: AbortSignal,
   ): Promise<ChatResponse> {
     logger.info(
       "Ollama",
@@ -109,6 +110,7 @@ export class OllamaProvider implements LLMProvider {
           ollamaTools,
           tools,
           onToken,
+          abortSignal,
         );
       }
 
@@ -116,6 +118,7 @@ export class OllamaProvider implements LLMProvider {
         const result = await this.callWithStructuredTools(
           ollamaMessages,
           tools,
+          abortSignal,
         );
         return {
           response: result,
@@ -124,7 +127,7 @@ export class OllamaProvider implements LLMProvider {
         };
       }
 
-      return await this.respond(ollamaMessages, onToken);
+      return await this.respond(ollamaMessages, onToken, abortSignal);
     } catch (error) {
       logger.error("Ollama", "Error communicating with Ollama server:", error);
       const msg =
@@ -139,6 +142,7 @@ export class OllamaProvider implements LLMProvider {
   private async respond(
     messages: OllamaMessage[],
     onToken?: (token: string, isReasoning: boolean) => void,
+    abortSignal?: AbortSignal,
   ): Promise<ChatResponse> {
     let reasoningText = "";
     let responseContent = "";
@@ -151,6 +155,7 @@ export class OllamaProvider implements LLMProvider {
       ...(this.numCtx !== undefined
         ? { options: { num_ctx: this.numCtx } }
         : {}),
+      ...(abortSignal !== undefined ? { signal: abortSignal } : {}),
     });
 
     for await (const chunk of stream) {
@@ -178,111 +183,137 @@ export class OllamaProvider implements LLMProvider {
     ollamaTools: OllamaTool[],
     tools: ToolDefinition[],
     onToken?: (token: string, isReasoning: boolean) => void,
+    abortSignal?: AbortSignal,
   ): Promise<ChatResponse> {
     const MAX_ROUNDS = 100;
     const toolMap = new Map(tools.map((t) => [t.name, t]));
     const history = [...messages];
 
-    for (let round = 0; round < MAX_ROUNDS; round++) {
-      // Stream to keep the connection alive during long tool executions.
-      // We must collect silently — tool_calls only appear on the final chunk,
-      // so we cannot know whether to emit tokens until the stream is complete.
-      const stream = await this.client.chat({
-        model: this.model,
-        messages: history,
-        tools: ollamaTools,
-        stream: true,
-        think: this.think,
-        ...(this.numCtx !== undefined
-          ? { options: { num_ctx: this.numCtx } }
-          : {}),
-      });
+    // Mirror abort state in a local flag via event listener.
+    // In Bun's runtime, abortSignal.aborted may not reflect synchronously across
+    // async boundaries when the abort originates from a different microtask context.
+    // The "abort" event always fires eagerly, so the flag is visible on the next
+    // synchronous check regardless of microtask ordering.
+    let aborted = abortSignal?.aborted ?? false;
+    const onAbort = () => { aborted = true; };
+    abortSignal?.addEventListener("abort", onAbort);
 
-      let roundThinking = "";
-      let roundContent = "";
-      let toolCalls: OllamaMessage["tool_calls"] | undefined;
-
-      for await (const chunk of stream) {
-        if (chunk.message.thinking) roundThinking += chunk.message.thinking;
-        if (chunk.message.content) roundContent += chunk.message.content;
-        if (chunk.message.tool_calls?.length) toolCalls = chunk.message.tool_calls;
-      }
-
-      if (!toolCalls || toolCalls.length === 0) {
-        // Final round: emit what we collected and return directly.
-        // Do NOT call respond() — re-invoking the model a second time was the
-        // root cause of "shows thinking but no content" bugs in past fix attempts.
-        logger.debug(
-          "Ollama",
-          `actWithTools() finished after ${round + 1} round(s)`,
-        );
-        if (roundThinking) onToken?.(roundThinking, true);
-        if (roundContent) onToken?.(roundContent, false);
-        return {
-          response: roundContent || roundThinking,
-          nonReasoningContent: roundContent,
-          reasoningText: roundThinking,
-        };
-      }
-
-      const assistantMsg: OllamaMessage = {
-        role: "assistant",
-        content: roundContent,
-        thinking: roundThinking || undefined,
-        tool_calls: toolCalls,
-      };
-
-      history.push(assistantMsg);
-
-      logger.info(
-        "Ollama",
-        `Tool calls in round ${round + 1}: ${assistantMsg.tool_calls.map((tc) => tc.function.name).join(", ")}`,
-      );
-
-      const toolResults = await Promise.all(
-        assistantMsg.tool_calls.map(async (tc) => {
-          const tool = toolMap.get(tc.function.name);
-          let result: string;
-
-          if (!tool?.implementation) {
-            result = `Tool "${tc.function.name}" not found or has no implementation.`;
-            logger.warn("Ollama", result);
-          } else {
-            try {
-              logger.info(
-                "Ollama",
-                `Tool called by model: ${tc.function.name}`,
-                tc.function.arguments,
-              );
-              const raw = await tool.implementation(tc.function.arguments);
-              result =
-                typeof raw === "string" ? raw : JSON.stringify(raw ?? null);
-              logger.debug(
-                "Ollama",
-                `Tool result: ${tc.function.name}`,
-                result.slice(0, 200),
-              );
-            } catch (e) {
-              const errMsg = e instanceof Error ? e.message : String(e);
-              logger.error(
-                "Ollama",
-                `Tool threw: ${tc.function.name}: ${errMsg}`,
-              );
-              result = JSON.stringify({ error: errMsg });
-            }
-          }
-
-          return { name: tc.function.name, result };
-        }),
-      );
-
-      for (const { name, result } of toolResults) {
-        history.push({
-          role: "tool",
-          tool_name: name,
-          content: result,
+    try {
+      for (let round = 0; round < MAX_ROUNDS; round++) {
+        if (aborted) {
+          const msg = "Interrupted.";
+          return { response: msg, nonReasoningContent: msg, reasoningText: "" };
+        }
+        // Stream to keep the connection alive during long tool executions.
+        // We must collect silently — tool_calls only appear on the final chunk,
+        // so we cannot know whether to emit tokens until the stream is complete.
+        const stream = await this.client.chat({
+          model: this.model,
+          messages: history,
+          tools: ollamaTools,
+          stream: true,
+          think: this.think,
+          ...(this.numCtx !== undefined
+            ? { options: { num_ctx: this.numCtx } }
+            : {}),
+          ...(abortSignal !== undefined ? { signal: abortSignal } : {}),
         });
+
+        let roundThinking = "";
+        let roundContent = "";
+        let toolCalls: OllamaMessage["tool_calls"] | undefined;
+
+        for await (const chunk of stream) {
+          if (chunk.message.thinking) roundThinking += chunk.message.thinking;
+          if (chunk.message.content) roundContent += chunk.message.content;
+          if (chunk.message.tool_calls?.length) toolCalls = chunk.message.tool_calls;
+        }
+
+        if (aborted) {
+          const msg = "Interrupted.";
+          return { response: msg, nonReasoningContent: msg, reasoningText: "" };
+        }
+
+        if (!toolCalls || toolCalls.length === 0) {
+          // Final round: emit what we collected and return directly.
+          // Do NOT call respond() — re-invoking the model a second time was the
+          // root cause of "shows thinking but no content" bugs in past fix attempts.
+          logger.debug(
+            "Ollama",
+            `actWithTools() finished after ${round + 1} round(s)`,
+          );
+          if (roundThinking) onToken?.(roundThinking, true);
+          if (roundContent) onToken?.(roundContent, false);
+          return {
+            response: roundContent || roundThinking,
+            nonReasoningContent: roundContent,
+            reasoningText: roundThinking,
+          };
+        }
+
+        const assistantMsg: OllamaMessage = {
+          role: "assistant",
+          content: roundContent,
+          thinking: roundThinking || undefined,
+          tool_calls: toolCalls,
+        };
+
+        history.push(assistantMsg);
+
+        logger.info(
+          "Ollama",
+          `Tool calls in round ${round + 1}: ${assistantMsg.tool_calls.map((tc) => tc.function.name).join(", ")}`,
+        );
+
+        const toolResults = await Promise.all(
+          assistantMsg.tool_calls.map(async (tc) => {
+            const tool = toolMap.get(tc.function.name);
+            let result: string;
+
+            if (!tool?.implementation) {
+              result = `Tool "${tc.function.name}" not found or has no implementation.`;
+              logger.warn("Ollama", result);
+            } else if (aborted) {
+              result = "Interrupted.";
+            } else {
+              try {
+                logger.info(
+                  "Ollama",
+                  `Tool called by model: ${tc.function.name}`,
+                  tc.function.arguments,
+                );
+                const raw = await tool.implementation(tc.function.arguments);
+                result =
+                  typeof raw === "string" ? raw : JSON.stringify(raw ?? null);
+                logger.debug(
+                  "Ollama",
+                  `Tool result: ${tc.function.name}`,
+                  result.slice(0, 200),
+                );
+              } catch (e) {
+                const errMsg = e instanceof Error ? e.message : String(e);
+                logger.error(
+                  "Ollama",
+                  `Tool threw: ${tc.function.name}: ${errMsg}`,
+                );
+                result = JSON.stringify({ error: errMsg });
+              }
+            }
+
+            return { name: tc.function.name, result };
+          }),
+        );
+
+        for (const { name, result } of toolResults) {
+          history.push({
+            role: "tool",
+            tool_name: name,
+            content: result,
+          });
+        }
       }
+    } finally {
+      abortSignal?.removeEventListener("abort", onAbort);
     }
 
     const msg = `Tool call loop reached the maximum of ${MAX_ROUNDS} rounds without a final response.`;
@@ -298,12 +329,14 @@ export class OllamaProvider implements LLMProvider {
   private async callWithStructuredTools(
     messages: OllamaMessage[],
     tools: ToolDefinition[],
+    abortSignal?: AbortSignal,
   ): Promise<string> {
     const MAX_ITERATIONS = 10;
     const toolMap = new Map(tools.map((t) => [t.name, t]));
     const history = [...messages];
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
+      if (abortSignal?.aborted) return "Interrupted.";
       const response = await this.client.chat({
         model: this.model,
         messages: history,
@@ -312,6 +345,7 @@ export class OllamaProvider implements LLMProvider {
         ...(this.numCtx !== undefined
           ? { options: { num_ctx: this.numCtx } }
           : {}),
+        ...(abortSignal !== undefined ? { signal: abortSignal } : {}),
       });
 
       const content = response.message.content;
