@@ -11,7 +11,10 @@
  *   bun 2b.ts --web --port 8080
  */
 import { CortexAgent } from "./src/core/CortexAgent.ts";
-import { createProvider, defaultModel } from "./src/providers/llm/createProvider.ts";
+import {
+  createProvider,
+  defaultModel,
+} from "./src/providers/llm/createProvider.ts";
 import { MemoryPlugin } from "./src/plugins/MemoryPlugin.ts";
 import { SubAgentPlugin } from "./src/plugins/SubAgentPlugin.ts";
 import { InkPermissionManager } from "./src/ui/terminal/InkPermissionManager.ts";
@@ -35,9 +38,11 @@ const model = modelArg ?? process.env["MODEL"] ?? defaultModel();
 const useWeb = args.includes("--web");
 const portFlag = args.indexOf("--port");
 const portArg = portFlag !== -1 ? Number(args[portFlag + 1]) : undefined;
-const port = portArg ?? (process.env["PORT"] ? Number(process.env["PORT"]) : 3000);
+const port =
+  portArg ?? (process.env["PORT"] ? Number(process.env["PORT"]) : 3000);
 
-const debugTokens = args.includes("--debug-tokens") || process.env["DEBUG_TOKENS"] === "1";
+const debugTokens =
+  args.includes("--debug-tokens") || process.env["DEBUG_TOKENS"] === "1";
 const debugTokenCallback = debugTokens
   ? (token: string, isReasoning: boolean) => {
       // Gray for reasoning, plain for response tokens
@@ -81,7 +86,9 @@ const minimalToolsPlugin: AgentPlugin = {
 
 const llm = createProvider(model);
 
-const permissionManager = useWeb ? new WebPermissionManager() : new InkPermissionManager();
+const permissionManager = useWeb
+  ? new WebPermissionManager()
+  : new InkPermissionManager();
 
 const systemPrompt = [
   "You are a helpful assistant with access to tools. Think carefully before responding.",
@@ -110,7 +117,10 @@ agent.registerPlugin(
     toolName: "explore_codebase",
     description:
       "Use when the user asks how this agent works, wants to trace a data flow, understand a plugin, or look up implementation details in this agent's own source code. Scoped only to this agent's source — not for exploring other projects or general coding tasks.",
-    agent: createCodebaseExplainerAgent(llm, { sourceRoot, onToken: debugTokenCallback }),
+    agent: createCodebaseExplainerAgent(llm, {
+      sourceRoot,
+      onToken: debugTokenCallback,
+    }),
   }),
 );
 
