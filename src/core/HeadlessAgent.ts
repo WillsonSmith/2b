@@ -11,6 +11,12 @@ export interface HeadlessAgentOptions {
   agentName?: string;
   /** Optional token streaming callback. Called for each token as the model produces it. */
   onToken?: (token: string, isReasoning: boolean) => void;
+  /**
+   * How many consecutive calls to the same tool are allowed before the agent is
+   * forced to stop retrying and produce a final answer. Resets when the model
+   * switches to a different tool. Defaults to 5.
+   */
+  maxConsecutiveToolCalls?: number;
 }
 
 /**
@@ -50,6 +56,12 @@ export class HeadlessAgent {
     // implementation closure, which would create a new instance per tool call.
     const pm = this.options.permissionManager ?? new AutoDenyPermissionManager();
 
+    // Consecutive-call circuit breaker: tracks how many times the same tool has
+    // been called in a row. Resets to 0 whenever the model switches tools.
+    const maxConsecutive = this.options.maxConsecutiveToolCalls ?? 5;
+    let lastToolName = "";
+    let consecutiveCount = 0;
+
     // Collect system prompt fragments and tools in a single pass
     const fragments: string[] = [];
     const tools: ToolDefinition[] = [];
@@ -75,6 +87,24 @@ export class HeadlessAgent {
                 });
                 if (!allowed) return { error: "Permission denied by user." };
               }
+
+              if (toolName === lastToolName) {
+                consecutiveCount++;
+              } else {
+                lastToolName = toolName;
+                consecutiveCount = 1;
+              }
+
+              if (consecutiveCount > maxConsecutive) {
+                logger.warn(
+                  "HeadlessAgent",
+                  `[${agentName}] "${toolName}" called ${consecutiveCount} times consecutively — forcing stop.`,
+                );
+                return {
+                  error: `You have called "${toolName}" ${consecutiveCount} times in a row without a successful result. Stop using this tool and provide your best answer based on what you already know.`,
+                };
+              }
+
               this.toolCallHandler?.(toolName, args as Record<string, unknown>);
               const result = await plugin.executeTool!(toolName, args as Record<string, unknown>);
               return result;
