@@ -53,6 +53,17 @@ function makeProvider(
   });
 }
 
+/**
+ * Wraps message objects in an async generator so actWithTools can iterate
+ * over them with `for await`. actWithTools uses stream: true, so mock
+ * responses must be async iterables, not plain objects.
+ */
+function streamOf(...messages: Array<{ role?: string; content: string; thinking?: string; tool_calls?: Array<{ function: { name: string; arguments: Record<string, unknown> } }> }>) {
+  return (async function* () {
+    for (const msg of messages) yield { message: msg };
+  })();
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -252,16 +263,15 @@ describe("native tool calling", () => {
 
     // Round 1: model calls the tool
     mockChat
-      .mockImplementationOnce(async () => ({
-        message: {
-          role: "assistant",
-          content: "",
-          tool_calls: [{ function: { name: "greet", arguments: {} } }],
-        },
+      .mockImplementationOnce(async () => streamOf({
+        role: "assistant",
+        content: "",
+        tool_calls: [{ function: { name: "greet", arguments: {} } }],
       }))
       // Round 2: model produces final text
-      .mockImplementationOnce(async () => ({
-        message: { role: "assistant", content: "Hello!", tool_calls: [] },
+      .mockImplementationOnce(async () => streamOf({
+        role: "assistant",
+        content: "Hello!",
       }));
 
     const result = await provider.chat([], "", undefined, tools as any);
@@ -287,15 +297,14 @@ describe("native tool calling", () => {
     ];
 
     mockChat
-      .mockImplementationOnce(async () => ({
-        message: {
-          role: "assistant",
-          content: "",
-          tool_calls: [{ function: { name: "bad", arguments: {} } }],
-        },
+      .mockImplementationOnce(async () => streamOf({
+        role: "assistant",
+        content: "",
+        tool_calls: [{ function: { name: "bad", arguments: {} } }],
       }))
-      .mockImplementationOnce(async () => ({
-        message: { role: "assistant", content: "recovered", tool_calls: [] },
+      .mockImplementationOnce(async () => streamOf({
+        role: "assistant",
+        content: "recovered",
       }));
 
     const result = await provider.chat([], "", undefined, tools as any);
@@ -318,20 +327,136 @@ describe("native tool calling", () => {
     ];
 
     mockChat
-      .mockImplementationOnce(async () => ({
-        message: {
-          role: "assistant",
-          content: "",
-          tool_calls: [{ function: { name: "noop", arguments: {} } }],
-        },
+      .mockImplementationOnce(async () => streamOf({
+        role: "assistant",
+        content: "",
+        tool_calls: [{ function: { name: "noop", arguments: {} } }],
       }))
-      .mockImplementationOnce(async () => ({
-        message: { role: "assistant", content: "answer", thinking: "my reasoning", tool_calls: [] },
+      .mockImplementationOnce(async () => streamOf({
+        role: "assistant",
+        content: "answer",
+        thinking: "my reasoning",
       }));
 
     const result = await provider.chat([], "", undefined, tools as any);
     expect(result.reasoningText).toBe("my reasoning");
     expect(result.nonReasoningContent).toBe("answer");
+  });
+
+  test("all tool implementations are invoked when multiple calls arrive in a single round", async () => {
+    const provider = makeProvider("native");
+    const impl1 = mock(async () => "result1");
+    const impl2 = mock(async () => "result2");
+    const tools = [
+      { name: "tool1", description: "Tool 1", parameters: { type: "object", properties: {} }, implementation: impl1 },
+      { name: "tool2", description: "Tool 2", parameters: { type: "object", properties: {} }, implementation: impl2 },
+    ];
+
+    mockChat
+      .mockImplementationOnce(async () => streamOf({
+        role: "assistant",
+        content: "",
+        tool_calls: [
+          { function: { name: "tool1", arguments: {} } },
+          { function: { name: "tool2", arguments: {} } },
+        ],
+      }))
+      .mockImplementationOnce(async () => streamOf({ role: "assistant", content: "done" }));
+
+    const result = await provider.chat([], "", undefined, tools as any);
+
+    expect(impl1).toHaveBeenCalledTimes(1);
+    expect(impl2).toHaveBeenCalledTimes(1);
+    expect(result.nonReasoningContent).toBe("done");
+  });
+
+  test("multiple tool implementations run concurrently, not sequentially", async () => {
+    const provider = makeProvider("native");
+    const order: string[] = [];
+
+    const tools = [
+      {
+        name: "slow",
+        description: "slow tool",
+        parameters: { type: "object", properties: {} },
+        implementation: mock(async () => {
+          order.push("slow-start");
+          await new Promise((r) => setTimeout(r, 40));
+          order.push("slow-end");
+          return "slow-result";
+        }),
+      },
+      {
+        name: "fast",
+        description: "fast tool",
+        parameters: { type: "object", properties: {} },
+        implementation: mock(async () => {
+          order.push("fast-start");
+          await new Promise((r) => setTimeout(r, 5));
+          order.push("fast-end");
+          return "fast-result";
+        }),
+      },
+    ];
+
+    mockChat
+      .mockImplementationOnce(async () => streamOf({
+        role: "assistant",
+        content: "",
+        tool_calls: [
+          { function: { name: "slow", arguments: {} } },
+          { function: { name: "fast", arguments: {} } },
+        ],
+      }))
+      .mockImplementationOnce(async () => streamOf({ role: "assistant", content: "done" }));
+
+    await provider.chat([], "", undefined, tools as any);
+
+    // Both start before either ends — proving concurrent execution
+    expect(order).toEqual(["slow-start", "fast-start", "fast-end", "slow-end"]);
+  });
+
+  test("tool results are appended to history in original call order regardless of completion order", async () => {
+    const provider = makeProvider("native");
+
+    const tools = [
+      {
+        name: "slow",
+        description: "slow tool",
+        parameters: { type: "object", properties: {} },
+        implementation: mock(async () => {
+          await new Promise((r) => setTimeout(r, 30));
+          return "slow-result";
+        }),
+      },
+      {
+        name: "fast",
+        description: "fast tool",
+        parameters: { type: "object", properties: {} },
+        implementation: mock(async () => "fast-result"),
+      },
+    ];
+
+    mockChat
+      .mockImplementationOnce(async () => streamOf({
+        role: "assistant",
+        content: "",
+        tool_calls: [
+          { function: { name: "slow", arguments: {} } },
+          { function: { name: "fast", arguments: {} } },
+        ],
+      }))
+      .mockImplementationOnce(async () => streamOf({ role: "assistant", content: "done" }));
+
+    await provider.chat([], "", undefined, tools as any);
+
+    const round2Messages = (mockChat.mock.calls[1]?.[0] as any).messages as (MockMessage & { tool_name?: string })[];
+    const toolMsgs = round2Messages.filter((m) => m.role === "tool");
+    expect(toolMsgs).toHaveLength(2);
+    expect(toolMsgs[0]?.tool_name).toBe("slow");
+    expect(toolMsgs[0]?.content).toBe("slow-result");
+    expect(toolMsgs[1]?.tool_name).toBe("fast");
+    expect(toolMsgs[1]?.content).toBe("fast-result");
   });
 
   test("onToken called with final response content after tool rounds", async () => {
@@ -346,15 +471,14 @@ describe("native tool calling", () => {
     ];
 
     mockChat
-      .mockImplementationOnce(async () => ({
-        message: {
-          role: "assistant",
-          content: "",
-          tool_calls: [{ function: { name: "noop", arguments: {} } }],
-        },
+      .mockImplementationOnce(async () => streamOf({
+        role: "assistant",
+        content: "",
+        tool_calls: [{ function: { name: "noop", arguments: {} } }],
       }))
-      .mockImplementationOnce(async () => ({
-        message: { role: "assistant", content: "final text", tool_calls: [] },
+      .mockImplementationOnce(async () => streamOf({
+        role: "assistant",
+        content: "final text",
       }));
 
     const tokens: string[] = [];
