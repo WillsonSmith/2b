@@ -226,6 +226,10 @@ export class CortexMemoryDatabase {
     return new Date(value).getTime();
   }
 
+  private escapeFTS5(input: string): string {
+    return `"${input.replace(/"/g, '""')}"`;
+  }
+
   /**
    * Build a WHERE clause for the given filter.
    * Defaults status to ['active'] unless the caller explicitly passes filter.status.
@@ -464,7 +468,7 @@ export class CortexMemoryDatabase {
       whereClause = whereClause
         ? `${whereClause} AND ${ftsCondition}`
         : `WHERE ${ftsCondition}`;
-      allParams.push(filter.contains);
+      allParams.push(this.escapeFTS5(filter.contains));
     }
 
     const sql = `SELECT m.id, m.text, m.timestamp, m.type, m.tags FROM memories m ${whereClause} ORDER BY m.timestamp DESC LIMIT ?`;
@@ -580,13 +584,13 @@ export class CortexMemoryDatabase {
       whereClause = whereClause
         ? `${whereClause} AND ${ftsCondition}`
         : `WHERE ${ftsCondition}`;
-      allParams.push(filter.contains);
+      allParams.push(this.escapeFTS5(filter.contains));
 
       const bm25Rows = this.db
         .prepare(
           `SELECT memory_id, bm25(memories_fts) as bm25_score FROM memories_fts WHERE memories_fts MATCH ?`,
         )
-        .all(filter.contains) as { memory_id: string; bm25_score: number }[];
+        .all(this.escapeFTS5(filter.contains)) as { memory_id: string; bm25_score: number }[];
       if (bm25Rows.length > 0) {
         bm25Map = new Map(bm25Rows.map(r => [r.memory_id, r.bm25_score]));
       }
