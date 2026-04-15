@@ -124,11 +124,12 @@ ${conversationText}`;
       this.messages = recentMessages;
 
       if (this.cortexMemory && summaryResponse) {
-        this.cortexMemory.db
-          .addMemory(
+        this.cortexMemory
+          .writeMemory(
             `[SESSION_SUMMARY ${new Date().toISOString()}]\n${summaryResponse}`,
             "factual",
             ["session_summary"],
+            "MemoryPlugin",
           )
           .catch((e) => logger.error("MemoryPlugin", "Failed to persist summary:", e));
 
@@ -177,10 +178,11 @@ ${conversationText}`;
 
     if (!extractionResponse || extractionResponse.trim() === "NONE") return;
 
-    await this.cortexMemory!.db.addMemory(
+    await this.cortexMemory!.writeMemory(
       `[AUTO_EXTRACTED]\n${extractionResponse}`,
       "procedure",
       ["auto_extracted"],
+      "MemoryPlugin",
     );
     logger.info("MemoryPlugin", "Extracted procedure from summarized context");
   }

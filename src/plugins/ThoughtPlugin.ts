@@ -38,7 +38,7 @@ If it does not: reply with exactly the word SKIP and nothing else.`;
       try {
         // Store the raw thought text — no prefix or timestamp injected into text.
         // The type column records 'thought' and the timestamp column records when.
-        await this.memoryPlugin.db.addMemory(thought.trim(), "thought", [], "thought-plugin");
+        await this.memoryPlugin.writeMemory(thought.trim(), "thought", [], "thought-plugin");
         logger.debug("ThoughtPlugin", "Thought stored successfully");
       } catch (e) {
         logger.error("ThoughtPlugin", "Failed to store thought:", e);
@@ -57,18 +57,9 @@ If it does not: reply with exactly the word SKIP and nothing else.`;
     const insight = await this.synthesizeThought(thought);
     if (!insight) return;
 
-    // Semantic deduplication: skip if a highly similar behavior already exists
-    const similar = await this.memoryPlugin.db.search(insight, 1, 0.92, "behavior");
-    if (similar.length > 0) {
-      logger.debug(
-        "ThoughtPlugin",
-        `Behavior insight skipped — near-duplicate found (score=${similar[0]!.score.toFixed(3)}): "${insight}"`,
-      );
-      return;
-    }
-
+    // writeMemory handles semantic deduplication (0.92 threshold) and returns null if skipped
     logger.debug("ThoughtPlugin", `Storing behavior insight: "${insight}"`);
-    await this.memoryPlugin.db.addMemory(insight, "behavior");
+    await this.memoryPlugin.writeMemory(insight, "behavior");
   }
 
   private async synthesizeThought(thought: string): Promise<string | null> {
@@ -123,7 +114,7 @@ If it does not: reply with exactly the word SKIP and nothing else.`;
     try {
       if (name === "get_recent_thoughts") {
         const limit = args.limit ?? 5;
-        const recent = this.memoryPlugin.db.getRecentMemories(limit, "thought");
+        const recent = this.memoryPlugin.getRecentMemories(limit, "thought");
         if (recent.length === 0) return "No recent thoughts found.";
         // Format timestamp at read time — not baked into text
         return recent

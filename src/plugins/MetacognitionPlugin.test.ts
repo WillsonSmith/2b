@@ -141,7 +141,7 @@ describe("maybeAutoCorrect — pattern detection", () => {
 
     await (plugin as any).maybeAutoCorrect();
 
-    const saved = memPlugin.db.queryMemories({ types: ["behavior"], tags: ["metacognition-correction"] });
+    const saved = memPlugin.queryMemoriesRaw({ types: ["behavior"], tags: ["metacognition-correction"] });
     expect(saved.length).toBeGreaterThanOrEqual(1);
     expect(saved[0].text).toContain("search_memory");
   });
@@ -155,7 +155,7 @@ describe("maybeAutoCorrect — pattern detection", () => {
 
     await (plugin as any).maybeAutoCorrect();
 
-    const saved = memPlugin.db.queryMemories({ types: ["behavior"], tags: ["metacognition-correction"] });
+    const saved = memPlugin.queryMemoriesRaw({ types: ["behavior"], tags: ["metacognition-correction"] });
     expect(saved.some((m) => m.text.includes("once per turn"))).toBe(true);
   });
 
@@ -168,7 +168,7 @@ describe("maybeAutoCorrect — pattern detection", () => {
 
     await (plugin as any).maybeAutoCorrect();
 
-    const saved = memPlugin.db.queryMemories({ types: ["behavior"], tags: ["metacognition-correction"] });
+    const saved = memPlugin.queryMemoriesRaw({ types: ["behavior"], tags: ["metacognition-correction"] });
     expect(saved.some((m) => m.text.includes("hedging"))).toBe(true);
   });
 
@@ -182,7 +182,7 @@ describe("maybeAutoCorrect — pattern detection", () => {
 
     await (plugin as any).maybeAutoCorrect();
 
-    const saved = memPlugin.db.queryMemories({ types: ["behavior"], tags: ["metacognition-correction"] });
+    const saved = memPlugin.queryMemoriesRaw({ types: ["behavior"], tags: ["metacognition-correction"] });
     expect(saved.length).toBe(0);
   });
 
@@ -193,11 +193,11 @@ describe("maybeAutoCorrect — pattern detection", () => {
     );
 
     await (plugin as any).maybeAutoCorrect();
-    const count1 = memPlugin.db.queryMemories({ types: ["behavior"], tags: ["metacognition-correction"] }).length;
+    const count1 = memPlugin.queryMemoriesRaw({ types: ["behavior"], tags: ["metacognition-correction"] }).length;
 
     // Second call — deduplication should prevent another write
     await (plugin as any).maybeAutoCorrect();
-    const count2 = memPlugin.db.queryMemories({ types: ["behavior"], tags: ["metacognition-correction"] }).length;
+    const count2 = memPlugin.queryMemoriesRaw({ types: ["behavior"], tags: ["metacognition-correction"] }).length;
 
     expect(count2).toBe(count1);
   });
@@ -226,7 +226,7 @@ describe("maybeAutoCorrect — pattern detection", () => {
 
     await (plugin as any).maybeAutoCorrect();
 
-    const saved = memPlugin.db.queryMemories({ types: ["behavior"], tags: ["metacognition-correction"] });
+    const saved = memPlugin.queryMemoriesRaw({ types: ["behavior"], tags: ["metacognition-correction"] });
     expect(saved.length).toBe(0);
   });
 });
@@ -302,7 +302,7 @@ describe("checkCorrectionEffectiveness", () => {
 
   test("strengthens behavior memory in DB when correction is marked ineffective", async () => {
     const { plugin, memPlugin } = makeMetaPlugin();
-    const behaviorId = await memPlugin.db.addMemory(
+    const behaviorId = await memPlugin.addMemoryRaw(
       "original rule",
       "behavior",
       ["metacognition-correction", "saturation"],
@@ -325,7 +325,7 @@ describe("checkCorrectionEffectiveness", () => {
 
     await (plugin as any).checkCorrectionEffectiveness();
 
-    const memories = memPlugin.db.queryMemories({ types: ["behavior"] });
+    const memories = memPlugin.queryMemoriesRaw({ types: ["behavior"] });
     // strengthenCorrectiveRule deletes the old record and creates a new one with a new ID
     const updated = memories.find((m: { text: string }) => m.text.includes("CRITICAL")) as { text: string } | undefined;
     expect(updated?.text).toContain("CRITICAL");
@@ -334,7 +334,7 @@ describe("checkCorrectionEffectiveness", () => {
 
   test("updates correctionHistory rule_saved to reflect the strengthened text", async () => {
     const { plugin, memPlugin } = makeMetaPlugin();
-    const behaviorId = await memPlugin.db.addMemory("original rule", "behavior", []);
+    const behaviorId = await memPlugin.addMemoryRaw("original rule", "behavior", []);
     const correctionDate = new Date(Date.now() - 1000);
     (plugin as any).correctionHistory = [{
       id: "test-2b",
@@ -382,7 +382,7 @@ describe("checkCorrectionEffectiveness", () => {
 
   test("prunes stale effective correction from DB after 20+ clean turns", async () => {
     const { plugin, memPlugin } = makeMetaPlugin();
-    const behaviorId = await memPlugin.db.addMemory(
+    const behaviorId = await memPlugin.addMemoryRaw(
       "old rule",
       "behavior",
       ["metacognition-correction", "saturation"],
@@ -407,13 +407,13 @@ describe("checkCorrectionEffectiveness", () => {
 
     await (plugin as any).checkCorrectionEffectiveness();
 
-    const remaining = memPlugin.db.queryMemories({ types: ["behavior"] });
+    const remaining = memPlugin.queryMemoriesRaw({ types: ["behavior"] });
     expect(remaining.find((m: { id: string }) => m.id === behaviorId)).toBeUndefined();
   });
 
   test("does not prune effective correction younger than 30 days", async () => {
     const { plugin, memPlugin } = makeMetaPlugin();
-    const behaviorId = await memPlugin.db.addMemory(
+    const behaviorId = await memPlugin.addMemoryRaw(
       "fresh rule",
       "behavior",
       ["metacognition-correction", "saturation"],
@@ -438,7 +438,7 @@ describe("checkCorrectionEffectiveness", () => {
     await (plugin as any).checkCorrectionEffectiveness();
 
     expect((plugin as any).correctionHistory[0].effectiveness).toBe("effective");
-    const remaining = memPlugin.db.queryMemories({ types: ["behavior"] });
+    const remaining = memPlugin.queryMemoriesRaw({ types: ["behavior"] });
     expect(remaining.find((m: { id: string }) => m.id === behaviorId)).toBeDefined();
   });
 
