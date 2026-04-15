@@ -233,7 +233,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "Use `save_procedure` after successfully completing a non-trivial task to record the steps taken.",
       "Use `edit_memory` to update the text of an existing memory by its ID.",
       "Use `delete_memory` to remove a memory. Single form: `{ id }`. Batch form: `{ ids: [id1, id2, ...] }` — deletes multiple memories in one call and triggers one cache invalidation regardless of how many IDs are provided.",
-      "Use `get_linked_memories` to follow chains of related ideas. Pass `link_type: \"depends_on\"` to find what a procedure relies on.",
+      "Use `get_linked_memories` to follow chains of related ideas.",
       "Use `get_memory_lineage` to trace how a memory has evolved over time — what it replaced, and what has since replaced it.",
       "When saving a memory that updates a prior one, use `supersedes` to preserve the lineage rather than deleting the old memory.",
       "Use `query_memories` to filter memories by type, tags, date range, or full-text content.",
@@ -549,7 +549,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
             },
             link_type: {
               type: "string",
-              description: "Filter to only links of a specific type: 'related', 'depends_on', 'supersedes', 'reconstructed_from'",
+              description: "Filter to only links of a specific type: 'related', 'supersedes', 'reconstructed_from'",
             },
           },
           required: ["id"],

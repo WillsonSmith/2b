@@ -233,6 +233,22 @@ describe("CortexMemoryDatabase - WHERE clause builder (via queryMemories)", () =
     expect(results.every((r) => r.text.includes("fox"))).toBe(true);
   });
 
+  test("contains filter does not crash on hyphenated terms", async () => {
+    const { db } = makeDB();
+    await db.addMemory("X-Ray imaging technique", "factual");
+    await db.addMemory("normal text", "factual");
+    expect(() => db.queryMemories({ contains: "X-Ray" })).not.toThrow();
+    const results = db.queryMemories({ contains: "X-Ray" });
+    expect(results).toHaveLength(1);
+    expect(results[0]?.text).toContain("X-Ray");
+  });
+
+  test("contains filter does not crash on terms with double-quotes", async () => {
+    const { db } = makeDB();
+    await db.addMemory('say "hello" to everyone', "factual");
+    expect(() => db.queryMemories({ contains: '"hello"' })).not.toThrow();
+  });
+
   test("empty filter returns all memories", async () => {
     const { db } = makeDB();
     await db.addMemory("one", "factual");
@@ -420,6 +436,30 @@ describe("CortexMemoryDatabase - getLinkedMemories with linkType filter", () => 
     const linked = await db.getLinkedMemories(idA);
     expect(linked[0]).toHaveProperty("link_type");
     expect(linked[0]?.link_type).toBe("related");
+  });
+});
+
+describe("CortexMemoryDatabase - hybridSearch FTS special characters", () => {
+  test("hybridSearch does not crash when contains includes a hyphen", async () => {
+    const { db } = makeDB();
+    await db.addMemory("X-Ray imaging technique", "factual");
+    const results = await db.hybridSearch("imaging", { contains: "X-Ray" });
+    expect(Array.isArray(results)).toBe(true);
+  });
+
+  test("hybridSearch returns matching memory for hyphenated contains term", async () => {
+    const { db } = makeDB();
+    await db.addMemory("follow-up appointment scheduled", "factual");
+    await db.addMemory("unrelated note", "factual");
+    const results = await db.hybridSearch("appointment", { contains: "follow-up" });
+    expect(results.some((r) => r.text.includes("follow-up"))).toBe(true);
+  });
+
+  test("hybridSearch does not crash when contains includes double-quotes", async () => {
+    const { db } = makeDB();
+    await db.addMemory('user said "hello" during session', "factual");
+    const results = await db.hybridSearch("greeting", { contains: '"hello"' });
+    expect(Array.isArray(results)).toBe(true);
   });
 });
 
