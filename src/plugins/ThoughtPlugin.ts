@@ -1,17 +1,18 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import type { BaseAgent } from "../core/BaseAgent.ts";
-import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import { logger } from "../logger.ts";
 
 const MAX_SYNTHESIS_CHARS = 1000;
 const MAX_INSIGHT_LENGTH = 200;
+const MAX_RECENT_THOUGHTS = 20;
 
 export class ThoughtPlugin implements AgentPlugin {
   name = "Thought";
-  private memoryPlugin: CortexMemoryPlugin;
+  private agent: BaseAgent | null = null;
   private synthesisProvider: LLMProvider | null;
   private listenerRegistered = false;
+  private recentThoughts: Array<{ text: string; timestamp: number }> = [];
 
   protected synthesisPrompt = `You analyze internal AI reasoning and extract personality-shaping insights.
 
@@ -23,30 +24,37 @@ Non-qualifying examples: task-specific reasoning, working memory, step-by-step p
 If the thought contains a qualifying insight: reply with a single concise behavioral rule written in first person starting with "I " (e.g., "I prefer direct answers over lengthy explanations").
 If it does not: reply with exactly the word SKIP and nothing else.`;
 
-  constructor(memoryPlugin: CortexMemoryPlugin, synthesisProvider: LLMProvider | null = null) {
-    this.memoryPlugin = memoryPlugin;
+  constructor(synthesisProvider: LLMProvider | null = null) {
     this.synthesisProvider = synthesisProvider;
   }
 
   onInit(agent: BaseAgent): void {
     if (this.listenerRegistered) return;
     this.listenerRegistered = true;
+    this.agent = agent;
 
     agent.on("thought", async (thought: string) => {
       if (!thought?.trim()) return;
-      logger.debug("ThoughtPlugin", `Storing thought (${thought.length} chars)`);
-      try {
-        // Store the raw thought text — no prefix or timestamp injected into text.
-        // The type column records 'thought' and the timestamp column records when.
-        await this.memoryPlugin.writeMemory(thought.trim(), "thought", [], "thought-plugin");
-        logger.debug("ThoughtPlugin", "Thought stored successfully");
-      } catch (e) {
-        logger.error("ThoughtPlugin", "Failed to store thought:", e);
+      const trimmed = thought.trim();
+      logger.debug("ThoughtPlugin", `Storing thought (${trimmed.length} chars)`);
+
+      // Push to local ring buffer for get_recent_thoughts tool
+      this.recentThoughts.push({ text: trimmed, timestamp: Date.now() });
+      if (this.recentThoughts.length > MAX_RECENT_THOUGHTS) {
+        this.recentThoughts.shift();
       }
+
+      // Emit to event bus — CortexMemoryPlugin will persist if registered
+      this.agent?.requestMemoryWrite({
+        text: trimmed,
+        type: "thought",
+        tags: [],
+        source: "thought-plugin",
+      });
 
       // Fire-and-forget: synthesize behavioral insight without blocking
       if (this.synthesisProvider) {
-        this.synthesizeAndStore(thought).catch(e =>
+        this.synthesizeAndStore(trimmed).catch(e =>
           logger.error("ThoughtPlugin", "Synthesis failed:", e),
         );
       }
@@ -57,9 +65,13 @@ If it does not: reply with exactly the word SKIP and nothing else.`;
     const insight = await this.synthesizeThought(thought);
     if (!insight) return;
 
-    // writeMemory handles semantic deduplication (0.92 threshold) and returns null if skipped
-    logger.debug("ThoughtPlugin", `Storing behavior insight: "${insight}"`);
-    await this.memoryPlugin.writeMemory(insight, "behavior");
+    logger.debug("ThoughtPlugin", `Emitting behavior insight: "${insight}"`);
+    this.agent?.requestMemoryWrite({
+      text: insight,
+      type: "behavior",
+      tags: [],
+      source: "thought-plugin",
+    });
   }
 
   private async synthesizeThought(thought: string): Promise<string | null> {
@@ -114,9 +126,8 @@ If it does not: reply with exactly the word SKIP and nothing else.`;
     try {
       if (name === "get_recent_thoughts") {
         const limit = args.limit ?? 5;
-        const recent = this.memoryPlugin.getRecentMemories(limit, "thought");
+        const recent = this.recentThoughts.slice(-limit);
         if (recent.length === 0) return "No recent thoughts found.";
-        // Format timestamp at read time — not baked into text
         return recent
           .map(t => `[${new Date(t.timestamp).toISOString()}] ${t.text}`)
           .join("\n");
