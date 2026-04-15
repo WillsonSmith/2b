@@ -96,10 +96,10 @@ If it does not: reply with exactly the word SKIP and nothing else.`;
 
   getSystemPromptFragment(): string {
     return [
-      "## Internal Thoughts",
-      "Your <think> blocks are your private internal reasoning. These thoughts are stored as memory.",
-      "Use your thoughts to drive proactive actions — don't just react to users, anticipate needs.",
-      "Thoughts stored in memory can be retrieved with `get_recent_thoughts` or `search_memory`.",
+      "## Internal Reasoning",
+      "Your reasoning process is captured automatically and stored as memory each turn.",
+      "Use `get_recent_thoughts` to review your recent reasoning, or `search_memory` to find older thoughts.",
+      "Use your reasoning to drive proactive actions — don't just react to users, anticipate needs.",
     ].join("\n");
   }
 
