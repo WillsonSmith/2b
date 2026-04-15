@@ -35,6 +35,8 @@ export class CortexMemoryPlugin implements AgentPlugin {
    */
   private currentEvents: string[] = [];
   private savedThisTurn: Set<string> = new Set();
+  /** Text of memories saved this turn, keyed by ID. Used by onMessage() for per-pair conflict classification. */
+  private savedThisTurnTexts: Map<string, string> = new Map();
 
   /** Cached core behavior memories (tagged "core"), invalidated when a core behavior is saved or deleted. */
   private coreBehaviorCache: Array<{ id: string; text: string }> | null = null;
@@ -144,6 +146,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     try {
       this.currentEvents = currentEvents ?? [];
       this.savedThisTurn.clear();
+      this.savedThisTurnTexts.clear();
       const query = currentEvents?.join(" ") ?? "";
       if (!query.trim()) return "";
 
@@ -606,6 +609,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     const supersedes = typeof args.supersedes === "string" ? args.supersedes : undefined;
     const id = await this.db.addMemory(content, args.type ?? "factual", args.tags ?? [], undefined, undefined, supersedes);
     this.savedThisTurn.add(id);
+    this.savedThisTurnTexts.set(id, content);
     logger.info(this.name, `save_memory SUCCESS id=${id}`);
     // Supersede near-duplicate active memories (score >= 0.9) using the saved content as query
     const nearDups = await this.db.search(content, 5, 0.9, args.type ?? "factual");
@@ -871,6 +875,35 @@ export class CortexMemoryPlugin implements AgentPlugin {
     return isNaN(ms) ? undefined : ms;
   }
 
+  /**
+   * Classify the relationship between a newly-saved memory (newText) and an existing
+   * candidate memory (oldText) that scored >= 0.85 against the current turn's query.
+   *
+   * - CORRECTION: new text contains a negation keyword → old is wrong, supersede it.
+   * - SUPPLEMENT: everything else → adds context, link both and keep active.
+   *
+   * Note: exact/near-duplicates (score >= 0.9) are already handled by the near-duplicate
+   * guard in handleSaveMemory() and will not reach this method (they are superseded before
+   * onMessage() runs and are excluded from the active-only search). This method therefore
+   * only sees candidates in the 0.85–0.89 range.
+   *
+   * No LLM calls — pure text heuristic.
+   */
+  private classifyRelationship(
+    newText: string,
+    _oldText: string,
+    _score: number,
+  ): "CORRECTION" | "SUPPLEMENT" {
+    const CORRECTION_KEYWORDS = [
+      "no longer", "not anymore", "changed", "updated",
+      "incorrect", "wrong", "instead", "actually", "correction",
+      "was wrong", "mistaken",
+    ];
+    const lower = newText.toLowerCase();
+    if (CORRECTION_KEYWORDS.some(kw => lower.includes(kw))) return "CORRECTION";
+    return "SUPPLEMENT";
+  }
+
   async onMessage(
     role: "user" | "assistant" | "system",
     content: string,
@@ -883,23 +916,32 @@ export class CortexMemoryPlugin implements AgentPlugin {
     // Guard: require event context to form a focused conflict query.
     if (this.currentEvents.length === 0) return;
     // Autonomous conflict resolution
+    // Note: the near-duplicate guard in handleSaveMemory() already handles score >= 0.9
+    // matches at save time. This runs at 0.85 to catch the 0.85–0.89 range that slipped through.
     try {
       const conflictQuery = this.currentEvents.join(" ") + " " + content;
       logger.debug(this.name, "onMessage: running autonomous conflict resolution");
       const candidates = await this.db.search(conflictQuery, 5, 0.85);
       logger.debug(this.name, `onMessage: found ${candidates.length} conflict candidates`);
-      const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
 
       for (const candidate of candidates) {
         if (this.savedThisTurn.has(candidate.id)) continue;
         const mem = await this.db.getMemoryById(candidate.id);
         if (!mem) continue;
-        if (mem.timestamp >= twoHoursAgo) {
-          logger.info(this.name, `Deleting recent conflicting memory id=${candidate.id}`);
-          await this.db.deleteMemory(candidate.id);
-        } else {
-          logger.info(this.name, `Marking memory superseded id=${candidate.id}`);
-          await this.db.updateMemoryStatus(candidate.id, "superseded");
+
+        // Classify each (newMemory, candidate) pair independently
+        for (const [newId, newText] of this.savedThisTurnTexts) {
+          const classification = this.classifyRelationship(newText, mem.text, candidate.score);
+
+          if (classification === "CORRECTION") {
+            logger.info(this.name, `CORRECTION: marking memory superseded id=${candidate.id} (new id=${newId})`);
+            await this.db.updateMemoryStatus(candidate.id, "superseded");
+            break; // one CORRECTION is enough for this candidate
+          } else {
+            // SUPPLEMENT: link both, keep both active
+            logger.info(this.name, `SUPPLEMENT: linking memory id=${newId} ↔ ${candidate.id}`);
+            await this.db.linkMemories(newId, candidate.id, "related");
+          }
         }
       }
     } catch (e) {
