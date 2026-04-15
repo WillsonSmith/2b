@@ -2,16 +2,16 @@ import type { Message } from "../core/types.ts";
 import type { AgentPlugin } from "../core/Plugin.ts";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
+import type { BaseAgent } from "../core/BaseAgent.ts";
 import { logger } from "../logger.ts";
 
 export class MemoryPlugin implements AgentPlugin {
   name = "MemoryPlugin";
 
-  // Store the conversation history and the system prompt separately
   private messages: Message[] = [];
-  private systemPrompt: Message | null = null;
+  private agent: BaseAgent | null = null;
+  private summarizing = false;
 
-  // Configuration for memory management
   private readonly MAX_MESSAGES: number;
   private readonly MIN_MESSAGES: number;
   private readonly cortexMemory: CortexMemoryPlugin | undefined;
@@ -29,88 +29,74 @@ export class MemoryPlugin implements AgentPlugin {
     this.cortexMemory = cortexMemory;
   }
 
+  onInit(agent: BaseAgent): void {
+    this.agent = agent;
+
+    // Summarize after each turn completes, not during message ingestion.
+    // This avoids blocking onMessage with an LLM round-trip and ensures
+    // getLastSystemPrompt() reflects the fully assembled prompt for that turn.
+    agent.on("state_change", (state) => {
+      if (state === "idle" && this.messages.length > this.MAX_MESSAGES && !this.summarizing) {
+        this.summarizeOldContext().catch((e) =>
+          logger.error("MemoryPlugin", "Background summarization failed:", e),
+        );
+      }
+    });
+  }
+
   async onMessage(
     role: "user" | "assistant" | "system",
     content: string,
-    _source: string, // source is intentionally ignored — MemoryPlugin stores all messages regardless of origin
+    _source: string,
   ): Promise<void> {
-    // 1. Intercept and isolate the system prompt
-    if (role === "system") {
-      this.systemPrompt = { role, content };
-      return;
-    }
-
+    if (role === "system") return; // BaseAgent handles the system prompt separately
     this.messages.push({ role, content });
-
-    // Check if we need to summarize to keep within the bounds
-    if (this.messages.length > this.MAX_MESSAGES) {
-      await this.summarizeOldContext();
-    }
   }
 
   /**
-   * Returns the chat history. Guarantees the output starts with the system
-   * prompt (if it exists), immediately followed by a 'user' message,
-   * without exceeding the total requested limit.
+   * Returns the chat history starting from the first user message,
+   * respecting the optional limit.
    */
   async getMessages(limit?: number): Promise<Message[]> {
-    let chatHistory: Message[] = [];
-    let historyLimit = limit;
+    let chatHistory = limit !== undefined && limit > 0
+      ? this.messages.slice(-limit)
+      : [...this.messages];
 
-    // 1. Leave room for the system prompt in our total limit
-    if (historyLimit !== undefined && historyLimit > 0 && this.systemPrompt) {
-      historyLimit -= 1;
-    }
-
-    // 2. Slice the history based on the adjusted limit
-    if (historyLimit !== undefined && historyLimit > 0) {
-      chatHistory = this.messages.slice(-historyLimit);
-    } else {
-      chatHistory = [...this.messages];
-    }
-
-    // 3. Enforce the user-first rule on the sliced history.
-    // Use findIndex + slice (O(n)) instead of repeated shift() calls (O(n²)).
     const firstUserIdx = chatHistory.findIndex((m) => m.role === "user");
-    chatHistory = firstUserIdx === -1 ? [] : chatHistory.slice(firstUserIdx);
-
-    // 4. Prepend system prompt
-    if (this.systemPrompt) {
-      return [this.systemPrompt, ...chatHistory];
-    }
-
-    return chatHistory;
+    return firstUserIdx === -1 ? [] : chatHistory.slice(firstUserIdx);
   }
 
   /**
-   * Condenses old messages into a summary to save space
-   * while maintaining context.
+   * Condenses old messages into a structured summary and trims the history.
+   * Runs after each turn (triggered via state_change → idle).
+   * Uses the agent's last assembled system prompt so the summarizer has full
+   * context about the agent's identity, tools, and learned behaviors.
    */
   private async summarizeOldContext(): Promise<void> {
-    // Find the split point, ensuring the first kept message is from a 'user'
-    let splitIndex = Math.max(0, this.messages.length - this.MIN_MESSAGES);
-    while (splitIndex < this.messages.length) {
-      if (this.messages[splitIndex]!.role === "user") {
-        break;
+    this.summarizing = true;
+
+    try {
+      // Find the split point, ensuring the first kept message is from a 'user'
+      let splitIndex = Math.max(0, this.messages.length - this.MIN_MESSAGES);
+      while (splitIndex < this.messages.length) {
+        if (this.messages[splitIndex]!.role === "user") break;
+        splitIndex++;
       }
-      splitIndex++;
-    }
 
-    const toSummarize = this.messages.slice(0, splitIndex);
-    const recentMessages = this.messages.slice(splitIndex);
+      const toSummarize = this.messages.slice(0, splitIndex);
+      const recentMessages = this.messages.slice(splitIndex);
 
-    // If no user-message boundary was found, recentMessages will be empty.
-    // Apply a hard cap to prevent repeated re-entry on every subsequent onMessage call.
-    if (toSummarize.length === 0) return;
-    if (recentMessages.length === 0) {
-      this.messages = this.messages.slice(-this.MIN_MESSAGES);
-      return;
-    }
+      if (toSummarize.length === 0) return;
+      if (recentMessages.length === 0) {
+        this.messages = this.messages.slice(-this.MIN_MESSAGES);
+        return;
+      }
 
-    const conversationText = toSummarize
-      .map((m) => `${m.role}: ${m.content}`)
-      .join("\n");
-    const summaryPrompt = `Analyze this conversation segment and respond with exactly these four labeled sections:
+      const conversationText = toSummarize
+        .map((m) => `${m.role}: ${m.content}`)
+        .join("\n");
+
+      const summaryPrompt = `Analyze this conversation segment and respond with exactly these four labeled sections:
 
 DECISIONS: Key decisions or conclusions reached (one per line, or "none")
 TOOLS: Tools called and what they returned or revealed (one per line, or "none")
@@ -120,16 +106,15 @@ OPEN_QUESTIONS: Unresolved questions or uncertainties that carry forward (one pe
 Conversation:
 ${conversationText}`;
 
-    try {
-      const { nonReasoningContent: summaryResponse } = await this.llm.chat([
-        { role: "user", content: summaryPrompt },
-      ]);
+      const systemPrompt = this.agent?.getLastSystemPrompt();
+      const summaryMessages: Message[] = [];
+      if (systemPrompt) summaryMessages.push({ role: "system", content: systemPrompt });
+      summaryMessages.push({ role: "user", content: summaryPrompt });
 
-      // Prepend the LLM-generated summary to the first retained user message.
-      // The summary is attributed and delimited to reduce the risk of prompt
-      // injection — content here comes from the model, not from the user.
-      // recentMessages is a fresh slice (not a live reference to this.messages),
-      // so assigning index 0 here is safe and does not mutate the original array.
+      const { nonReasoningContent: summaryResponse } = await this.llm.chat(summaryMessages);
+
+      // Prepend the summary to the first retained user message.
+      // Attributed and delimited to reduce prompt injection risk.
       const firstRecent = recentMessages[0]!;
       recentMessages[0] = {
         role: firstRecent.role,
@@ -138,7 +123,6 @@ ${conversationText}`;
 
       this.messages = recentMessages;
 
-      // Persist the structured summary to long-term memory (fire-and-forget)
       if (this.cortexMemory && summaryResponse) {
         this.cortexMemory.db
           .addMemory(
@@ -148,26 +132,23 @@ ${conversationText}`;
           )
           .catch((e) => logger.error("MemoryPlugin", "Failed to persist summary:", e));
 
-        // Extract procedures from the summarized messages (fire-and-forget)
-        this.extractProcedures(toSummarize).catch((e) =>
+        this.extractProcedures(toSummarize, systemPrompt).catch((e) =>
           logger.error("MemoryPlugin", "Failed to extract procedures:", e),
         );
       }
     } catch (error) {
       logger.error("MemoryPlugin", "Failed to summarize context:", error);
-
-      // 4. Safer fallback: Instead of splicing exactly 2, drop the old messages
-      // entirely based on the splitIndex. This guarantees we still start on a 'user' message.
-      this.messages = recentMessages;
+    } finally {
+      this.summarizing = false;
     }
   }
 
   /**
    * Runs a second LLM pass over the summarized messages to extract tool-use
    * rationale and decision chains, then saves the result as a procedure memory.
-   * Called fire-and-forget after summarization — does not block the main path.
+   * Called fire-and-forget after summarization.
    */
-  private async extractProcedures(messages: Message[]): Promise<void> {
+  private async extractProcedures(messages: Message[], systemPrompt: string | undefined): Promise<void> {
     const hasToolActivity = messages.some((m) =>
       /\b(tool|search|save|search_memory|hybrid_search|save_memory|save_behavior)\b/i.test(m.content),
     );
@@ -188,21 +169,19 @@ If there are no meaningful procedures to extract, output: NONE
 Conversation:
 ${conversationText}`;
 
-    try {
-      const { nonReasoningContent: extractionResponse } = await this.llm.chat([
-        { role: "user", content: extractionPrompt },
-      ]);
+    const extractionMessages: Message[] = [];
+    if (systemPrompt) extractionMessages.push({ role: "system", content: systemPrompt });
+    extractionMessages.push({ role: "user", content: extractionPrompt });
 
-      if (!extractionResponse || extractionResponse.trim() === "NONE") return;
+    const { nonReasoningContent: extractionResponse } = await this.llm.chat(extractionMessages);
 
-      await this.cortexMemory!.db.addMemory(
-        `[AUTO_EXTRACTED]\n${extractionResponse}`,
-        "procedure",
-        ["auto_extracted"],
-      );
-      logger.info("MemoryPlugin", "Extracted procedure from summarized context");
-    } catch (e) {
-      logger.error("MemoryPlugin", "extractProcedures LLM call failed:", e);
-    }
+    if (!extractionResponse || extractionResponse.trim() === "NONE") return;
+
+    await this.cortexMemory!.db.addMemory(
+      `[AUTO_EXTRACTED]\n${extractionResponse}`,
+      "procedure",
+      ["auto_extracted"],
+    );
+    logger.info("MemoryPlugin", "Extracted procedure from summarized context");
   }
 }
