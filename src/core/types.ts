@@ -2,6 +2,19 @@ export interface AmbientOptions {
   forceTick?: boolean;
 }
 
+/**
+ * A request from any plugin to persist content to long-term memory.
+ * Emitted via BaseAgent.requestMemoryWrite() and consumed by CortexMemoryPlugin
+ * (or any plugin that implements the memory broker role).
+ * If no broker is registered the event fires into the void — graceful no-op.
+ */
+export interface MemoryWriteRequest {
+  text: string;
+  type: "factual" | "thought" | "behavior" | "procedure";
+  tags?: string[];
+  source: string;
+}
+
 export interface AgentEventMap {
   interrupt: [];
   error: [err: Error];
@@ -17,6 +30,8 @@ export interface AgentEventMap {
   agent_spawned: [agentName: string, agentType: "headless" | "cortex", capabilities: string[]];
   agent_state_change: [agentName: string, state: "idle" | "thinking"];
   agent_error: [agentName: string, err: Error];
+  /** Emitted by plugins that produce content for long-term persistence. */
+  "memory:write_request": [request: MemoryWriteRequest];
 }
 
 export type Message = {

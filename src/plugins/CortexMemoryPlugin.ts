@@ -1,4 +1,6 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
+import type { BaseAgent } from "../core/BaseAgent.ts";
+import type { MemoryWriteRequest } from "../core/types.ts";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import {
   CortexMemoryDatabase,
@@ -64,6 +66,19 @@ export class CortexMemoryPlugin implements AgentPlugin {
     this.db = new CortexMemoryDatabase(llmProvider, name, dbPath);
     this.factualBudget = options?.factualContextBudgetChars ?? 1200;
     this.procedureBudget = options?.procedureContextBudgetChars ?? 600;
+  }
+
+  /**
+   * Subscribe to memory:write_request events from any plugin on the same agent.
+   * This makes CortexMemoryPlugin the memory broker: all programmatic writes from
+   * ThoughtPlugin, MemoryPlugin, and any future producers flow through writeMemory()
+   * without those plugins holding a direct reference to this plugin.
+   */
+  onInit(agent: BaseAgent): void {
+    agent.on("memory:write_request", (request: MemoryWriteRequest) => {
+      this.writeMemory(request.text, request.type, request.tags ?? [], request.source)
+        .catch(e => logger.error(this.name, "Failed to handle memory:write_request:", e));
+    });
   }
 
   // ─── Programmatic write/read interface for internal plugins ──────────────────

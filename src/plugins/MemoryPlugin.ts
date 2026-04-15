@@ -1,7 +1,6 @@
 import type { Message } from "../core/types.ts";
 import type { AgentPlugin } from "../core/Plugin.ts";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
-import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
 import type { BaseAgent } from "../core/BaseAgent.ts";
 import { logger } from "../logger.ts";
 
@@ -14,19 +13,16 @@ export class MemoryPlugin implements AgentPlugin {
 
   private readonly MAX_MESSAGES: number;
   private readonly MIN_MESSAGES: number;
-  private readonly cortexMemory: CortexMemoryPlugin | undefined;
 
   constructor(
     private llm: LLMProvider,
     {
       maxMessages = 15,
       minMessages = 5,
-      cortexMemory,
-    }: { maxMessages?: number; minMessages?: number; cortexMemory?: CortexMemoryPlugin } = {},
+    }: { maxMessages?: number; minMessages?: number } = {},
   ) {
     this.MAX_MESSAGES = maxMessages;
     this.MIN_MESSAGES = minMessages;
-    this.cortexMemory = cortexMemory;
   }
 
   onInit(agent: BaseAgent): void {
@@ -123,15 +119,13 @@ ${conversationText}`;
 
       this.messages = recentMessages;
 
-      if (this.cortexMemory && summaryResponse) {
-        this.cortexMemory
-          .writeMemory(
-            `[SESSION_SUMMARY ${new Date().toISOString()}]\n${summaryResponse}`,
-            "factual",
-            ["session_summary"],
-            "MemoryPlugin",
-          )
-          .catch((e) => logger.error("MemoryPlugin", "Failed to persist summary:", e));
+      if (summaryResponse) {
+        this.agent?.requestMemoryWrite({
+          text: `[SESSION_SUMMARY ${new Date().toISOString()}]\n${summaryResponse}`,
+          type: "factual",
+          tags: ["session_summary"],
+          source: "MemoryPlugin",
+        });
 
         this.extractProcedures(toSummarize, systemPrompt).catch((e) =>
           logger.error("MemoryPlugin", "Failed to extract procedures:", e),
@@ -178,12 +172,12 @@ ${conversationText}`;
 
     if (!extractionResponse || extractionResponse.trim() === "NONE") return;
 
-    await this.cortexMemory!.writeMemory(
-      `[AUTO_EXTRACTED]\n${extractionResponse}`,
-      "procedure",
-      ["auto_extracted"],
-      "MemoryPlugin",
-    );
+    this.agent?.requestMemoryWrite({
+      text: `[AUTO_EXTRACTED]\n${extractionResponse}`,
+      type: "procedure",
+      tags: ["auto_extracted"],
+      source: "MemoryPlugin",
+    });
     logger.info("MemoryPlugin", "Extracted procedure from summarized context");
   }
 }

@@ -28,7 +28,7 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
     // config.cortexName or config.name explicitly when running more than one concurrently.
     const cortexName = config.cortexName ?? config.name ?? "cortex";
     this.memoryPlugin = new CortexMemoryPlugin(llm, cortexName, config.memoryDbPath, config.memoryOptions);
-    const thoughtPlugin = new ThoughtPlugin(this.memoryPlugin, synthesisProvider ?? null);
+    const thoughtPlugin = new ThoughtPlugin(synthesisProvider ?? null);
 
     const metacognitionPlugin = new MetacognitionPlugin(this.memoryPlugin);
 
