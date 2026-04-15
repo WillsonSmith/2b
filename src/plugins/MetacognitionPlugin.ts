@@ -94,7 +94,7 @@ export class MetacognitionPlugin implements AgentPlugin {
     // Reconstruct correction history from DB so effectiveness state survives restarts
     try {
       const CROSS_SESSION_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-      const existing = this.memoryPlugin.db.queryMemories({
+      const existing = this.memoryPlugin.queryMemoriesRaw({
         types: ["behavior"],
         tags: ["metacognition-correction"],
         limit: CORRECTION_HISTORY_LIMIT,
@@ -118,8 +118,8 @@ export class MetacognitionPlugin implements AgentPlugin {
 
         if (isIneffective && age > CROSS_SESSION_STALE_MS) {
           // Prune stale ineffective corrections from a prior session;
-          // drop .catch() — deleteMemory is sync, outer try/catch handles errors
-          this.memoryPlugin.db.deleteMemory(mem.id);
+          // fire-and-forget — outer try/catch handles errors
+          this.memoryPlugin.deleteMemoryById(mem.id).catch(() => {});
           continue;
         }
 
@@ -353,7 +353,7 @@ export class MetacognitionPlugin implements AgentPlugin {
       this.currentTurn = this.newTurn();
       this.blockedTools.clear();
       try {
-        const behaviors = this.memoryPlugin.db.getRecentMemories(
+        const behaviors = this.memoryPlugin.getRecentMemories(
           20,
           "behavior",
         );
@@ -433,7 +433,7 @@ export class MetacognitionPlugin implements AgentPlugin {
 
   private handleMemoryStatus(): string {
     try {
-      const counts = this.memoryPlugin.db.aggregateMemories("type");
+      const counts = this.memoryPlugin.aggregateMemories("type");
       const t = this.currentTurn;
       const saturationNote = t.uncertainty_markers.includes("tool_saturation")
         ? " (TOOL SATURATION — threshold exceeded)"
@@ -451,7 +451,7 @@ export class MetacognitionPlugin implements AgentPlugin {
 
   private handleShowActiveRules(): string {
     try {
-      const behaviors = this.memoryPlugin.db.queryMemories({
+      const behaviors = this.memoryPlugin.queryMemoriesRaw({
         types: ["behavior"],
         limit: 50,
       });
@@ -814,7 +814,7 @@ export class MetacognitionPlugin implements AgentPlugin {
       if (recentlySaved) return;
 
       // Also skip if an active (non-failed) correction for this trigger already exists in the DB
-      const existing = this.memoryPlugin.db.queryMemories({
+      const existing = this.memoryPlugin.queryMemoriesRaw({
         types: ["behavior"],
         tags: ["metacognition-correction"],
         contains: trigger,
@@ -830,7 +830,7 @@ export class MetacognitionPlugin implements AgentPlugin {
         // Otherwise the DB record is stale/orphaned — fall through and allow save
       }
 
-      const behaviorMemoryId = await this.memoryPlugin.db.addMemory(
+      const behaviorMemoryId = await this.memoryPlugin.addMemoryRaw(
         rule,
         "behavior",
         ["metacognition-correction", trigger],
@@ -980,7 +980,7 @@ export class MetacognitionPlugin implements AgentPlugin {
       await this.memoryPlugin.executeTool!("delete_memory", { id: oldId });
       let newId: string;
       try {
-        newId = await this.memoryPlugin.db.addMemory(
+        newId = await this.memoryPlugin.addMemoryRaw(
           strengthened,
           "behavior",
           [

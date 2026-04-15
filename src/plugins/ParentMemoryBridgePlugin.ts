@@ -76,9 +76,9 @@ export class ParentMemoryBridgePlugin implements AgentPlugin {
       `Sub-agent "${this.agentName}" writing ${args.type} memory to parent: "${content.slice(0, 80)}"`,
     );
 
-    await this.parentMemory.db.addMemory(
+    await this.parentMemory.writeMemory(
       content,
-      args.type as string,
+      args.type as "factual" | "procedure",
       Array.isArray(args.tags) ? args.tags : [],
       this.agentName,
     );

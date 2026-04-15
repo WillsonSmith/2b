@@ -55,7 +55,7 @@ describe("thought storage (via agent 'thought' event)", () => {
 
     await agent.emit("thought", "I wonder about the universe");
 
-    const memories = mem.db.queryMemories({ types: ["thought"] });
+    const memories = mem.queryMemoriesRaw({ types: ["thought"] });
     expect(memories).toHaveLength(1);
     expect(memories[0].text).toBe("I wonder about the universe");
   });
@@ -68,7 +68,7 @@ describe("thought storage (via agent 'thought' event)", () => {
 
     await agent.emit("thought", "   ");
 
-    const memories = mem.db.queryMemories({ types: ["thought"] });
+    const memories = mem.queryMemoriesRaw({ types: ["thought"] });
     expect(memories).toHaveLength(0);
   });
 
@@ -80,7 +80,7 @@ describe("thought storage (via agent 'thought' event)", () => {
 
     await agent.emit("thought", "some reasoning");
 
-    const memories = mem.db.queryMemories({ types: ["thought"] });
+    const memories = mem.queryMemoriesRaw({ types: ["thought"] });
     expect(memories[0].type).toBe("thought");
   });
 });
@@ -100,7 +100,7 @@ describe("synthesis", () => {
     // Give synthesis microtask a chance to complete
     await new Promise((r) => setTimeout(r, 10));
 
-    const behaviors = mem.db.queryMemories({ types: ["behavior"] });
+    const behaviors = mem.queryMemoriesRaw({ types: ["behavior"] });
     expect(behaviors).toHaveLength(0);
   });
 
@@ -114,7 +114,7 @@ describe("synthesis", () => {
     await agent.emit("thought", "some qualifying thought");
     await new Promise((r) => setTimeout(r, 10));
 
-    const behaviors = mem.db.queryMemories({ types: ["behavior"] });
+    const behaviors = mem.queryMemoriesRaw({ types: ["behavior"] });
     expect(behaviors).toHaveLength(0);
   });
 
@@ -127,7 +127,7 @@ describe("synthesis", () => {
     await agent.emit("thought", "some qualifying thought");
     await new Promise((r) => setTimeout(r, 10));
 
-    const behaviors = mem.db.queryMemories({ types: ["behavior"] });
+    const behaviors = mem.queryMemoriesRaw({ types: ["behavior"] });
     expect(behaviors).toHaveLength(0);
   });
 
@@ -140,7 +140,7 @@ describe("synthesis", () => {
     await agent.emit("thought", "I like short answers");
     await new Promise((r) => setTimeout(r, 10));
 
-    const behaviors = mem.db.queryMemories({ types: ["behavior"] });
+    const behaviors = mem.queryMemoriesRaw({ types: ["behavior"] });
     expect(behaviors).toHaveLength(1);
     expect(behaviors[0].text).toBe("I prefer concise answers");
   });
@@ -160,7 +160,7 @@ describe("synthesis", () => {
     await agent.emit("thought", "second thought");
     await new Promise((r) => setTimeout(r, 10));
 
-    const behaviors = mem.db.queryMemories({ types: ["behavior"] });
+    const behaviors = mem.queryMemoriesRaw({ types: ["behavior"] });
     expect(behaviors).toHaveLength(1);
   });
 
@@ -187,7 +187,7 @@ describe("synthesis", () => {
     await agent.emit("thought", "I prefer short answers");
     await new Promise((r) => setTimeout(r, 10));
 
-    const behaviors = mem.db.queryMemories({ types: ["behavior"] });
+    const behaviors = mem.queryMemoriesRaw({ types: ["behavior"] });
     expect(behaviors).toHaveLength(0);
   });
 });
