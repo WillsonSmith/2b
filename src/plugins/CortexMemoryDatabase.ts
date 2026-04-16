@@ -213,8 +213,8 @@ export class CortexMemoryDatabase {
     const totalLen = chunks.reduce((s, c) => s + c.length, 0);
     const avg = new Array<number>(dim).fill(0);
     for (let c = 0; c < chunks.length; c++) {
-      const weight = chunks[c].length / totalLen;
-      for (let i = 0; i < dim; i++) avg[i] += embeddings[c][i]! * weight;
+      const weight = chunks[c]!.length / totalLen;
+      for (let i = 0; i < dim; i++) avg[i]! += embeddings[c]![i]! * weight;
     }
     return avg;
   }
@@ -234,10 +234,6 @@ export class CortexMemoryDatabase {
   private toMs(value: string | number): number {
     if (typeof value === "number") return value;
     return new Date(value).getTime();
-  }
-
-  private escapeFTS5(input: string): string {
-    return `"${input.replace(/"/g, '""')}"`;
   }
 
   /**

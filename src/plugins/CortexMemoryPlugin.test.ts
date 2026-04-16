@@ -114,7 +114,7 @@ describe("save_memory", () => {
     for (let i = 0; i < 4; i++) {
       const r = (await plugin.executeTool("save_memory", { content: `existing ${i}`, type: "factual" })) as string;
       const match = r.match(/id: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
-      if (match) ids.push(match[1]);
+      if (match) ids.push(match[1]!);
     }
     // Save a new one — should link to at most 3 of the existing ones
     await plugin.executeTool("save_memory", { content: "new memory", type: "factual" });
@@ -225,7 +225,7 @@ describe("edit_memory", () => {
     })) as string;
     const match = saveResult.match(/id: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
     expect(match).not.toBeNull();
-    const fullId = match![1];
+    const fullId = match![1]!;
 
     await plugin.executeTool("edit_memory", { id: fullId, content: "updated" });
     const updated = await plugin.getMemoryById(fullId);
@@ -246,14 +246,14 @@ describe("edit_memory", () => {
 describe("delete_memory", () => {
   test("removes the memory", async () => {
     const plugin = makePlugin();
-    const saveResult = (await plugin.executeTool("save_memory", {
+    await plugin.executeTool("save_memory", {
       content: "to delete",
       type: "factual",
-    })) as string;
+    });
     const memories = plugin.queryMemoriesRaw({});
     expect(memories).toHaveLength(1);
 
-    await plugin.executeTool("delete_memory", { id: memories[0].id });
+    await plugin.executeTool("delete_memory", { id: memories[0]!.id });
     const after = plugin.queryMemoriesRaw({});
     expect(after).toHaveLength(0);
   });
@@ -274,7 +274,7 @@ describe("delete_memory", () => {
     await plugin.getSystemPromptFragment();
 
     // Delete the behavior
-    await plugin.executeTool("delete_memory", { id: memories[0].id });
+    await plugin.executeTool("delete_memory", { id: memories[0]!.id });
 
     // Cache should be invalidated — system prompt should no longer show the rule
     const prompt = await plugin.getSystemPromptFragment();
@@ -417,8 +417,8 @@ describe("get_linked_memories link_type filter", () => {
     const plugin = makePlugin();
     const saveA = (await plugin.executeTool("save_memory", { content: "A", type: "factual" })) as string;
     const saveB = (await plugin.executeTool("save_memory", { content: "B", type: "factual" })) as string;
-    const idA = saveA.match(/id: ([0-9a-f-]{36})/)![1];
-    const idB = saveB.match(/id: ([0-9a-f-]{36})/)![1];
+    const idA = saveA.match(/id: ([0-9a-f-]{36})/)![1]!;
+    const idB = saveB.match(/id: ([0-9a-f-]{36})/)![1]!;
     await plugin.linkMemories(idA, idB, "depends_on");
     const result = (await plugin.executeTool("get_linked_memories", { id: idA })) as string;
     expect(result).toContain("(depends_on)");
@@ -454,7 +454,7 @@ describe("save_memory supersedes", () => {
   test("marks the superseded memory and sets its forward pointer", async () => {
     const plugin = makePlugin();
     const saveOld = (await plugin.executeTool("save_memory", { content: "old fact", type: "factual" })) as string;
-    const oldId = saveOld.match(/id: ([0-9a-f-]{36})/)![1];
+    const oldId = saveOld.match(/id: ([0-9a-f-]{36})/)![1]!;
 
     await plugin.executeTool("save_memory", { content: "new fact", type: "factual", supersedes: oldId });
 

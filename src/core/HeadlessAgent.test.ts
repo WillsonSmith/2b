@@ -23,8 +23,8 @@ describe("HeadlessAgent.ask()", () => {
     // Each call to chat() should only have the single user message for that call
     const calls = (llm.chat as ReturnType<typeof mock>).mock.calls;
     expect(calls).toHaveLength(2);
-    expect(calls[0][0]).toEqual([{ role: "user", content: "first" }]);
-    expect(calls[1][0]).toEqual([{ role: "user", content: "second" }]);
+    expect(calls[0]![0]).toEqual([{ role: "user", content: "first" }]);
+    expect(calls[1]![0]).toEqual([{ role: "user", content: "second" }]);
   });
 
   test("system prompt includes base + plugin fragments + plugin context", async () => {
@@ -38,7 +38,7 @@ describe("HeadlessAgent.ask()", () => {
 
     await agent.ask("hello");
 
-    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0][1];
+    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![1];
     expect(systemPrompt).toContain("BASE");
     expect(systemPrompt).toContain("FRAGMENT");
     expect(systemPrompt).toContain("CONTEXT");
@@ -80,8 +80,8 @@ describe("HeadlessAgent.ask()", () => {
     await agent.ask("task");
 
     // Get the wrapped tool implementation from the chat call
-    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
-    const wrapped = tools[0].implementation!;
+    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
+    const wrapped = tools[0]!.implementation!;
 
     const result = await wrapped({});
     // AutoDeny should block, so executeTool should NOT have been called
@@ -105,8 +105,8 @@ describe("HeadlessAgent.ask()", () => {
     const agent = new HeadlessAgent(llm, [plugin], "base");
     await agent.ask("task");
 
-    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
-    const wrapped = tools[0].implementation!;
+    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
+    const wrapped = tools[0]!.implementation!;
 
     const result = await wrapped({});
     expect(executeTool).toHaveBeenCalledWith("free_tool", {});
@@ -130,8 +130,8 @@ describe("HeadlessAgent.ask()", () => {
     const agent = new HeadlessAgent(llm, [plugin], "base", { permissionManager: pm });
     await agent.ask("task");
 
-    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
-    const wrapped = tools[0].implementation!;
+    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
+    const wrapped = tools[0]!.implementation!;
 
     const result = await wrapped({ x: 1 });
     expect(executeTool).toHaveBeenCalledWith("secure_tool", { x: 1 });
@@ -152,8 +152,8 @@ describe("HeadlessAgent.ask()", () => {
     agent.setToolCallHandler((name, args) => events.push({ name, args }));
 
     await agent.ask("task");
-    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
-    await tools[0].implementation!({});
+    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
+    await tools[0]!.implementation!({});
 
     expect(events).toHaveLength(1);
     expect(events[0]).toEqual({ name: "t", args: {} });
@@ -216,8 +216,8 @@ describe("HeadlessAgent consecutive tool call circuit breaker", () => {
 
   async function getWrappedTool(agent: HeadlessAgent, llm: LLMProvider) {
     await agent.ask("task");
-    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
-    return tools[0].implementation!;
+    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
+    return tools[0]!.implementation!;
   }
 
   test("allows calls up to the default limit (5)", async () => {
@@ -269,9 +269,9 @@ describe("HeadlessAgent consecutive tool call circuit breaker", () => {
     };
     const agent = new HeadlessAgent(llm, [plugin], "base");
     await agent.ask("task");
-    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
-    const callA = tools[0].implementation!;
-    const callB = tools[1].implementation!;
+    const tools: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
+    const callA = tools[0]!.implementation!;
+    const callB = tools[1]!.implementation!;
 
     // Call tool_a 5 times (hits limit)
     for (let i = 0; i < 5; i++) await callA({});
@@ -306,13 +306,13 @@ describe("HeadlessAgent consecutive tool call circuit breaker", () => {
 
     // First ask: exhaust the limit
     await agent.ask("first");
-    const toolsFirst: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
-    for (let i = 0; i < 6; i++) await toolsFirst[0].implementation!({});
+    const toolsFirst: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
+    for (let i = 0; i < 6; i++) await toolsFirst[0]!.implementation!({});
 
     // Second ask: counter should be fresh
     await agent.ask("second");
-    const toolsSecond: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[1][3];
-    const result = await toolsSecond[0].implementation!({});
+    const toolsSecond: ToolDefinition[] = (llm.chat as ReturnType<typeof mock>).mock.calls[1]![3];
+    const result = await toolsSecond[0]!.implementation!({});
 
     expect(result).toBe("result"); // not an error — fresh counter
     expect(executeTool).toHaveBeenCalledTimes(5 + 1); // 5 from first ask + 1 from second

@@ -14,11 +14,6 @@ function makeLLM(summaryResponse = "A summary."): LLMProvider {
   } as unknown as LLMProvider;
 }
 
-async function addMessages(plugin: MemoryPlugin, messages: Array<{ role: "user" | "assistant" | "system"; content: string }>) {
-  for (const m of messages) {
-    await plugin.onMessage(m.role, m.content, "test");
-  }
-}
 
 describe("MemoryPlugin - message storage", () => {
   test("messages are stored and returned in insertion order", async () => {

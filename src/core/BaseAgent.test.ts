@@ -163,7 +163,7 @@ describe("BaseAgent - plugin lifecycle", () => {
     await errorPromise;
 
     expect(onError).toHaveBeenCalledTimes(1);
-    expect(onError.mock.calls[0][0]).toBeInstanceOf(Error);
+    expect(onError.mock.calls[0]![0]).toBeInstanceOf(Error);
     agent.stop();
   });
 
@@ -200,7 +200,7 @@ describe("BaseAgent - system prompt assembly", () => {
     const agent = new BaseAgent(llm, makeConfig({ systemPrompt: "BASE_PROMPT" }));
     agent.addDirect("hi");
     await waitForIdle(agent);
-    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0][1];
+    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![1];
     expect(systemPrompt).toContain("BASE_PROMPT");
     agent.stop();
   });
@@ -213,7 +213,7 @@ describe("BaseAgent - system prompt assembly", () => {
     agent.registerPlugin(p1).registerPlugin(p2);
     agent.addDirect("hi");
     await waitForIdle(agent);
-    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0][1];
+    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![1];
     expect(systemPrompt).toContain("FRAG_ONE");
     expect(systemPrompt).toContain("FRAG_TWO");
     agent.stop();
@@ -226,7 +226,7 @@ describe("BaseAgent - system prompt assembly", () => {
     agent.registerPlugin(p);
     agent.addDirect("hi");
     await waitForIdle(agent);
-    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0][1];
+    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![1];
     expect(systemPrompt).toContain("PLUGIN_CONTEXT");
     agent.stop();
   });
@@ -246,7 +246,7 @@ describe("BaseAgent - tool collection and permission checks", () => {
     agent.addDirect("hi");
     await waitForIdle(agent);
 
-    const tools = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
+    const tools = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
     await tools[0].implementation({});
     expect(executeTool).toHaveBeenCalled();
     agent.stop();
@@ -266,7 +266,7 @@ describe("BaseAgent - tool collection and permission checks", () => {
     agent.addDirect("hi");
     await waitForIdle(agent);
 
-    const tools = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
+    const tools = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
     const result = await tools[0].implementation({});
     expect(executeTool).not.toHaveBeenCalled();
     expect(result).toEqual({ error: "Permission denied by user." });
@@ -287,7 +287,7 @@ describe("BaseAgent - tool collection and permission checks", () => {
     agent.addDirect("hi");
     await waitForIdle(agent);
 
-    const tools = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
+    const tools = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
     const result = await tools[0].implementation({ x: 1 });
     expect(executeTool).toHaveBeenCalledWith("secure_tool", { x: 1 });
     expect(result).toBe("approved");
@@ -311,7 +311,7 @@ describe("BaseAgent - tool collection and permission checks", () => {
     agent.addDirect("hi");
     await waitForIdle(agent);
 
-    const tools = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3];
+    const tools = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
     await tools[0].implementation({ a: 1 });
 
     expect(toolCallEvents).toEqual([["my_tool", { a: 1 }]]);
@@ -359,7 +359,7 @@ describe("BaseAgent - token streaming callback", () => {
     await waitForIdle(agent);
 
     // The 5th argument to chat() is the tokenCallback
-    const chatArgs = (llm.chat as ReturnType<typeof mock>).mock.calls[0];
+    const chatArgs = (llm.chat as ReturnType<typeof mock>).mock.calls[0]!;
     expect(chatArgs[4]).toBe(tokenCb);
     agent.stop();
   });
@@ -522,7 +522,7 @@ describe("BaseAgent - concurrent collectMessages (perf)", () => {
     await waitForIdle(agent, 500);
 
     const messages: Array<{ role: string; content: string }> =
-      (llm.chat as ReturnType<typeof mock>).mock.calls[0][0];
+      (llm.chat as ReturnType<typeof mock>).mock.calls[0]![0];
     const p1Idx = messages.findIndex(m => m.content === "from-P1");
     const p2Idx = messages.findIndex(m => m.content === "from-P2");
     expect(p1Idx).toBeGreaterThanOrEqual(0);
@@ -548,7 +548,7 @@ describe("BaseAgent - concurrent collectMessages (perf)", () => {
     await waitForIdle(agent);
 
     const messages: Array<{ role: string; content: string }> =
-      (llm.chat as ReturnType<typeof mock>).mock.calls[0][0];
+      (llm.chat as ReturnType<typeof mock>).mock.calls[0]![0];
     expect(messages.some(m => m.content === "from-P2")).toBe(true);
     agent.stop();
   });
@@ -579,7 +579,7 @@ describe("BaseAgent - concurrent collectSystemPrompt (perf)", () => {
     agent.addDirect("hi");
     await waitForIdle(agent, 500);
 
-    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0][1];
+    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![1];
     expect(systemPrompt).toContain("FRAG_SLOW");
     expect(systemPrompt).toContain("FRAG_FAST");
     expect(systemPrompt.indexOf("FRAG_SLOW")).toBeLessThan(systemPrompt.indexOf("FRAG_FAST"));
@@ -630,7 +630,7 @@ describe("BaseAgent - concurrent collectSystemPrompt (perf)", () => {
     agent.addDirect("hi");
     await waitForIdle(agent);
 
-    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0][1];
+    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![1];
     expect(systemPrompt).toContain("CTX_FROM_P2");
     agent.stop();
   });

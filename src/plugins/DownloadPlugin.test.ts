@@ -105,7 +105,7 @@ describe("download behaviour", () => {
         status: 200,
         headers: { "content-type": "text/plain" },
       }),
-    );
+    ) as unknown as typeof fetch;
 
     const result = (await plugin.executeTool("download_file", {
       url: "https://example.com/test.txt",
@@ -124,7 +124,7 @@ describe("download behaviour", () => {
         status: 200,
         headers: { "content-type": "application/octet-stream" },
       }),
-    );
+    ) as unknown as typeof fetch;
 
     const result = (await plugin.executeTool("download_file", {
       url: "https://example.com/original.bin",
@@ -139,7 +139,7 @@ describe("download behaviour", () => {
   test("falls back to 'download' when the URL has no filename", async () => {
     globalThis.fetch = mock(async () =>
       new Response("x", { status: 200, headers: { "content-type": "text/plain" } }),
-    );
+    ) as unknown as typeof fetch;
 
     const result = (await plugin.executeTool("download_file", {
       url: "https://example.com/",
@@ -151,7 +151,7 @@ describe("download behaviour", () => {
   });
 
   test("rejects when the server returns a 4xx/5xx status", async () => {
-    globalThis.fetch = mock(async () => new Response("Not Found", { status: 404 }));
+    globalThis.fetch = mock(async () => new Response("Not Found", { status: 404 })) as unknown as typeof fetch;
 
     await expect(
       plugin.executeTool("download_file", { url: "https://example.com/missing.txt" }),
@@ -165,7 +165,7 @@ describe("download behaviour", () => {
         status: 200,
         headers: { "content-length": overLimit },
       }),
-    );
+    ) as unknown as typeof fetch;
 
     await expect(
       plugin.executeTool("download_file", { url: "https://example.com/huge.bin" }),
@@ -180,7 +180,7 @@ describe("download behaviour", () => {
         status: 200,
         headers: { "content-length": atLimit, "content-type": "text/plain" },
       }),
-    );
+    ) as unknown as typeof fetch;
 
     // Does not throw — content-length is not strictly greater than the limit
     const result = (await plugin.executeTool("download_file", {

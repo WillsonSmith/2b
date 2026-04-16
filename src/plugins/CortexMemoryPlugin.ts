@@ -60,7 +60,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
    * identical text. The cache is keyed by query string and overwritten whenever the
    * query changes (i.e. on every new turn).
    */
-  private embeddingCache: { query: string; embedding: Float32Array } | null = null;
+  private embeddingCache: { query: string; embedding: number[] } | null = null;
 
   constructor(llmProvider: LLMProvider, name: string, dbPath?: string, options?: CortexMemoryPluginOptions) {
     this.db = new CortexMemoryDatabase(llmProvider, name, dbPath);
@@ -264,7 +264,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
         if (!this.embeddingCache || this.embeddingCache.query !== context) {
           this.embeddingCache = { query: context, embedding: await this.db.getEmbedding(context) };
         }
-        const results = this.db.searchWithEmbedding(this.embeddingCache.embedding, 15, 0.35, "behavior");
+        const results = this.db.searchWithEmbedding(this.embeddingCache!.embedding, 15, 0.35, "behavior");
         contextualBehaviors = results.filter(r => !coreIds.has(r.id));
         logger.debug(
           this.name,

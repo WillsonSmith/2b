@@ -262,11 +262,11 @@ export class OllamaProvider implements LLMProvider {
 
         logger.info(
           "Ollama",
-          `Tool calls in round ${round + 1}: ${assistantMsg.tool_calls.map((tc) => tc.function.name).join(", ")}`,
+          `Tool calls in round ${round + 1}: ${assistantMsg.tool_calls!.map((tc) => tc.function.name).join(", ")}`,
         );
 
         const toolResults = await Promise.all(
-          assistantMsg.tool_calls.map(async (tc) => {
+          assistantMsg.tool_calls!.map(async (tc) => {
             const tool = toolMap.get(tc.function.name);
             let result: string;
 

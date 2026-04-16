@@ -62,10 +62,10 @@ function findMatch(content: string, search: string): MatchResult {
 
   const hits: Array<{ start: number; end: number }> = [];
   for (let i = 0; i <= contentLines.length - searchLines.length; i++) {
-    const allMatch = searchLines.every((_, j) => contentLines[i + j].trimStart() === normalizedSearch[j]);
+    const allMatch = searchLines.every((_, j) => contentLines[i + j]!.trimStart() === normalizedSearch[j]!);
     if (allMatch) {
       let startOffset = 0;
-      for (let k = 0; k < i; k++) startOffset += contentLines[k].length + 1;
+      for (let k = 0; k < i; k++) startOffset += contentLines[k]!.length + 1;
       const matchedBlock = contentLines.slice(i, i + searchLines.length).join("\n");
       hits.push({ start: startOffset, end: startOffset + matchedBlock.length });
     }
@@ -73,7 +73,7 @@ function findMatch(content: string, search: string): MatchResult {
 
   if (hits.length === 0) return { found: false, error: "Search string not found in file." };
   if (hits.length > 1) return { found: false, error: "Search string (whitespace-normalized) matches multiple locations." };
-  return { found: true, ...hits[0], fuzzy: true };
+  return { found: true, ...hits[0]!, fuzzy: true };
 }
 
 function isBinary(sample: Uint8Array): boolean {
@@ -116,7 +116,7 @@ export class FileSystemPlugin implements AgentPlugin {
   }
 
   private resolveSafe(path: string): string {
-    const resolved = resolve(this.allowedRoots[0], path);
+    const resolved = resolve(this.allowedRoots[0]!, path);
     for (const root of this.allowedRoots) {
       if (resolved === root || resolved.startsWith(root + sep)) {
         return resolved;
@@ -678,7 +678,7 @@ export class FileSystemPlugin implements AgentPlugin {
       const collected: string[] = [];
       let done = false;
 
-      for await (const chunk of stream) {
+      for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
         if (done) break;
         buffer += decoder.decode(chunk as Uint8Array, { stream: true });
         let newlineIdx: number;
@@ -771,7 +771,7 @@ export class FileSystemPlugin implements AgentPlugin {
     // Validate and locate all edits before applying any (all-or-nothing)
     const located: Array<{ start: number; end: number; replace: string; fuzzy: boolean }> = [];
     for (let i = 0; i < edits.length; i++) {
-      const { search, replace } = edits[i];
+      const { search, replace } = edits[i]!;
       if (typeof search !== "string" || typeof replace !== "string") {
         throw new Error(`Edit ${i}: search and replace must be strings.`);
       }
@@ -785,7 +785,7 @@ export class FileSystemPlugin implements AgentPlugin {
     // Reject overlapping edits
     const byPosition = [...located].sort((a, b) => a.start - b.start);
     for (let i = 0; i < byPosition.length - 1; i++) {
-      if (byPosition[i].end > byPosition[i + 1].start) {
+      if (byPosition[i]!.end > byPosition[i + 1]!.start) {
         throw new Error(`Edits overlap in the file and cannot be applied together.`);
       }
     }
@@ -849,7 +849,7 @@ export class FileSystemPlugin implements AgentPlugin {
       let lineNum = 0;
       let replacementWritten = false;
 
-      for await (const chunk of stream) {
+      for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
         buffer += decoder.decode(chunk as Uint8Array, { stream: true });
         let newlineIdx: number;
         while ((newlineIdx = buffer.indexOf("\n")) !== -1) {
@@ -1054,7 +1054,7 @@ export class FileSystemPlugin implements AgentPlugin {
   ): Promise<{ pattern: string; matches: string[]; truncated?: boolean }> {
     const deadline = Date.now() + FS_OP_TIMEOUT_MS;
     const glob = new Bun.Glob(pattern);
-    const searchDir = cwd ? this.resolveSafe(cwd) : this.allowedRoots[0];
+    const searchDir = cwd ? this.resolveSafe(cwd) : this.allowedRoots[0]!;
     const matches: string[] = [];
     for await (const file of glob.scan({
       cwd: searchDir,
@@ -1083,7 +1083,7 @@ export class FileSystemPlugin implements AgentPlugin {
     matches: Array<{ file: string; line: number; content: string }>;
     truncated?: boolean;
   }> {
-    const searchDir = cwd ? this.resolveSafe(cwd) : this.allowedRoots[0];
+    const searchDir = cwd ? this.resolveSafe(cwd) : this.allowedRoots[0]!;
     const max = maxResults ?? 100;
     const sensitive = caseSensitive ?? true;
 
@@ -1189,8 +1189,8 @@ export class FileSystemPlugin implements AgentPlugin {
         const text = await f.text();
         const lines = text.split("\n");
         for (let i = 0; i < lines.length; i++) {
-          if (regex.test(lines[i])) {
-            matches.push({ file: join(searchDir, filePath), line: i + 1, content: lines[i] });
+          if (regex.test(lines[i]!)) {
+            matches.push({ file: join(searchDir, filePath), line: i + 1, content: lines[i]! });
             if (matches.length >= max) {
               truncated = true;
               break;

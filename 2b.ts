@@ -155,7 +155,7 @@ agent.registerPlugin(new ShellPlugin());
 agent.registerPlugin(minimalToolsPlugin);
 agent.registerPlugin(new ScratchPlugin());
 agent.registerPlugin(
-  new MemoryPlugin(llm, { cortexMemory: agent.memoryPlugin }),
+  new MemoryPlugin(llm),
 );
 
 // ── Start ─────────────────────────────────────────────────────────────────────
