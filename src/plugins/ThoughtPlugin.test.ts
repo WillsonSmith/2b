@@ -71,7 +71,7 @@ describe("thought storage (via agent 'thought' event)", () => {
 
     const memories = mem.queryMemoriesRaw({ types: ["thought"] });
     expect(memories).toHaveLength(1);
-    expect(memories[0].text).toBe("I wonder about the universe");
+    expect(memories[0]!.text).toBe("I wonder about the universe");
   });
 
   test("empty or whitespace-only thought is not stored", async () => {
@@ -91,7 +91,7 @@ describe("thought storage (via agent 'thought' event)", () => {
     await new Promise((r) => setTimeout(r, 10));
 
     const memories = mem.queryMemoriesRaw({ types: ["thought"] });
-    expect(memories[0].type).toBe("thought");
+    expect(memories[0]!.type).toBe("thought");
   });
 });
 
@@ -140,7 +140,7 @@ describe("synthesis", () => {
 
     const behaviors = mem.queryMemoriesRaw({ types: ["behavior"] });
     expect(behaviors).toHaveLength(1);
-    expect(behaviors[0].text).toBe("I prefer concise answers");
+    expect(behaviors[0]!.text).toBe("I prefer concise answers");
   });
 
   test("deduplication: identical insight is not saved twice", async () => {

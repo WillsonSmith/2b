@@ -60,7 +60,7 @@ function makeProvider(
  */
 function streamOf(...messages: Array<{ role?: string; content: string; thinking?: string; tool_calls?: Array<{ function: { name: string; arguments: Record<string, unknown> } }> }>) {
   return (async function* () {
-    for (const msg of messages) yield { message: msg };
+    for (const msg of messages) yield { message: msg, done: false };
   })();
 }
 

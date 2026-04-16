@@ -13,14 +13,12 @@ const mockChat = { append: mockChatAppend };
 
 // Fragments to yield from respond()
 let respondFragments: Array<{ content: string; reasoningType?: string }> = [];
-// Responses from act()
-let actCallback: ((msg: any) => void) | null = null;
 
 const mockModelClient = {
   respond: mock(async function* (_chat: any, _opts: any) {
     for (const f of respondFragments) yield f;
   }),
-  act: mock(async (_chat: any, _tools: any, callbacks: any) => {
+  act: mock(async (_chat: any, _tools: any, _callbacks: any) => {
     // Do nothing by default; tests can override act behaviour
   }),
 };

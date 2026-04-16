@@ -63,7 +63,7 @@ describe("CortexAgent - plugin registration", () => {
     agent.addDirect("hi");
     await waitForIdle(agent);
 
-    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0][1];
+    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![1];
     expect(systemPrompt).toContain("## Memory System");
     agent.stop();
   });
@@ -75,8 +75,8 @@ describe("CortexAgent - plugin registration", () => {
     agent.addDirect("hi");
     await waitForIdle(agent);
 
-    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0][1];
-    expect(systemPrompt).toContain("## Internal Thoughts");
+    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![1];
+    expect(systemPrompt).toContain("## Internal Reasoning");
     agent.stop();
   });
 
@@ -87,7 +87,7 @@ describe("CortexAgent - plugin registration", () => {
     agent.addDirect("hi");
     await waitForIdle(agent);
 
-    const tools: Array<{ name: string }> = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3] ?? [];
+    const tools: Array<{ name: string }> = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3] ?? [];
     expect(tools.map((t) => t.name)).toContain("get_recent_thoughts");
     agent.stop();
   });
@@ -99,7 +99,7 @@ describe("CortexAgent - plugin registration", () => {
     agent.addDirect("hi");
     await waitForIdle(agent);
 
-    const tools: Array<{ name: string }> = (llm.chat as ReturnType<typeof mock>).mock.calls[0][3] ?? [];
+    const tools: Array<{ name: string }> = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3] ?? [];
     expect(tools.map((t) => t.name)).toContain("search_memory");
     agent.stop();
   });
@@ -117,7 +117,7 @@ describe("CortexAgent - plugin registration", () => {
     agent.addDirect("hi");
     await waitForIdle(agent);
 
-    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0][1];
+    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![1];
     expect(systemPrompt).toContain("EXTRA_FRAGMENT");
     agent.stop();
   });

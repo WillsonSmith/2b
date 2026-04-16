@@ -8,6 +8,7 @@ import { SubAgentPlugin } from "./SubAgentPlugin";
 interface MockHeadlessAgent {
   ask: ReturnType<typeof mock>;
   setToolCallHandler: ReturnType<typeof mock>;
+  setOnToken: ReturnType<typeof mock>;
   _fireToolCall: (name: string, args: any) => void;
 }
 
@@ -18,6 +19,7 @@ function makeHeadlessAgent(askImpl?: (task: string) => Promise<string>): MockHea
     setToolCallHandler: mock((handler: (name: string, args: any) => void) => {
       toolCallHandler = handler;
     }),
+    setOnToken: mock((_fn: (token: string, isReasoning: boolean) => void) => {}),
     _fireToolCall: (name: string, args: any) => {
       toolCallHandler?.(name, args);
     },
@@ -91,7 +93,7 @@ describe("no timeout", () => {
 
 describe("tool call forwarding", () => {
   test("sub-agent tool calls are emitted on the parent agent", async () => {
-    const subAgent = makeHeadlessAgent(async (task) => {
+    const subAgent = makeHeadlessAgent(async (_task) => {
       // Simulate a tool call from within the sub-agent
       subAgent._fireToolCall("search", { query: "hello" });
       return "done";
@@ -148,7 +150,6 @@ describe("inactivity timeout", () => {
   });
 
   test("tool calls from the sub-agent reset the inactivity timer", async () => {
-    let toolCallHandler: (() => void) | undefined;
     const subAgent = makeHeadlessAgent(async () => {
       // Wait a bit, then fire a tool call which should reset the timer
       await Bun.sleep(15);

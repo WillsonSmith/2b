@@ -75,7 +75,7 @@ export class InMemoryDatabasePlugin implements AgentPlugin {
     ];
   }
 
-  executeTool(name: string, args: Record<string, unknown>): unknown {
+  async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
     switch (name) {
       case "agent_memory_set": {
         const key = args.key as string;

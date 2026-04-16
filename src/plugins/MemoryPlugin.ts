@@ -8,6 +8,7 @@ export class MemoryPlugin implements AgentPlugin {
   name = "MemoryPlugin";
 
   private messages: Message[] = [];
+  private systemMessage: Message | null = null;
   private agent: BaseAgent | null = null;
   private summarizing = false;
 
@@ -27,17 +28,6 @@ export class MemoryPlugin implements AgentPlugin {
 
   onInit(agent: BaseAgent): void {
     this.agent = agent;
-
-    // Summarize after each turn completes, not during message ingestion.
-    // This avoids blocking onMessage with an LLM round-trip and ensures
-    // getLastSystemPrompt() reflects the fully assembled prompt for that turn.
-    agent.on("state_change", (state) => {
-      if (state === "idle" && this.messages.length > this.MAX_MESSAGES && !this.summarizing) {
-        this.summarizeOldContext().catch((e) =>
-          logger.error("MemoryPlugin", "Background summarization failed:", e),
-        );
-      }
-    });
   }
 
   async onMessage(
@@ -45,21 +35,42 @@ export class MemoryPlugin implements AgentPlugin {
     content: string,
     _source: string,
   ): Promise<void> {
-    if (role === "system") return; // BaseAgent handles the system prompt separately
+    if (role === "system") {
+      this.systemMessage = { role: "system", content };
+      return;
+    }
     this.messages.push({ role, content });
+    if (this.messages.length > this.MAX_MESSAGES && !this.summarizing) {
+      this.summarizeOldContext().catch((e) =>
+        logger.error("MemoryPlugin", "Background summarization failed:", e),
+      );
+    }
   }
 
   /**
    * Returns the chat history starting from the first user message,
-   * respecting the optional limit.
+   * respecting the optional limit. If a system message was received via
+   * onMessage, it is prepended before the conversation messages and counts
+   * as one slot against the limit.
    */
   async getMessages(limit?: number): Promise<Message[]> {
-    let chatHistory = limit !== undefined && limit > 0
-      ? this.messages.slice(-limit)
-      : [...this.messages];
+    const hasSystem = this.systemMessage !== null;
+    const conversationLimit =
+      limit !== undefined && limit > 0
+        ? hasSystem
+          ? limit - 1
+          : limit
+        : undefined;
+
+    let chatHistory =
+      conversationLimit !== undefined && conversationLimit > 0
+        ? this.messages.slice(-conversationLimit)
+        : [...this.messages];
 
     const firstUserIdx = chatHistory.findIndex((m) => m.role === "user");
-    return firstUserIdx === -1 ? [] : chatHistory.slice(firstUserIdx);
+    const conversation = firstUserIdx === -1 ? [] : chatHistory.slice(firstUserIdx);
+
+    return hasSystem ? [this.systemMessage!, ...conversation] : conversation;
   }
 
   /**

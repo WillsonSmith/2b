@@ -143,7 +143,7 @@ describe("maybeAutoCorrect — pattern detection", () => {
 
     const saved = memPlugin.queryMemoriesRaw({ types: ["behavior"], tags: ["metacognition-correction"] });
     expect(saved.length).toBeGreaterThanOrEqual(1);
-    expect(saved[0].text).toContain("search_memory");
+    expect(saved[0]!.text).toContain("search_memory");
   });
 
   test("saves redundancy rule when 3+ of last 5 turns have duplicate tool calls", async () => {
@@ -212,8 +212,8 @@ describe("maybeAutoCorrect — pattern detection", () => {
 
     const history = (plugin as any).correctionHistory as Array<{ trigger: string; effectiveness: string }>;
     expect(history.length).toBe(1);
-    expect(history[0].trigger).toBe("saturation");
-    expect(history[0].effectiveness).toBe("pending");
+    expect(history[0]!.trigger).toBe("saturation");
+    expect(history[0]!.effectiveness).toBe("pending");
   });
 
   test("does not trigger when turnHistory has fewer than PATTERN_THRESHOLD entries", async () => {
