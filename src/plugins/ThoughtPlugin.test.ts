@@ -15,10 +15,10 @@ function makeMemoryPlugin() {
   return new CortexMemoryPlugin(makeLlm() as any, "test", ":memory:");
 }
 
-/** Minimal agent stub that captures event listeners. */
+/** Minimal agent stub with event bus and requestMemoryWrite wired through it. */
 function makeAgent() {
   const listeners: Record<string, ((...args: any[]) => void)[]> = {};
-  return {
+  const agent = {
     on: mock((event: string, cb: (...args: any[]) => void) => {
       listeners[event] = listeners[event] ?? [];
       listeners[event].push(cb);
@@ -28,8 +28,24 @@ function makeAgent() {
         await cb(...args);
       }
     },
+    requestMemoryWrite: mock((request: any) => {
+      for (const cb of listeners["memory:write_request"] ?? []) {
+        cb(request);
+      }
+    }),
     listenerCount: (event: string) => (listeners[event] ?? []).length,
   };
+  return agent;
+}
+
+/** Build a fully wired setup: agent + CortexMemoryPlugin (via event bus) + ThoughtPlugin. */
+function makeFullSetup(synthesisProvider: any = null) {
+  const agent = makeAgent();
+  const mem = makeMemoryPlugin();
+  mem.onInit(agent as any); // subscribes to memory:write_request
+  const plugin = new ThoughtPlugin(synthesisProvider);
+  plugin.onInit(agent as any);
+  return { agent, mem, plugin };
 }
 
 function makeSynthesisProvider(response: string) {
@@ -48,39 +64,33 @@ function makeSynthesisProvider(response: string) {
 
 describe("thought storage (via agent 'thought' event)", () => {
   test("thought content is stored as raw text without prefix", async () => {
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, null);
-    const agent = makeAgent();
-    plugin.onInit(agent as any);
+    const { agent, mem } = makeFullSetup();
 
     await agent.emit("thought", "I wonder about the universe");
+    await new Promise((r) => setTimeout(r, 10));
 
-    const memories = mem.db.queryMemories({ types: ["thought"] });
+    const memories = mem.queryMemoriesRaw({ types: ["thought"] });
     expect(memories).toHaveLength(1);
     expect(memories[0].text).toBe("I wonder about the universe");
   });
 
   test("empty or whitespace-only thought is not stored", async () => {
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, null);
-    const agent = makeAgent();
-    plugin.onInit(agent as any);
+    const { agent, mem } = makeFullSetup();
 
     await agent.emit("thought", "   ");
+    await new Promise((r) => setTimeout(r, 10));
 
-    const memories = mem.db.queryMemories({ types: ["thought"] });
+    const memories = mem.queryMemoriesRaw({ types: ["thought"] });
     expect(memories).toHaveLength(0);
   });
 
   test("thought type is 'thought'", async () => {
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, null);
-    const agent = makeAgent();
-    plugin.onInit(agent as any);
+    const { agent, mem } = makeFullSetup();
 
     await agent.emit("thought", "some reasoning");
+    await new Promise((r) => setTimeout(r, 10));
 
-    const memories = mem.db.queryMemories({ types: ["thought"] });
+    const memories = mem.queryMemoriesRaw({ types: ["thought"] });
     expect(memories[0].type).toBe("thought");
   });
 });
@@ -91,66 +101,51 @@ describe("thought storage (via agent 'thought' event)", () => {
 
 describe("synthesis", () => {
   test("SKIP response saves no behavior memory", async () => {
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, makeSynthesisProvider("SKIP") as any);
-    const agent = makeAgent();
-    plugin.onInit(agent as any);
+    const { agent, mem } = makeFullSetup(makeSynthesisProvider("SKIP"));
 
     await agent.emit("thought", "Step 1: add numbers together");
     // Give synthesis microtask a chance to complete
     await new Promise((r) => setTimeout(r, 10));
 
-    const behaviors = mem.db.queryMemories({ types: ["behavior"] });
+    const behaviors = mem.queryMemoriesRaw({ types: ["behavior"] });
     expect(behaviors).toHaveLength(0);
   });
 
   test("insight longer than MAX_INSIGHT_LENGTH (200 chars) is not saved", async () => {
     const longInsight = "I " + "x".repeat(200); // 202 chars total
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, makeSynthesisProvider(longInsight) as any);
-    const agent = makeAgent();
-    plugin.onInit(agent as any);
+    const { agent, mem } = makeFullSetup(makeSynthesisProvider(longInsight));
 
     await agent.emit("thought", "some qualifying thought");
     await new Promise((r) => setTimeout(r, 10));
 
-    const behaviors = mem.db.queryMemories({ types: ["behavior"] });
+    const behaviors = mem.queryMemoriesRaw({ types: ["behavior"] });
     expect(behaviors).toHaveLength(0);
   });
 
   test("insight not starting with 'I ' is rejected", async () => {
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, makeSynthesisProvider("Always be concise") as any);
-    const agent = makeAgent();
-    plugin.onInit(agent as any);
+    const { agent, mem } = makeFullSetup(makeSynthesisProvider("Always be concise"));
 
     await agent.emit("thought", "some qualifying thought");
     await new Promise((r) => setTimeout(r, 10));
 
-    const behaviors = mem.db.queryMemories({ types: ["behavior"] });
+    const behaviors = mem.queryMemoriesRaw({ types: ["behavior"] });
     expect(behaviors).toHaveLength(0);
   });
 
   test("valid insight starting with 'I ' is saved as behavior", async () => {
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, makeSynthesisProvider("I prefer concise answers") as any);
-    const agent = makeAgent();
-    plugin.onInit(agent as any);
+    const { agent, mem } = makeFullSetup(makeSynthesisProvider("I prefer concise answers"));
 
     await agent.emit("thought", "I like short answers");
     await new Promise((r) => setTimeout(r, 10));
 
-    const behaviors = mem.db.queryMemories({ types: ["behavior"] });
+    const behaviors = mem.queryMemoriesRaw({ types: ["behavior"] });
     expect(behaviors).toHaveLength(1);
     expect(behaviors[0].text).toBe("I prefer concise answers");
   });
 
   test("deduplication: identical insight is not saved twice", async () => {
     const insight = "I prefer concise answers";
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, makeSynthesisProvider(insight) as any);
-    const agent = makeAgent();
-    plugin.onInit(agent as any);
+    const { agent, mem } = makeFullSetup(makeSynthesisProvider(insight));
 
     // First thought → saves behavior
     await agent.emit("thought", "first thought");
@@ -160,7 +155,7 @@ describe("synthesis", () => {
     await agent.emit("thought", "second thought");
     await new Promise((r) => setTimeout(r, 10));
 
-    const behaviors = mem.db.queryMemories({ types: ["behavior"] });
+    const behaviors = mem.queryMemoriesRaw({ types: ["behavior"] });
     expect(behaviors).toHaveLength(1);
   });
 
@@ -168,10 +163,7 @@ describe("synthesis", () => {
     const brokenProvider = {
       chat: mock(async () => { throw new Error("LLM down"); }),
     };
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, brokenProvider as any);
-    const agent = makeAgent();
-    plugin.onInit(agent as any);
+    const { agent } = makeFullSetup(brokenProvider);
 
     // Should not throw
     await expect(agent.emit("thought", "some thought")).resolves.toBeUndefined();
@@ -179,15 +171,12 @@ describe("synthesis", () => {
   });
 
   test("no synthesis when synthesisProvider is null", async () => {
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, null);
-    const agent = makeAgent();
-    plugin.onInit(agent as any);
+    const { agent, mem } = makeFullSetup(null);
 
     await agent.emit("thought", "I prefer short answers");
     await new Promise((r) => setTimeout(r, 10));
 
-    const behaviors = mem.db.queryMemories({ types: ["behavior"] });
+    const behaviors = mem.queryMemoriesRaw({ types: ["behavior"] });
     expect(behaviors).toHaveLength(0);
   });
 });
@@ -198,9 +187,8 @@ describe("synthesis", () => {
 
 describe("onInit guard", () => {
   test("calling onInit twice registers the listener only once", async () => {
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, null);
     const agent = makeAgent();
+    const plugin = new ThoughtPlugin(null);
 
     plugin.onInit(agent as any);
     plugin.onInit(agent as any);
@@ -215,16 +203,14 @@ describe("onInit guard", () => {
 
 describe("get_recent_thoughts tool", () => {
   test("returns 'No recent thoughts found.' when empty", async () => {
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, null);
+    const plugin = new ThoughtPlugin(null);
     const result = await plugin.executeTool("get_recent_thoughts", {});
     expect(result).toBe("No recent thoughts found.");
   });
 
   test("returns stored thought texts with ISO timestamp prefix joined by newline", async () => {
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, null);
     const agent = makeAgent();
+    const plugin = new ThoughtPlugin(null);
     plugin.onInit(agent as any);
 
     await agent.emit("thought", "first thought");
@@ -238,9 +224,8 @@ describe("get_recent_thoughts tool", () => {
   });
 
   test("respects limit parameter", async () => {
-    const mem = makeMemoryPlugin();
-    const plugin = new ThoughtPlugin(mem, null);
     const agent = makeAgent();
+    const plugin = new ThoughtPlugin(null);
     plugin.onInit(agent as any);
 
     for (let i = 0; i < 5; i++) {

@@ -16,6 +16,8 @@ import type {
 export type AgentLike = {
   addDirect(text: string): void;
   interrupt(): void;
+  interruptSubAgents(): void;
+  interruptAll(): void;
   setTokenCallback(fn: (token: string, isReasoning: boolean) => void): void;
 } & {
   on<K extends keyof AgentEventMap>(event: K, listener: (...args: AgentEventMap[K]) => void): AgentLike;
@@ -121,10 +123,22 @@ export class ChatSession extends EventEmitter {
 
   /**
    * Interrupt the agent mid-response.
-   * The pending assistant message is finalised with whatever content arrived.
+   * scope: "all" (default) — stops subagents and main agent
+   *        "subagents"     — stops only in-flight subagent asks; main agent continues
+   *        "main"          — stops only the main agent's LLM call
    */
-  interrupt(): void {
-    this.agent.interrupt();
+  interrupt(scope: "main" | "subagents" | "all" = "all"): void {
+    if (scope === "subagents") {
+      this.agent.interruptSubAgents();
+      return;
+    }
+
+    if (scope === "main") {
+      this.agent.interrupt();
+    } else {
+      this.agent.interruptAll();
+    }
+
     if (this._pendingAssistantId) {
       this.patchPending({ status: "complete" });
       this._pendingAssistantId = null;

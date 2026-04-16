@@ -28,7 +28,7 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
     // config.cortexName or config.name explicitly when running more than one concurrently.
     const cortexName = config.cortexName ?? config.name ?? "cortex";
     this.memoryPlugin = new CortexMemoryPlugin(llm, cortexName, config.memoryDbPath, config.memoryOptions);
-    const thoughtPlugin = new ThoughtPlugin(this.memoryPlugin, synthesisProvider ?? null);
+    const thoughtPlugin = new ThoughtPlugin(synthesisProvider ?? null);
 
     const metacognitionPlugin = new MetacognitionPlugin(this.memoryPlugin);
 
@@ -72,6 +72,16 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
   /** Cancel the current LLM inference (e.g. for barge-in). */
   public interrupt(): void {
     this.inner.interrupt();
+  }
+
+  /** Interrupt all in-flight subagent asks without stopping the main agent. */
+  public interruptSubAgents(): void {
+    this.inner.interruptSubAgents();
+  }
+
+  /** Interrupt all subagents and the main agent's current LLM call. */
+  public interruptAll(): void {
+    this.inner.interruptAll();
   }
 
   /** Register a callback that receives each token as the LLM streams its response. */

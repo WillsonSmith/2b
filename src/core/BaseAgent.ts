@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import type { AgentPlugin, ToolDefinition } from "./Plugin.ts";
 import type { InputSource } from "./InputSource.ts";
-import type { AgentConfig, AmbientOptions, Message } from "./types.ts";
+import type { AgentConfig, AmbientOptions, Message, MemoryWriteRequest } from "./types.ts";
 import { logger } from "../logger.ts";
 
 export class BaseAgent extends EventEmitter {
@@ -80,10 +80,35 @@ export class BaseAgent extends EventEmitter {
     this.tokenCallback = fn;
   }
 
+  /**
+   * Emit a memory persistence request to any registered memory broker plugin.
+   * If no plugin (e.g. CortexMemoryPlugin) is listening, the event fires into the
+   * void and the call is a graceful no-op — callers need no null guard.
+   */
+  public requestMemoryWrite(request: MemoryWriteRequest): void {
+    this.emit("memory:write_request", request);
+  }
+
   /** Cancel the current LLM inference (e.g. for barge-in). */
   public interrupt() {
     if (this.currentAbortController) this.currentAbortController.abort();
     this.emit("interrupt");
+  }
+
+  /** Interrupt all in-flight subagent asks without stopping the main agent. */
+  public interruptSubAgents(): void {
+    for (const plugin of this.plugins) {
+      if ("interruptAll" in plugin && typeof (plugin as { interruptAll: unknown }).interruptAll === "function") {
+        (plugin as { interruptAll(): void }).interruptAll();
+        return;
+      }
+    }
+  }
+
+  /** Interrupt all subagents and the main agent's current LLM call. */
+  public interruptAll(): void {
+    this.interruptSubAgents();
+    this.interrupt();
   }
 
   /** Register a recurring background task. If task() returns a non-null string, it is enqueued as ambient input. */
@@ -321,6 +346,9 @@ export class BaseAgent extends EventEmitter {
                   }
                 }
               }
+              if (this.currentAbortController?.signal.aborted) {
+                return { error: "Interrupted." };
+              }
               this.emit("tool_call", toolName, args);
               const toolResult = await plugin.executeTool!(toolName, args);
               this.emit("tool_result", toolName);
@@ -362,7 +390,7 @@ export class BaseAgent extends EventEmitter {
 
     await this.dispatchMessage("user", userContent, "input");
 
-    const { response, nonReasoningContent, reasoningText } = await this.llm.chat(messages, systemPrompt, undefined, tools, this.tokenCallback);
+    const { response, nonReasoningContent, reasoningText } = await this.llm.chat(messages, systemPrompt, undefined, tools, this.tokenCallback, this.currentAbortController.signal);
     logger.info("BaseAgent", `LLM response received (${response.length} chars)`);
 
     if (reasoningText) logger.debug("BaseAgent", `Reasoning extracted (${reasoningText.length} chars)`);
