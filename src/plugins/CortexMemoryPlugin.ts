@@ -1,4 +1,6 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
+import type { BaseAgent } from "../core/BaseAgent.ts";
+import type { MemoryWriteRequest } from "../core/types.ts";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import {
   CortexMemoryDatabase,
@@ -25,7 +27,7 @@ export interface CortexMemoryPluginOptions {
 
 export class CortexMemoryPlugin implements AgentPlugin {
   name = "CortexMemory";
-  public db: CortexMemoryDatabase;
+  private db: CortexMemoryDatabase;
 
   /**
    * Events captured from the current turn's getContext() call.
@@ -66,6 +68,157 @@ export class CortexMemoryPlugin implements AgentPlugin {
     this.procedureBudget = options?.procedureContextBudgetChars ?? 600;
   }
 
+  /**
+   * Subscribe to memory:write_request events from any plugin on the same agent.
+   * This makes CortexMemoryPlugin the memory broker: all programmatic writes from
+   * ThoughtPlugin, MemoryPlugin, and any future producers flow through writeMemory()
+   * without those plugins holding a direct reference to this plugin.
+   */
+  onInit(agent: BaseAgent): void {
+    agent.on("memory:write_request", (request: MemoryWriteRequest) => {
+      this.writeMemory(request.text, request.type, request.tags ?? [], request.source)
+        .catch(e => logger.error(this.name, "Failed to handle memory:write_request:", e));
+    });
+  }
+
+  // ─── Programmatic write/read interface for internal plugins ──────────────────
+  //
+  // These methods are the ONLY sanctioned way for other plugins to interact with
+  // the memory store. Direct access to `db` is intentionally private so that all
+  // writes flow through this layer and maintain the plugin's internal invariants:
+  // savedThisTurn tracking, near-dup deduplication, cache invalidation, and
+  // MAX_CONTENT_LENGTH enforcement.
+
+  /**
+   * Write a memory through the full tracking layer.
+   *
+   * - Enforces MAX_CONTENT_LENGTH (truncates with a warning).
+   * - For `behavior` type: performs a pre-write semantic dedup check at 0.92 and
+   *   returns null (skipping the write) if a near-duplicate already exists.
+   * - For `factual` / `procedure` types: runs post-write near-dup superseding at 0.9.
+   * - Updates `savedThisTurn` so that `onMessage` conflict resolution fires correctly.
+   * - Invalidates `coreBehaviorCache` when a core-tagged behavior is saved.
+   *
+   * @returns The new memory ID, or null if the write was skipped due to dedup.
+   */
+  public async writeMemory(
+    text: string,
+    type: "factual" | "thought" | "behavior" | "procedure",
+    tags: string[] = [],
+    source?: string,
+  ): Promise<string | null> {
+    if (text.length > MAX_CONTENT_LENGTH) {
+      logger.warn(this.name, `writeMemory: content too long (${text.length} chars), truncating to ${MAX_CONTENT_LENGTH}`);
+      text = text.slice(0, MAX_CONTENT_LENGTH);
+    }
+
+    // Behavior: pre-write semantic dedup — skip if near-duplicate already exists
+    if (type === "behavior") {
+      const similar = await this.db.search(text, 1, 0.92, "behavior");
+      if (similar.length > 0) {
+        logger.debug(
+          this.name,
+          `writeMemory: behavior skipped — near-duplicate (score=${similar[0]!.score.toFixed(3)}): "${text.slice(0, 80)}"`,
+        );
+        return null;
+      }
+    }
+
+    const id = await this.db.addMemory(text, type, tags, source);
+    this.savedThisTurn.add(id);
+    this.savedThisTurnTexts.set(id, text);
+
+    // Invalidate core behavior cache when a core-tagged behavior is saved
+    if (type === "behavior" && tags.includes("core")) {
+      this.coreBehaviorCache = null;
+    }
+
+    // Factual/procedure: post-write near-dup superseding at 0.9
+    if (type === "factual" || type === "procedure") {
+      const nearDups = await this.db.search(text, 5, 0.9, type);
+      for (const s of nearDups) {
+        if (s.id !== id) await this.db.updateMemoryStatus(s.id, "superseded");
+      }
+    }
+
+    logger.debug(this.name, `writeMemory: stored type=${type} id=${id.slice(0, 8)} source=${source ?? "unknown"}`);
+    return id;
+  }
+
+  /**
+   * Read the N most recent active memories of a given type.
+   * Used by ThoughtPlugin's `get_recent_thoughts` tool.
+   */
+  public getRecentMemories(limit: number, type?: string): Array<{ id: string; text: string; timestamp: number }> {
+    return this.db.getRecentMemories(limit, type);
+  }
+
+  /**
+   * Raw memory query by metadata filter. Returns the full row array.
+   * Used by MetacognitionPlugin to reconstruct correction history on init.
+   */
+  public queryMemoriesRaw(filter: MemoryFilter): Array<{ id: string; text: string; timestamp: number; type: string; tags: string[] }> {
+    return this.db.queryMemories(filter);
+  }
+
+  /**
+   * Fetch a single memory by ID. Used in tests and by plugins that need to
+   * inspect a specific row after writing.
+   */
+  public getMemoryById(id: string) {
+    return this.db.getMemoryById(id);
+  }
+
+  /**
+   * Raw database write — bypasses savedThisTurn tracking, dedup, and MAX_CONTENT_LENGTH.
+   * Appropriate for: test setup (pre-populating state without triggering conflict resolution),
+   * and callers that manage their own deduplication before calling (e.g., MetacognitionPlugin
+   * which checks for existing corrections before writing).
+   * Most callers should use writeMemory() instead.
+   */
+  public addMemoryRaw(
+    text: string,
+    type: string = "factual",
+    tags: string[] = [],
+    source?: string,
+    confidence?: number,
+    supersededById?: string,
+    reconstructedFromId?: string,
+  ): Promise<string> {
+    return this.db.addMemory(text, type, tags, source, confidence, supersededById, reconstructedFromId);
+  }
+
+  /**
+   * Create a bidirectional link between two memories.
+   * Used in tests to set up linked memory state for get_linked_memories tests.
+   */
+  public linkMemories(idA: string, idB: string, linkType?: string): Promise<void> {
+    return this.db.linkMemories(idA, idB, linkType);
+  }
+
+  /**
+   * Aggregate memory counts grouped by type, tag, or date.
+   * Used by MetacognitionPlugin's memory_status tool.
+   */
+  public aggregateMemories(groupBy: "type" | "tag" | "date", filter?: MemoryFilter): Array<{ group: string; count: number }> {
+    return this.db.aggregateMemories(groupBy, filter);
+  }
+
+  /**
+   * Delete a memory by ID with proper cache invalidation.
+   * Used by MetacognitionPlugin to prune stale correction records.
+   */
+  public async deleteMemoryById(id: string): Promise<void> {
+    const existing = await this.db.getMemoryById(id);
+    if (!existing) return;
+    if (existing.type === "behavior" && (existing.tags ?? []).includes("core")) {
+      this.coreBehaviorCache = null;
+    }
+    await this.db.deleteMemory(id);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+
   async getSystemPromptFragment(context?: string): Promise<string> {
     const parts = [
       "## Memory System",
@@ -80,7 +233,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "Use `save_procedure` after successfully completing a non-trivial task to record the steps taken.",
       "Use `edit_memory` to update the text of an existing memory by its ID.",
       "Use `delete_memory` to remove a memory. Single form: `{ id }`. Batch form: `{ ids: [id1, id2, ...] }` — deletes multiple memories in one call and triggers one cache invalidation regardless of how many IDs are provided.",
-      "Use `get_linked_memories` to follow chains of related ideas. Pass `link_type: \"depends_on\"` to find what a procedure relies on.",
+      "Use `get_linked_memories` to follow chains of related ideas.",
       "Use `get_memory_lineage` to trace how a memory has evolved over time — what it replaced, and what has since replaced it.",
       "When saving a memory that updates a prior one, use `supersedes` to preserve the lineage rather than deleting the old memory.",
       "Use `query_memories` to filter memories by type, tags, date range, or full-text content.",
@@ -396,7 +549,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
             },
             link_type: {
               type: "string",
-              description: "Filter to only links of a specific type: 'related', 'depends_on', 'supersedes', 'reconstructed_from'",
+              description: "Filter to only links of a specific type: 'related', 'supersedes', 'reconstructed_from'",
             },
           },
           required: ["id"],

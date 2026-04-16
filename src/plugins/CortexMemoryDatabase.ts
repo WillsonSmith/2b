@@ -4,6 +4,16 @@ import { join } from "node:path";
 import { logger } from "../logger.ts";
 import { appDataPath } from "../paths.ts";
 
+/**
+ * Wrap a user-supplied string in FTS5 phrase-query syntax.
+ * Without this, characters like `-` are interpreted as FTS5 operators
+ * (e.g. "X-Ray" → "match X, exclude column Ray" → crash).
+ * Double-quotes inside the string are escaped by doubling them.
+ */
+function escapeFtsQuery(term: string): string {
+  return `"${term.replace(/"/g, '""')}"`;
+}
+
 export interface MemoryFilter {
   types?: string[];
   tags?: string[];
@@ -464,7 +474,7 @@ export class CortexMemoryDatabase {
       whereClause = whereClause
         ? `${whereClause} AND ${ftsCondition}`
         : `WHERE ${ftsCondition}`;
-      allParams.push(filter.contains);
+      allParams.push(escapeFtsQuery(filter.contains));
     }
 
     const sql = `SELECT m.id, m.text, m.timestamp, m.type, m.tags FROM memories m ${whereClause} ORDER BY m.timestamp DESC LIMIT ?`;
@@ -576,17 +586,18 @@ export class CortexMemoryDatabase {
     // Build BM25 score map for fusion when a text filter is requested
     let bm25Map: Map<string, number> | null = null;
     if (filter?.contains) {
+      const escapedContains = escapeFtsQuery(filter.contains);
       const ftsCondition = `m.id IN (SELECT memory_id FROM memories_fts WHERE memories_fts MATCH ?)`;
       whereClause = whereClause
         ? `${whereClause} AND ${ftsCondition}`
         : `WHERE ${ftsCondition}`;
-      allParams.push(filter.contains);
+      allParams.push(escapedContains);
 
       const bm25Rows = this.db
         .prepare(
           `SELECT memory_id, bm25(memories_fts) as bm25_score FROM memories_fts WHERE memories_fts MATCH ?`,
         )
-        .all(filter.contains) as { memory_id: string; bm25_score: number }[];
+        .all(escapedContains) as { memory_id: string; bm25_score: number }[];
       if (bm25Rows.length > 0) {
         bm25Map = new Map(bm25Rows.map(r => [r.memory_id, r.bm25_score]));
       }
