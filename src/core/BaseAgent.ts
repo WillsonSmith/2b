@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import type { AgentPlugin, ToolDefinition } from "./Plugin.ts";
 import type { InputSource } from "./InputSource.ts";
-import type { AgentConfig, AmbientOptions, Message } from "./types.ts";
+import type { AgentConfig, AmbientOptions, Message, MemoryWriteRequest } from "./types.ts";
 import { logger } from "../logger.ts";
 
 export class BaseAgent extends EventEmitter {
@@ -78,6 +78,15 @@ export class BaseAgent extends EventEmitter {
   /** Register a callback that receives each token as the LLM streams its response. */
   public setTokenCallback(fn: (token: string, isReasoning: boolean) => void): void {
     this.tokenCallback = fn;
+  }
+
+  /**
+   * Emit a memory persistence request to any registered memory broker plugin.
+   * If no plugin (e.g. CortexMemoryPlugin) is listening, the event fires into the
+   * void and the call is a graceful no-op — callers need no null guard.
+   */
+  public requestMemoryWrite(request: MemoryWriteRequest): void {
+    this.emit("memory:write_request", request);
   }
 
   /** Cancel the current LLM inference (e.g. for barge-in). */
