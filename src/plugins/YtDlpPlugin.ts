@@ -2,6 +2,7 @@ import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { logger } from "../logger.ts";
 import { $ } from "bun";
 import { join, basename } from "node:path";
+import { mkdir } from "node:fs/promises";
 
 const DOWNLOADS_DIR = "downloads";
 
@@ -104,7 +105,7 @@ Timestamps must be in HH:MM:SS or MM:SS format (e.g. '05:30' or '1:05:30'). Lead
     const section = `*${start}-${end}`;
 
     // Ensure downloads directory exists
-    await Bun.mkdir(DOWNLOADS_DIR, { recursive: true });
+    await mkdir(DOWNLOADS_DIR, { recursive: true });
 
     // Strip directory components from user-supplied filename to prevent path traversal
     const safeFilename = outputFilename ? basename(outputFilename) : undefined;

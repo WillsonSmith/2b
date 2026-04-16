@@ -41,7 +41,7 @@ describe("CortexMemoryDatabase - schema initialization", () => {
 
 describe("CortexMemoryDatabase - cosine similarity", () => {
   test("identical vectors return score of 1", async () => {
-    const { db } = makeDB();
+    const { db: _db } = makeDB();
     // Insert a memory, then search with the same embedding
     const vec = [1, 0, 0, 0];
     const llmExact = { getEmbedding: mock(async () => vec) };
@@ -52,7 +52,7 @@ describe("CortexMemoryDatabase - cosine similarity", () => {
   });
 
   test("orthogonal vectors return score of 0 (filtered below threshold)", async () => {
-    const { db } = makeDB();
+    const { db: _db } = makeDB();
     const llmA = { getEmbedding: mock(async () => [1, 0, 0, 0]) };
     const dbA = new CortexMemoryDatabase(llmA, "test", ":memory:");
     await dbA.addMemory("a", "factual");
@@ -101,7 +101,7 @@ describe("CortexMemoryDatabase - CRUD", () => {
   });
 
   test("updateMemoryText changes the content", async () => {
-    const { db, getEmbedding } = makeDB();
+    const { db } = makeDB();
     const id = await db.addMemory("original", "factual");
     await db.updateMemoryText(id, "updated");
     const mem = await db.getMemoryById(id);
@@ -307,8 +307,8 @@ describe("CortexMemoryDatabase - chunkAndEmbed", () => {
     const w1 = 6000 / 6801;
     const w2 = 801 / 6801;
     const expectedAvg = [
-      chunkEmbeddings[0][0] * w1 + chunkEmbeddings[1][0] * w2,
-      chunkEmbeddings[0][1] * w1 + chunkEmbeddings[1][1] * w2,
+      chunkEmbeddings[0]![0]! * w1 + chunkEmbeddings[1]![0]! * w2,
+      chunkEmbeddings[0]![1]! * w1 + chunkEmbeddings[1]![1]! * w2,
     ];
     // Cosine similarity of the stored vector against itself is 1.0
     const results = db.searchWithEmbedding(expectedAvg, 1, 0);
