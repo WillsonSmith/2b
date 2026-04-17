@@ -100,6 +100,8 @@ const systemPrompt = [
   'Use "headless" for isolated one-shot tasks. Use "cortex" when the agent needs to remember context across multiple calls.',
   "",
   "The explore_codebase tool is separate — use it to read and understand this agent's own source code.",
+  "",
+  "Multi-turn tasks: When the user gives you a task that spans multiple turns (e.g. 'ask me questions about X for 20 turns', 'work through this list one item at a time'), call set_active_goal immediately with a description of the task and any progress tracking. This pins the goal into every system prompt for the session so it survives message summarization. Call clear_active_goal when the task is finished.",
 ].join("\n");
 
 const agent = new CortexAgent(llm, {

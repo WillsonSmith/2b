@@ -170,6 +170,61 @@ describe("getContext", () => {
   });
 });
 
+// ── active goal ───────────────────────────────────────────────────────────────
+
+describe("active goal", () => {
+  test("get_active_goal returns null when no goal is set", async () => {
+    const result = (await plugin.executeTool("get_active_goal", {})) as any;
+    expect(result.goal).toBeNull();
+  });
+
+  test("set_active_goal stores the goal and returns it", async () => {
+    const result = (await plugin.executeTool("set_active_goal", { goal: "Ask user 20 questions about TypeScript" })) as any;
+    expect(result.ok).toBe(true);
+    expect(result.goal).toBe("Ask user 20 questions about TypeScript");
+  });
+
+  test("get_active_goal returns the stored goal after set", async () => {
+    await plugin.executeTool("set_active_goal", { goal: "Work through 10 items one at a time" });
+    const result = (await plugin.executeTool("get_active_goal", {})) as any;
+    expect(result.goal).toBe("Work through 10 items one at a time");
+  });
+
+  test("set_active_goal overwrites a previous goal", async () => {
+    await plugin.executeTool("set_active_goal", { goal: "First goal" });
+    await plugin.executeTool("set_active_goal", { goal: "Updated goal with progress: item 3 of 10" });
+    const result = (await plugin.executeTool("get_active_goal", {})) as any;
+    expect(result.goal).toBe("Updated goal with progress: item 3 of 10");
+  });
+
+  test("clear_active_goal removes the goal", async () => {
+    await plugin.executeTool("set_active_goal", { goal: "Some task" });
+    const cleared = (await plugin.executeTool("clear_active_goal", {})) as any;
+    expect(cleared.ok).toBe(true);
+    const result = (await plugin.executeTool("get_active_goal", {})) as any;
+    expect(result.goal).toBeNull();
+  });
+
+  test("getSystemPromptFragment includes active goal when set", async () => {
+    await plugin.executeTool("set_active_goal", { goal: "Ask 20 questions about X" });
+    const fragment = plugin.getSystemPromptFragment();
+    expect(fragment).toContain("Active Goal");
+    expect(fragment).toContain("Ask 20 questions about X");
+  });
+
+  test("getSystemPromptFragment omits Active Goal section when no goal is set", async () => {
+    const fragment = plugin.getSystemPromptFragment();
+    expect(fragment).not.toContain("Active Goal");
+  });
+
+  test("getSystemPromptFragment omits Active Goal section after clear", async () => {
+    await plugin.executeTool("set_active_goal", { goal: "Some task" });
+    await plugin.executeTool("clear_active_goal", {});
+    const fragment = plugin.getSystemPromptFragment();
+    expect(fragment).not.toContain("Active Goal");
+  });
+});
+
 // ── unknown tool ──────────────────────────────────────────────────────────────
 
 describe("unknown tool", () => {

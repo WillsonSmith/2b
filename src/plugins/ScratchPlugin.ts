@@ -36,6 +36,7 @@ export class ScratchPlugin implements AgentPlugin {
 
   readonly sessionDir: string;
   private initialized = false;
+  private activeGoal: string | null = null;
 
   constructor(sessionId?: string) {
     this.sessionDir = join(tmpdir(), `agent-${sessionId ?? randomUUID()}`);
@@ -58,14 +59,28 @@ export class ScratchPlugin implements AgentPlugin {
   }
 
   getSystemPromptFragment(): string {
-    return [
+    const parts: string[] = [];
+
+    if (this.activeGoal !== null) {
+      parts.push(
+        "## Active Goal",
+        "You are currently committed to the following task. Continue pursuing it until it is complete or you are explicitly told to stop.",
+        this.activeGoal,
+        "Use clear_active_goal when the task is finished.",
+      );
+    }
+
+    parts.push(
       "You have a scratch pad for saving content you may need to retrieve verbatim in a future turn.",
       "- scratch_write: Save text under a short descriptive name (e.g. 'auth-middleware', 'api-schema', 'refactor-plan').",
       "- scratch_read: Retrieve saved content in full.",
       "- scratch_list: List all saved scratch files with their sizes.",
       "- scratch_delete: Remove a scratch file you no longer need.",
       "IMPORTANT: Before generating substantial content — code, plans, analysis, long outputs — that you may need to reference verbatim in a future turn, save it with scratch_write. Do not rely on conversation history to preserve full content after summarization.",
-    ].join("\n");
+      "When the user gives you a multi-turn task (e.g. 'ask me questions about X for 20 turns', 'work through this list one item per message'), call set_active_goal immediately with a clear description of the task and any progress tracking needed. This survives message summarization.",
+    );
+
+    return parts.join("\n");
   }
 
   async getContext(): Promise<string> {
@@ -150,6 +165,41 @@ export class ScratchPlugin implements AgentPlugin {
           required: ["name"],
         },
       },
+      {
+        name: "set_active_goal",
+        description:
+          "Pin a multi-turn task as the active goal. The goal is injected into every system prompt for the rest of the session, surviving message summarization. Use this immediately when the user gives you a task that spans multiple turns (e.g. 'ask me 20 questions', 'work through this list'). Include any progress tracking in the goal text (e.g. 'Question 3 of 20'). Call clear_active_goal when done.",
+        parameters: {
+          type: "object",
+          properties: {
+            goal: {
+              type: "string",
+              description: "Description of the task and any progress state to track.",
+            },
+          },
+          required: ["goal"],
+        },
+      },
+      {
+        name: "get_active_goal",
+        description: "Return the current active goal, or null if none is set.",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "clear_active_goal",
+        description: "Clear the active goal once the task is complete.",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+          additionalProperties: false,
+        },
+      },
     ];
   }
 
@@ -175,6 +225,16 @@ export class ScratchPlugin implements AgentPlugin {
           SCRATCH_OP_TIMEOUT_MS,
           "scratch_delete",
         );
+      case "set_active_goal":
+        this.activeGoal = String(args.goal ?? "");
+        logger.debug("Scratch", `set_active_goal: "${this.activeGoal.slice(0, 80)}"`);
+        return { ok: true, goal: this.activeGoal };
+      case "get_active_goal":
+        return { goal: this.activeGoal };
+      case "clear_active_goal":
+        this.activeGoal = null;
+        logger.debug("Scratch", "clear_active_goal");
+        return { ok: true };
       default:
         return undefined;
     }
