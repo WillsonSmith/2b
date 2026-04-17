@@ -32,6 +32,10 @@ export interface AgentEventMap {
   agent_error: [agentName: string, err: Error];
   /** Emitted by plugins that produce content for long-term persistence. */
   "memory:write_request": [request: MemoryWriteRequest];
+  /** Emitted by BehaviorPlugin when a newly saved behavior semantically conflicts with an existing one. */
+  "behavior:conflict_detected": [newId: string, newText: string, conflictId: string, conflictText: string, score: number];
+  /** Emitted by BehaviorPlugin after each turn's system prompt fragment is assembled. */
+  "behaviors_loaded": [core: Array<{ id: string; text: string; weight: number }>, contextual: Array<{ id: string; text: string; score: number; weight: number }>];
 }
 
 export type Message = {

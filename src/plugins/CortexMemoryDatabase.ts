@@ -170,9 +170,19 @@ export class CortexMemoryDatabase {
       this.db.run(`ALTER TABLE memory_links ADD COLUMN link_type TEXT NOT NULL DEFAULT 'related'`);
     }
 
-    // Bump schema version
+    // Bump schema version to 3
     if (version < 3) {
       this.db.run(`UPDATE schema_version SET version = 3, updated_at = ${Date.now()}`);
+    }
+
+    // Phase 6: weight column — controls behavior injection priority (0.0–1.0)
+    const freshCols2 = this.db.prepare("PRAGMA table_info(memories)").all() as { name: string }[];
+    const hasWeight = freshCols2.some(c => c.name === "weight");
+    if (!hasWeight) {
+      this.db.run(`ALTER TABLE memories ADD COLUMN weight REAL NOT NULL DEFAULT 1.0`);
+    }
+    if (version < 4) {
+      this.db.run(`UPDATE schema_version SET version = 4, updated_at = ${Date.now()}`);
     }
 
     // Phase 3 migration: strip [THOUGHT] prefix from thought memory text — idempotent
@@ -285,7 +295,7 @@ export class CortexMemoryDatabase {
     return { clause, params };
   }
 
-  /** Add a memory with an optional type, tags, source, and confidence. Returns the new memory's ID. */
+  /** Add a memory with an optional type, tags, source, confidence, and weight. Returns the new memory's ID. */
   public async addMemory(
     text: string,
     type: string = "factual",
@@ -294,6 +304,7 @@ export class CortexMemoryDatabase {
     confidence?: number,
     supersededById?: string,
     reconstructedFromId?: string,
+    weight?: number,
   ): Promise<string> {
     logger.debug("CortexDB", `addMemory type=${type}: getting embedding for "${text.slice(0, 80)}"`);
     const embedding = await this.chunkAndEmbed(text);
@@ -315,13 +326,14 @@ export class CortexMemoryDatabase {
       .prepare(
         `INSERT INTO memories
           (id, text, embedding_bin, timestamp, type, tags, status, source, confidence, scope,
-           superseded_by_id, reconstructed_from_id, version_rank)
-         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, 'global', ?, ?, ?)`,
+           superseded_by_id, reconstructed_from_id, version_rank, weight)
+         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, 'global', ?, ?, ?, ?)`,
       )
       .run(
         id, text, embeddingBin, Date.now(), type,
         JSON.stringify(tags), source ?? null, confidence ?? 1.0,
         supersededById ?? null, reconstructedFromId ?? null, versionRank,
+        weight ?? 1.0,
       );
 
     // If superseding, mark the old memory and set its forward pointer
@@ -367,35 +379,35 @@ export class CortexMemoryDatabase {
     threshold: number,
     type: string | string[] | undefined,
     includeEmbeddings: true,
-  ): Array<{ id: string; text: string; score: number; embedding: Float32Array }>;
+  ): Array<{ id: string; text: string; score: number; weight: number; embedding: Float32Array }>;
   public searchWithEmbedding(
     queryEmbedding: number[],
     limit?: number,
     threshold?: number,
     type?: string | string[],
     includeEmbeddings?: false | undefined,
-  ): Array<{ id: string; text: string; score: number }>;
+  ): Array<{ id: string; text: string; score: number; weight: number }>;
   public searchWithEmbedding(
     queryEmbedding: number[],
     limit: number = 5,
     threshold: number = 0.5,
     type?: string | string[],
     includeEmbeddings?: boolean,
-  ): Array<{ id: string; text: string; score: number; embedding?: Float32Array }> {
-    let rows: { id: string; text: string; embedding_bin: Buffer }[];
+  ): Array<{ id: string; text: string; score: number; weight: number; embedding?: Float32Array }> {
+    let rows: { id: string; text: string; weight: number; embedding_bin: Buffer }[];
     if (Array.isArray(type)) {
       const placeholders = type.map(() => "?").join(", ");
       rows = this.db
-        .prepare(`SELECT id, text, embedding_bin FROM memories WHERE type IN (${placeholders}) AND status = 'active'`)
-        .all(...type) as { id: string; text: string; embedding_bin: Buffer }[];
+        .prepare(`SELECT id, text, weight, embedding_bin FROM memories WHERE type IN (${placeholders}) AND status = 'active'`)
+        .all(...type) as { id: string; text: string; weight: number; embedding_bin: Buffer }[];
     } else {
       rows = (
         type
           ? this.db
-              .prepare("SELECT id, text, embedding_bin FROM memories WHERE type = ? AND status = 'active'")
+              .prepare("SELECT id, text, weight, embedding_bin FROM memories WHERE type = ? AND status = 'active'")
               .all(type)
-          : this.db.prepare("SELECT id, text, embedding_bin FROM memories WHERE status = 'active'").all()
-      ) as { id: string; text: string; embedding_bin: Buffer }[];
+          : this.db.prepare("SELECT id, text, weight, embedding_bin FROM memories WHERE status = 'active'").all()
+      ) as { id: string; text: string; weight: number; embedding_bin: Buffer }[];
     }
 
     const results = rows
@@ -406,15 +418,15 @@ export class CortexMemoryDatabase {
         const emb = bufferToFloat32Array(row.embedding_bin);
         const score = this.cosSim(queryEmbedding, emb);
         if (includeEmbeddings) {
-          return { id: row.id, text: row.text, score, embedding: emb };
+          return { id: row.id, text: row.text, score, weight: row.weight ?? 1.0, embedding: emb };
         }
-        return { id: row.id, text: row.text, score };
+        return { id: row.id, text: row.text, score, weight: row.weight ?? 1.0 };
       })
       .filter(r => r.score >= threshold)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
 
-    return results as Array<{ id: string; text: string; score: number; embedding?: Float32Array }>;
+    return results as Array<{ id: string; text: string; score: number; weight: number; embedding?: Float32Array }>;
   }
 
   /** Search memories by embedding similarity and return results with retrieval metadata. */
@@ -462,7 +474,7 @@ export class CortexMemoryDatabase {
   /** Filter memories by metadata. Returns results ordered by recency. */
   public queryMemories(
     filter: MemoryFilter,
-  ): Array<{ id: string; text: string; timestamp: number; type: string; tags: string[] }> {
+  ): Array<{ id: string; text: string; timestamp: number; type: string; tags: string[]; weight: number }> {
     const limit = filter.limit ?? 20;
     const { clause, params } = this.buildWhereClause(filter);
 
@@ -477,7 +489,7 @@ export class CortexMemoryDatabase {
       allParams.push(escapeFtsQuery(filter.contains));
     }
 
-    const sql = `SELECT m.id, m.text, m.timestamp, m.type, m.tags FROM memories m ${whereClause} ORDER BY m.timestamp DESC LIMIT ?`;
+    const sql = `SELECT m.id, m.text, m.timestamp, m.type, m.tags, m.weight FROM memories m ${whereClause} ORDER BY m.timestamp DESC LIMIT ?`;
     allParams.push(limit);
 
     const rows = this.db.prepare(sql).all(...allParams) as {
@@ -486,11 +498,13 @@ export class CortexMemoryDatabase {
       timestamp: number;
       type: string;
       tags: string;
+      weight: number;
     }[];
 
     return rows.map(row => ({
       ...row,
       tags: JSON.parse(row.tags ?? "[]") as string[],
+      weight: row.weight ?? 1.0,
     }));
   }
 
@@ -721,7 +735,14 @@ export class CortexMemoryDatabase {
     this.db.prepare("UPDATE memories SET status = ? WHERE id = ?").run(status, id);
   }
 
-  /** Retrieve a memory by ID, including its tags and lineage columns. */
+  /** Mark a memory as superseded and set its forward pointer to the replacement. */
+  public setSupersededBy(oldId: string, newId: string): void {
+    this.db
+      .prepare("UPDATE memories SET status = 'superseded', superseded_by_id = ? WHERE id = ?")
+      .run(newId, oldId);
+  }
+
+  /** Retrieve a memory by ID, including its tags, weight, and lineage columns. */
   public async getMemoryById(id: string): Promise<{
     id: string;
     text: string;
@@ -729,23 +750,29 @@ export class CortexMemoryDatabase {
     type: string;
     tags: string[];
     status: string;
+    weight: number;
     superseded_by_id: string | null;
     reconstructed_from_id: string | null;
     version_rank: number;
   } | null> {
     const row = this.db
       .prepare(
-        `SELECT id, text, timestamp, type, tags, status,
+        `SELECT id, text, timestamp, type, tags, status, weight,
                 superseded_by_id, reconstructed_from_id, version_rank
          FROM memories WHERE id = ?`,
       )
       .get(id) as {
         id: string; text: string; timestamp: number; type: string; tags: string;
-        status: string; superseded_by_id: string | null;
+        status: string; weight: number; superseded_by_id: string | null;
         reconstructed_from_id: string | null; version_rank: number;
       } | null;
     if (!row) return null;
-    return { ...row, tags: JSON.parse(row.tags ?? "[]") as string[] };
+    return { ...row, tags: JSON.parse(row.tags ?? "[]") as string[], weight: row.weight ?? 1.0 };
+  }
+
+  /** Update the weight of a behavior memory. */
+  public updateMemoryWeight(id: string, weight: number): void {
+    this.db.prepare("UPDATE memories SET weight = ? WHERE id = ?").run(Math.max(0, Math.min(1, weight)), id);
   }
 
   /** Follow the supersession and reconstruction chain for a memory in both directions. */

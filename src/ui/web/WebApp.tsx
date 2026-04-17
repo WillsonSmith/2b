@@ -10,6 +10,49 @@ import type {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+interface BehaviorRecord {
+  id: string;
+  text: string;
+  weight: number;
+}
+
+interface ContextualBehaviorRecord extends BehaviorRecord {
+  score: number;
+}
+
+interface ConflictRecord {
+  newId: string;
+  newText: string;
+  conflictId: string;
+  conflictText: string;
+  score: number;
+  timestamp: number;
+}
+
+interface MemoryRow {
+  id: string;
+  text: string;
+  timestamp: number;
+  type: string;
+  tags: string[];
+  weight: number;
+}
+
+interface TraceEntry {
+  id: string;
+  score: number;
+}
+
+interface RetrievalTrace {
+  timestamp: number;
+  query_length: number;
+  factual: TraceEntry[];
+  procedure: TraceEntry[];
+  recent_thoughts: Array<{ id: string }>;
+}
+
+type PanelId = "memory" | "behaviors" | "conflicts" | "agents" | "trace";
+
 type WsMessage =
   | {
       type: "snapshot";
@@ -32,7 +75,20 @@ type WsMessage =
       };
     }
   | { type: "model_changed"; model: string }
-  | { type: "system_prompt"; systemPrompt: string; model: string };
+  | { type: "system_prompt"; systemPrompt: string; model: string }
+  | {
+      type: "behavior_conflict";
+      newId: string;
+      newText: string;
+      conflictId: string;
+      conflictText: string;
+      score: number;
+    }
+  | {
+      type: "behaviors_loaded";
+      core: BehaviorRecord[];
+      contextual: ContextualBehaviorRecord[];
+    };
 
 interface PermissionRequest {
   agentName: string;
@@ -210,12 +266,10 @@ function StatusArea({
   state,
   activeTools,
   dynamicAgents,
-  model,
 }: {
   state: AgentState;
   activeTools: ActiveTool[];
   dynamicAgents: DynamicAgentRecord[];
-  model: string;
 }) {
   const isThinking = state === "thinking";
   const activeAgents = dynamicAgents.filter((a) => a.state !== "idle");
@@ -238,11 +292,6 @@ function StatusArea({
             "ready"
           )}
         </span>
-        {model && (
-          <span className="header-model" style={{ marginLeft: "auto" }}>
-            {model}
-          </span>
-        )}
       </div>
 
       {isThinking && activeTools.length > 0 && (
@@ -390,6 +439,463 @@ function ChatInput({
   );
 }
 
+// ── Sidebar panels ────────────────────────────────────────────────────────────
+
+function MemoryPanel() {
+  const [memories, setMemories] = useState<MemoryRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const load = useCallback(async (type: string, q: string) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "50" });
+      if (type !== "all") params.set("type", type);
+      if (q.trim()) params.set("search", q.trim());
+      const res = await fetch(`/api/memories?${params}`);
+      const data = await res.json() as MemoryRow[];
+      setMemories(data);
+    } catch {
+      // non-critical
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load(typeFilter, search);
+  }, [typeFilter, load]);
+
+  const handleSearch = useCallback((q: string) => {
+    setSearch(q);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => load(typeFilter, q), 400);
+  }, [typeFilter, load]);
+
+  const handleEdit = useCallback(async (id: string) => {
+    if (!editText.trim()) return;
+    await fetch(`/api/memories/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: editText }),
+    });
+    setEditingId(null);
+    load(typeFilter, search);
+  }, [editText, typeFilter, search, load]);
+
+  const handleDelete = useCallback(async (id: string) => {
+    if (!confirm("Delete this memory?")) return;
+    await fetch(`/api/memories/${id}`, { method: "DELETE" });
+    setMemories(prev => prev.filter(m => m.id !== id));
+    if (expandedId === id) setExpandedId(null);
+  }, [expandedId]);
+
+  return (
+    <div className="panel">
+      <div className="panel-controls">
+        <select
+          className="panel-select"
+          value={typeFilter}
+          onChange={e => { setTypeFilter(e.target.value); }}
+        >
+          <option value="all">All types</option>
+          <option value="factual">Factual</option>
+          <option value="behavior">Behavior</option>
+          <option value="procedure">Procedure</option>
+          <option value="thought">Thought</option>
+        </select>
+        <input
+          className="panel-input"
+          placeholder="Search…"
+          value={search}
+          onChange={e => handleSearch(e.target.value)}
+        />
+        <button className="panel-btn" onClick={() => load(typeFilter, search)}>↺</button>
+      </div>
+
+      {loading && <div className="panel-loading">Loading…</div>}
+
+      <div className="panel-list">
+        {memories.map(m => (
+          <div key={m.id} className="memory-item">
+            <div
+              className="memory-header"
+              onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
+            >
+              <span className="memory-type">{m.type}</span>
+              <span className="memory-id">[{m.id.slice(0, 8)}]</span>
+              <span className="memory-date">
+                {new Date(m.timestamp).toLocaleDateString()}
+              </span>
+              {m.type === "behavior" && (
+                <span className="memory-weight">w:{m.weight?.toFixed(1) ?? "?"}</span>
+              )}
+            </div>
+            {expandedId === m.id && (
+              <div className="memory-body">
+                {editingId === m.id ? (
+                  <>
+                    <textarea
+                      className="memory-edit-area"
+                      value={editText}
+                      onChange={e => setEditText(e.target.value)}
+                      rows={4}
+                    />
+                    <div className="memory-actions">
+                      <button className="panel-btn panel-btn--green" onClick={() => handleEdit(m.id)}>Save</button>
+                      <button className="panel-btn" onClick={() => setEditingId(null)}>Cancel</button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="memory-text">{m.text}</div>
+                    {m.tags.length > 0 && (
+                      <div className="memory-tags">
+                        {m.tags.map(t => <span key={t} className="tag">{t}</span>)}
+                      </div>
+                    )}
+                    <div className="memory-actions">
+                      <button
+                        className="panel-btn"
+                        onClick={() => { setEditingId(m.id); setEditText(m.text); }}
+                      >Edit</button>
+                      <button
+                        className="panel-btn panel-btn--red"
+                        onClick={() => handleDelete(m.id)}
+                      >Delete</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+        {!loading && memories.length === 0 && (
+          <div className="panel-empty">No memories found.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BehaviorsPanel({
+  core,
+  contextual,
+}: {
+  core: BehaviorRecord[];
+  contextual: ContextualBehaviorRecord[];
+}) {
+  return (
+    <div className="panel">
+      {core.length === 0 && contextual.length === 0 && (
+        <div className="panel-empty">No behaviors loaded yet. Send a message to trigger behavior retrieval.</div>
+      )}
+      {core.length > 0 && (
+        <>
+          <div className="panel-section-label">Always active ({core.length})</div>
+          {core.map(b => (
+            <div key={b.id} className="behavior-item behavior-item--core">
+              <div className="behavior-meta">
+                <span className="memory-id">[{b.id.slice(0, 8)}]</span>
+                <span className="memory-weight">w:{b.weight.toFixed(1)}</span>
+              </div>
+              <div className="behavior-text">{b.text}</div>
+            </div>
+          ))}
+        </>
+      )}
+      {contextual.length > 0 && (
+        <>
+          <div className="panel-section-label">This turn ({contextual.length})</div>
+          {contextual.map(b => (
+            <div key={b.id} className="behavior-item">
+              <div className="behavior-meta">
+                <span className="memory-id">[{b.id.slice(0, 8)}]</span>
+                <span className="memory-weight">w:{b.weight.toFixed(1)}</span>
+                <span className="behavior-score">sim:{b.score.toFixed(2)}</span>
+              </div>
+              <div className="behavior-text">{b.text}</div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+function ConflictsPanel({
+  conflicts,
+  onDismiss,
+  onSynthesize,
+}: {
+  conflicts: ConflictRecord[];
+  onDismiss: (c: ConflictRecord) => Promise<void>;
+  onSynthesize: (c: ConflictRecord) => Promise<void>;
+}) {
+  const [synthesizing, setSynthesizing] = useState<string | null>(null);
+  const [results, setResults] = useState<Record<string, string>>({});
+
+  const handleSynthesize = async (c: ConflictRecord) => {
+    const key = `${c.newId}::${c.conflictId}`;
+    setSynthesizing(key);
+    try {
+      const res = await fetch("/api/behaviors/synthesize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_a: c.newId, id_b: c.conflictId }),
+      });
+      const data = await res.json() as { result?: string; error?: string };
+      setResults(prev => ({ ...prev, [key]: data.result ?? data.error ?? "Done." }));
+      await onSynthesize(c);
+    } catch (e) {
+      setResults(prev => ({ ...prev, [key]: String(e) }));
+    } finally {
+      setSynthesizing(null);
+    }
+  };
+
+  if (conflicts.length === 0) {
+    return (
+      <div className="panel">
+        <div className="panel-empty">No pending conflicts.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="panel">
+      {conflicts.map(c => {
+        const key = `${c.newId}::${c.conflictId}`;
+        const isBusy = synthesizing === key;
+        const result = results[key];
+        return (
+          <div key={key} className="conflict-item">
+            <div className="conflict-score">
+              Similarity: {(c.score * 100).toFixed(0)}%
+            </div>
+            <div className="conflict-pair">
+              <div className="conflict-behavior">
+                <span className="conflict-label">New</span>
+                <span className="memory-id">[{c.newId.slice(0, 8)}]</span>
+                <div className="conflict-text">{c.newText}</div>
+              </div>
+              <div className="conflict-behavior">
+                <span className="conflict-label">Conflicts with</span>
+                <span className="memory-id">[{c.conflictId.slice(0, 8)}]</span>
+                <div className="conflict-text">{c.conflictText}</div>
+              </div>
+            </div>
+            {result && (
+              <div className="conflict-result">{result}</div>
+            )}
+            {!result && (
+              <div className="conflict-actions">
+                <button
+                  className="panel-btn panel-btn--green"
+                  onClick={() => handleSynthesize(c)}
+                  disabled={isBusy}
+                >
+                  {isBusy ? "Synthesizing…" : "Synthesize"}
+                </button>
+                <button
+                  className="panel-btn"
+                  onClick={() => onDismiss(c)}
+                  disabled={isBusy}
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AgentsPanel({ agents }: { agents: DynamicAgentRecord[] }) {
+  if (agents.length === 0) {
+    return (
+      <div className="panel">
+        <div className="panel-empty">No dynamic agents spawned yet.</div>
+      </div>
+    );
+  }
+  return (
+    <div className="panel">
+      {agents.map(a => (
+        <div key={a.name} className="agent-item">
+          <div className="agent-header">
+            <span className="agent-name">{a.name}</span>
+            <span className={`agent-state agent-state--${a.state}`}>{a.state}</span>
+          </div>
+          <div className="agent-meta">
+            <span className="agent-type">{(a as any).type ?? "headless"}</span>
+            {a.createdAt && (
+              <span className="agent-date">
+                {new Date(a.createdAt).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+          {(a as any).capabilities && (
+            <div className="memory-tags">
+              {((a as any).capabilities as string[]).map((cap: string) => (
+                <span key={cap} className="tag">{cap}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TracePanel() {
+  const [trace, setTrace] = useState<RetrievalTrace | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/trace/last");
+      const data = await res.json() as RetrievalTrace | null;
+      setTrace(data);
+    } catch {
+      // non-critical
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return (
+    <div className="panel">
+      <div className="panel-controls">
+        <button className="panel-btn" onClick={load} disabled={loading}>
+          {loading ? "Loading…" : "↺ Refresh trace"}
+        </button>
+      </div>
+      {!trace && !loading && (
+        <div className="panel-empty">Click refresh to load the last retrieval trace.</div>
+      )}
+      {trace && (
+        <>
+          <div className="panel-section-label">
+            Query length: {trace.query_length} chars
+          </div>
+          {trace.factual.length > 0 && (
+            <>
+              <div className="panel-section-label">Factual memories ({trace.factual.length})</div>
+              {trace.factual.map(f => (
+                <div key={f.id} className="trace-item">
+                  <span className="memory-id">[{f.id.slice(0, 8)}]</span>
+                  <span className="behavior-score">sim:{f.score.toFixed(3)}</span>
+                </div>
+              ))}
+            </>
+          )}
+          {trace.procedure.length > 0 && (
+            <>
+              <div className="panel-section-label">Procedures ({trace.procedure.length})</div>
+              {trace.procedure.map(p => (
+                <div key={p.id} className="trace-item">
+                  <span className="memory-id">[{p.id.slice(0, 8)}]</span>
+                  <span className="behavior-score">sim:{p.score.toFixed(3)}</span>
+                </div>
+              ))}
+            </>
+          )}
+          {trace.recent_thoughts.length > 0 && (
+            <>
+              <div className="panel-section-label">Recent thoughts ({trace.recent_thoughts.length})</div>
+              {trace.recent_thoughts.map(t => (
+                <div key={t.id} className="trace-item">
+                  <span className="memory-id">[{t.id.slice(0, 8)}]</span>
+                </div>
+              ))}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+
+function Sidebar({
+  panels,
+  conflicts,
+  coreBehaviors,
+  contextualBehaviors,
+  dynamicAgents,
+  onDismissConflict,
+  onSynthesize,
+}: {
+  panels: PanelId[];
+  conflicts: ConflictRecord[];
+  coreBehaviors: BehaviorRecord[];
+  contextualBehaviors: ContextualBehaviorRecord[];
+  dynamicAgents: DynamicAgentRecord[];
+  onDismissConflict: (c: ConflictRecord) => Promise<void>;
+  onSynthesize: (c: ConflictRecord) => Promise<void>;
+}) {
+  const [activeTab, setActiveTab] = useState<PanelId>(panels[0] ?? "memory");
+
+  // Make sure activeTab stays valid if panels change
+  useEffect(() => {
+    if (!panels.includes(activeTab) && panels.length > 0) {
+      setActiveTab(panels[0]!);
+    }
+  }, [panels, activeTab]);
+
+  const tabLabels: Record<PanelId, string> = {
+    memory: "Memory",
+    behaviors: "Behaviors",
+    conflicts: "Conflicts",
+    agents: "Agents",
+    trace: "Trace",
+  };
+
+  return (
+    <div className="sidebar">
+      <div className="sidebar-tabs">
+        {panels.map(p => (
+          <button
+            key={p}
+            className={`sidebar-tab ${activeTab === p ? "sidebar-tab--active" : ""}`}
+            onClick={() => setActiveTab(p)}
+          >
+            {tabLabels[p]}
+            {p === "conflicts" && conflicts.length > 0 && (
+              <span className="tab-badge">{conflicts.length}</span>
+            )}
+          </button>
+        ))}
+      </div>
+      <div className="sidebar-content">
+        {activeTab === "memory" && <MemoryPanel />}
+        {activeTab === "behaviors" && (
+          <BehaviorsPanel core={coreBehaviors} contextual={contextualBehaviors} />
+        )}
+        {activeTab === "conflicts" && (
+          <ConflictsPanel
+            conflicts={conflicts}
+            onDismiss={onDismissConflict}
+            onSynthesize={onSynthesize}
+          />
+        )}
+        {activeTab === "agents" && <AgentsPanel agents={dynamicAgents} />}
+        {activeTab === "trace" && <TracePanel />}
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 
 function App() {
@@ -404,6 +910,15 @@ function App() {
   const [systemPrompt, setSystemPrompt] = useState("");
   const [connected, setConnected] = useState(false);
 
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    return localStorage.getItem("sidebarOpen") === "true";
+  });
+  const [availablePanels, setAvailablePanels] = useState<PanelId[]>([]);
+  const [conflicts, setConflicts] = useState<ConflictRecord[]>([]);
+  const [coreBehaviors, setCoreBehaviors] = useState<BehaviorRecord[]>([]);
+  const [contextualBehaviors, setContextualBehaviors] = useState<ContextualBehaviorRecord[]>([]);
+
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -411,7 +926,6 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
-  // Update a single message in state
   const upsertMessage = useCallback((msg: ChatMessage) => {
     setMessages((prev) => {
       const idx = prev.findIndex((m) => m.id === msg.id);
@@ -422,13 +936,41 @@ function App() {
     });
   }, []);
 
+  // Persist sidebar state
+  useEffect(() => {
+    localStorage.setItem("sidebarOpen", sidebarOpen ? "true" : "false");
+  }, [sidebarOpen]);
+
+  // Fetch capabilities on connect
+  const fetchCapabilities = useCallback(async () => {
+    try {
+      const res = await fetch("/api/capabilities");
+      const data = await res.json() as { panels: PanelId[] };
+      setAvailablePanels(data.panels);
+    } catch {
+      // non-critical
+    }
+  }, []);
+
+  // Fetch existing conflicts on connect
+  const fetchConflicts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/behaviors/conflicts");
+      if (res.ok) {
+        const data = await res.json() as ConflictRecord[];
+        setConflicts(data);
+      }
+    } catch {
+      // non-critical
+    }
+  }, []);
+
   // WebSocket connection
   useEffect(() => {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${protocol}//${location.host}/ws`);
     wsRef.current = ws;
 
-    ws.onopen = () => setConnected(true);
     ws.onclose = () => setConnected(false);
 
     ws.onmessage = (ev) => {
@@ -471,19 +1013,40 @@ function App() {
           setSystemPrompt(msg.systemPrompt);
           setCurrentModel(msg.model);
           break;
+        case "behavior_conflict":
+          setConflicts(prev => {
+            const key = [msg.newId, msg.conflictId].sort().join("::");
+            const exists = prev.some(c =>
+              [c.newId, c.conflictId].sort().join("::") === key
+            );
+            if (exists) return prev;
+            return [...prev, {
+              newId: msg.newId,
+              newText: msg.newText,
+              conflictId: msg.conflictId,
+              conflictText: msg.conflictText,
+              score: msg.score,
+              timestamp: Date.now(),
+            }];
+          });
+          break;
+        case "behaviors_loaded":
+          setCoreBehaviors(msg.core);
+          setContextualBehaviors(msg.contextual);
+          break;
       }
     };
 
-    // Request system prompt on connect
     ws.onopen = () => {
       setConnected(true);
       ws.send(JSON.stringify({ type: "system_prompt_request" }));
+      fetchCapabilities();
+      fetchConflicts();
     };
 
     return () => ws.close();
-  }, [upsertMessage]);
+  }, [upsertMessage, fetchCapabilities, fetchConflicts]);
 
-  // Auto-scroll when messages change
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
@@ -605,8 +1168,6 @@ function App() {
     [messages, currentModel, systemPrompt, sendToWs],
   );
 
-  // ── Submit ───────────────────────────────────────────────────────────────────
-
   const handleSubmit = useCallback(
     (text: string) => {
       if (!handleSlash(text)) {
@@ -616,8 +1177,6 @@ function App() {
     [handleSlash, sendToWs],
   );
 
-  // ── Permission response ──────────────────────────────────────────────────────
-
   const handlePermission = useCallback(
     (response: "yes" | "always" | "no") => {
       setPendingPermission(null);
@@ -626,51 +1185,96 @@ function App() {
     [sendToWs],
   );
 
+  const handleDismissConflict = useCallback(async (c: ConflictRecord) => {
+    const key = [c.newId, c.conflictId].sort().join("::");
+    await fetch(`/api/behaviors/conflicts/${encodeURIComponent(key)}`, { method: "DELETE" });
+    setConflicts(prev =>
+      prev.filter(x => !(x.newId === c.newId && x.conflictId === c.conflictId))
+    );
+  }, []);
+
+  const handleSynthesize = useCallback(async (c: ConflictRecord) => {
+    // Remove conflict after synthesis completes
+    setConflicts(prev =>
+      prev.filter(x => !(x.newId === c.newId && x.conflictId === c.conflictId))
+    );
+  }, []);
+
   const isBlocked = state === "thinking" || !!pendingPermission;
+  const showSidebar = sidebarOpen && availablePanels.length > 0;
 
   return (
-    <div className="app">
-      <header className="header">
-        <span className="header-title">2b</span>
-        <span className="header-model">
-          {connected ? currentModel || "connected" : "connecting…"}
-        </span>
-      </header>
+    <div className={`app-shell ${showSidebar ? "app-shell--sidebar-open" : ""}`}>
+      {/* Chat column */}
+      <div className="app">
+        <header className="header">
+          <span className="header-title">2b</span>
+          <div className="header-right">
+            <span className="header-model">
+              {connected ? currentModel || "connected" : "connecting…"}
+            </span>
+            {availablePanels.length > 0 && (
+              <button
+                className="sidebar-toggle"
+                onClick={() => setSidebarOpen(v => !v)}
+                title={sidebarOpen ? "Close panel" : "Open panel"}
+              >
+                {sidebarOpen ? "⊠" : "⊞"}
+                {!sidebarOpen && conflicts.length > 0 && (
+                  <span className="tab-badge">{conflicts.length}</span>
+                )}
+              </button>
+            )}
+          </div>
+        </header>
 
-      <div className="messages">
-        {messages.map((msg) => (
-          <MessageItem
-            key={msg.id}
-            message={msg}
-            showReasoning={showReasoning}
-          />
-        ))}
-        <div ref={messagesEndRef} />
+        <div className="messages">
+          {messages.map((msg) => (
+            <MessageItem
+              key={msg.id}
+              message={msg}
+              showReasoning={showReasoning}
+            />
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <StatusArea
+          state={state}
+          activeTools={activeTools}
+          dynamicAgents={dynamicAgents}
+        />
+
+        {state === "thinking" && (
+          <div className="stop-area">
+            <button
+              className="stop-btn"
+              onClick={() => sendToWs({ type: "interrupt", scope: "all" })}
+            >
+              ■ Stop
+            </button>
+          </div>
+        )}
+
+        <ChatInput
+          isBlocked={isBlocked}
+          agentState={state}
+          onSubmit={handleSubmit}
+        />
       </div>
 
-      <StatusArea
-        state={state}
-        activeTools={activeTools}
-        dynamicAgents={dynamicAgents}
-        model=""
-      />
-
-      {state === "thinking" && (
-        <div className="stop-area">
-          <button
-            className="stop-btn"
-            onClick={() => sendToWs({ type: "interrupt", scope: "all" })}
-          >
-            ■ Stop
-          </button>
-        </div>
+      {/* Sidebar */}
+      {showSidebar && (
+        <Sidebar
+          panels={availablePanels}
+          conflicts={conflicts}
+          coreBehaviors={coreBehaviors}
+          contextualBehaviors={contextualBehaviors}
+          dynamicAgents={dynamicAgents}
+          onDismissConflict={handleDismissConflict}
+          onSynthesize={handleSynthesize}
+        />
       )}
-
-      <ChatInput
-        isBlocked={isBlocked}
-        agentState={state}
-        onSubmit={handleSubmit}
-      />
 
       {pendingPermission && (
         <PermissionDialog
