@@ -1,3 +1,18 @@
+/**
+ * SubAgentPlugin — wraps a single HeadlessAgent as a named tool on the
+ * orchestrator.
+ *
+ * Used for static sub-agents that are always available (e.g. explore_codebase).
+ * For runtime-spawned agents use DynamicAgentPlugin instead.
+ *
+ * Exposes one tool whose name and description are set at construction time.
+ * Sub-agent tool calls are forwarded to the parent agent's "subagent_tool_call"
+ * event so the UI can display them. Token stream is forwarded via "subagent_token".
+ *
+ * Optionally enforces:
+ *   - inactivityTimeoutMs: reset on each tool call from the sub-agent
+ *   - absoluteTimeoutMs: hard cap on the entire ask() call
+ */
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import type { BaseAgent } from "../core/BaseAgent.ts";
 import type { HeadlessAgent } from "../core/HeadlessAgent.ts";

@@ -1,3 +1,29 @@
+/**
+ * BaseAgent — core event-driven orchestrator for the 2b agent framework.
+ *
+ * Manages two input queues and a heartbeat tick loop:
+ *   - directQueue  — messages that require an LLM response (addDirect)
+ *   - ambientQueue — passive perceptions; the LLM may reply [IGNORE] (addAmbient)
+ *
+ * Each tick drains both queues, assembles a system prompt from all plugins,
+ * collects conversation history, builds the tool list, calls the LLM, dispatches
+ * the response to plugins via onMessage, and emits "speak". Then schedules the
+ * next heartbeat.
+ *
+ * Plugin hooks called per tick (all wrapped in try-catch):
+ *   getSystemPromptFragment, getContext, getTools, executeTool,
+ *   onMessage, augmentResponse, onBeforeToolCall
+ *
+ * Tool dispatch: buildTools() wraps every plugin tool with permission gating
+ * (via PermissionManager) and veto checks (onBeforeToolCall). The result is
+ * cached in cachedTools and invalidated when new plugins are registered.
+ *
+ * Critical: this class is on every message path. Every user turn goes through
+ * tick() → act(). Errors in act() are caught, the queues are restored, and the
+ * "error" event is emitted — the tick loop continues.
+ *
+ * Use CortexAgent instead of BaseAgent directly for all new agents.
+ */
 import { EventEmitter } from "node:events";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import type { AgentPlugin, ToolDefinition } from "./Plugin.ts";
@@ -374,6 +400,22 @@ export class BaseAgent extends EventEmitter {
     return this.cachedTools;
   }
 
+  /**
+   * Core per-turn handler. Called by tick() when there is input to process.
+   *
+   * Sequence:
+   * 1. Emit state_change("thinking") and create an AbortController for this call.
+   * 2. Collect conversation history from plugins (collectMessages).
+   * 3. Assemble the system prompt from plugins (collectSystemPrompt).
+   * 4. Get the cached tool list (collectTools).
+   * 5. Call the LLM.
+   * 6. If ambient-only and the response is [IGNORE], return silently.
+   * 7. Run augmentResponse chain so plugins can transform the output.
+   * 8. Dispatch the final response to all plugins via onMessage.
+   * 9. Emit "speak" with the final response text.
+   *
+   * state_change("idle") is emitted in tick()'s finally block, not here.
+   */
   private async act(direct: string[], ambient: string[]) {
     this.emit("state_change", "thinking");
     this.currentAbortController = new AbortController();
