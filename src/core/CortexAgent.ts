@@ -1,3 +1,23 @@
+/**
+ * CortexAgent — the preferred top-level agent class for all new agents.
+ *
+ * Wraps BaseAgent and pre-registers three core plugins at construction time:
+ *   - CortexMemoryPlugin  — semantic long-term memory (SQLite-backed)
+ *   - ThoughtPlugin       — extracts <think> blocks from LLM output and emits them
+ *   - MetacognitionPlugin — reads recent thoughts and surfaces behavioral insights
+ *
+ * The public API is a thin proxy to the inner BaseAgent — all methods forward
+ * through. This façade pattern keeps the cortex-specific setup isolated while
+ * preserving a clean, identical interface to callers.
+ *
+ * Critical: every message path goes through this class. Changes to constructor
+ * setup (plugin registration order, systemPrompt augmentation) affect all agents.
+ *
+ * Depends on:
+ *   - LLMProvider — the LLM connection (LMStudio by default)
+ *   - AgentConfig.cortexName / .name — determines SQLite filename for memory
+ *   - AgentConfig.memoryDbPath — override to ":memory:" in tests
+ */
 import { BaseAgent } from "./BaseAgent.ts";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import type { AgentPlugin } from "./Plugin.ts";
@@ -9,9 +29,22 @@ import { MetacognitionPlugin } from "../plugins/MetacognitionPlugin.ts";
 
 export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
   private inner: BaseAgent;
+  /**
+   * The CortexMemoryPlugin registered for this agent. Exposed so that
+   * DynamicAgentPlugin can pass it as `parentMemory` to sub-agents, allowing
+   * them to read the orchestrator's memories at task time.
+   */
   public readonly memoryPlugin: CortexMemoryPlugin;
 
+  /**
+   * @param llm             Primary LLM provider used for inference and memory operations.
+   * @param config          Agent configuration — see AgentConfig in types.ts.
+   * @param synthesisProvider Optional secondary LLM for ThoughtPlugin behavioral synthesis.
+   *                          Defaults to `llm` if omitted.
+   */
   constructor(llm: LLMProvider, config: AgentConfig, synthesisProvider?: LLMProvider) {
+    // Append cortex-specific directives after the caller's system prompt so they
+    // can't accidentally be overridden and always appear in every tick.
     const cortexSystemPrompt = [
       config.systemPrompt,
       "You have internal thoughts stored in thought memory. Review recent thoughts before responding.",

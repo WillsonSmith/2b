@@ -1,3 +1,19 @@
+/**
+ * ShellPlugin — restricted read-only shell access.
+ *
+ * Exposes a single `run_shell` tool. Commands are validated against an
+ * allowlist before execution:
+ *   - Only commands in ALLOWED_COMMANDS may be run.
+ *   - `git` is further restricted to read-only subcommands (ALLOWED_GIT_SUBCOMMANDS).
+ *   - `find` blocks action flags (-exec, -delete, etc.) via BLOCKED_ARGS.
+ *   - Shell operators (|, &&, >, ;) are blocked by refusing to pass the command
+ *     to a shell — it is split on whitespace and spawned directly via Bun.spawn.
+ *   - ANSI escape sequences are stripped from output before returning.
+ *   - stdout is capped at 4 KB; stderr at 1 KB to keep tool results small.
+ *
+ * Critical: the lack of a shell interpreter is the primary sandboxing mechanism.
+ * If you ever switch to `sh -c` or similar, all shell injection guards break.
+ */
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { logger } from "../logger.ts";
 import { resolve } from "node:path";

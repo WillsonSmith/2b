@@ -1,3 +1,26 @@
+/**
+ * ScratchPlugin — session scratch pad and active-goal system.
+ *
+ * Two responsibilities:
+ *
+ * 1. **Scratch pad**: temp files stored in OS tmpdir under a per-session UUID
+ *    directory. The agent can write named text snippets before context
+ *    summarization erases them, then retrieve them verbatim later. The file
+ *    index is injected into `getContext()` every turn so the list itself
+ *    survives summarization even if the messages describing what was written
+ *    do not.
+ *
+ * 2. **Active goal**: a plain string pinned into `getSystemPromptFragment()`
+ *    for the lifetime of the session. The LLM calls `set_active_goal` when
+ *    it receives a multi-turn task; the goal text appears in every subsequent
+ *    system prompt and survives message summarization. Cleared via
+ *    `clear_active_goal` when the task finishes.
+ *
+ * Neither system is persisted to disk between sessions. All state is in-memory
+ * (or in OS tmpdir, which the OS cleans on reboot).
+ *
+ * Depends on: OS tmpdir (node:os), Bun.file / Bun.write for file I/O.
+ */
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { logger } from "../logger.ts";
 import { tmpdir } from "node:os";
@@ -36,6 +59,11 @@ export class ScratchPlugin implements AgentPlugin {
 
   readonly sessionDir: string;
   private initialized = false;
+  /**
+   * In-memory active goal string. Injected into every system prompt via
+   * getSystemPromptFragment() so it survives MemoryPlugin's summarization cycle.
+   * Null means no active goal.
+   */
   private activeGoal: string | null = null;
 
   constructor(sessionId?: string) {

@@ -1,3 +1,36 @@
+/**
+ * Web UI entry point — Bun HTTP + WebSocket server.
+ *
+ * Serves the bundled SPA (index.html) and upgrades any WebSocket connection to
+ * a real-time agent session. Only one WebSocket client is tracked at a time
+ * (`activeWs`); a new connection replaces the previous one's event listeners.
+ *
+ * WebSocket message protocol (client → server):
+ *   { type: "send",              text }
+ *   { type: "interrupt",         scope: "main"|"subagents"|"all" }
+ *   { type: "clear" }
+ *   { type: "permission_response", response: "yes"|"always"|"no" }
+ *   { type: "model_change",      model }
+ *   { type: "system_prompt_request" }
+ *
+ * WebSocket message protocol (server → client):
+ *   { type: "snapshot",          ...session.getSnapshot() }
+ *   { type: "message",           message }
+ *   { type: "message_updated",   message }
+ *   { type: "state_change",      state }
+ *   { type: "active_tools_changed", tools }
+ *   { type: "dynamic_agents_changed", agents }
+ *   { type: "permission_request", ...request }   — via WebPermissionManager transport
+ *   { type: "model_changed",     model }
+ *   { type: "system_prompt",     systemPrompt, model }
+ *
+ * The `lastPermissionToolName` module-level variable is a workaround: the
+ * WebPermissionManager resolves approvals asynchronously, so the "always"
+ * response handler needs to know which tool to cache — it reads this.
+ *
+ * Critical: `agent.start()` must be called before `Bun.serve()` so plugins
+ * are ready before the first WebSocket message arrives.
+ */
 import type { ServerWebSocket } from "bun";
 import type { CortexAgent } from "../../core/CortexAgent.ts";
 import { ChatSession } from "../ChatSession.ts";

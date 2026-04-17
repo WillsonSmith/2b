@@ -1,3 +1,15 @@
+/**
+ * Factory for the CodebaseExplainerAgent — the static sub-agent behind the
+ * `explore_codebase` tool in 2b.ts.
+ *
+ * Produces a read-only HeadlessAgent with SourceReaderPlugin. It can browse
+ * directories, read source files, and grep for symbols — but cannot modify
+ * anything.
+ *
+ * Critical: this is the only static sub-agent in the system. All other domain
+ * agents are constructed dynamically by DynamicAgentPlugin presets or at
+ * runtime via create_agent.
+ */
 import { HeadlessAgent } from "../../core/HeadlessAgent.ts";
 import type { LLMProvider } from "../../providers/llm/LLMProvider.ts";
 import { SourceReaderPlugin } from "../../plugins/SourceReaderPlugin.ts";
@@ -29,6 +41,14 @@ export interface CodebaseExplainerAgentOptions {
   onToken?: (token: string, isReasoning: boolean) => void;
 }
 
+/**
+ * Constructs a CodebaseExplainerAgent scoped to `options.sourceRoot`.
+ *
+ * @param llm     LLM provider — same instance as the orchestrator's.
+ * @param options.sourceRoot  Absolute path to the `src/` directory to expose.
+ *                            Defaults to cwd if omitted.
+ * @param options.onToken     Optional token callback for debug streaming.
+ */
 export function createCodebaseExplainerAgent(
   llm: LLMProvider,
   options: CodebaseExplainerAgentOptions = {},

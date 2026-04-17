@@ -1,3 +1,22 @@
+/**
+ * HeadlessAgent — stateless single-call agent, the building block for sub-agents.
+ *
+ * Each `ask()` call is fully independent: it collects system prompt fragments,
+ * builds the tool list, calls the LLM, and returns. No conversation history,
+ * no tick loop, no input sources.
+ *
+ * Plugin hooks NOT called: onInit, onMessage, getMessages, augmentResponse.
+ * Plugin hooks that ARE called per ask(): getSystemPromptFragment, getContext,
+ * getTools, executeTool.
+ *
+ * Security: the consecutive-tool circuit breaker (default: 5 calls per tool)
+ * prevents infinite loops when a model gets stuck retrying the same failing call.
+ * It resets when the model switches to a different tool.
+ *
+ * Critical: used as the backing agent for DynamicAgentPlugin's "headless" type
+ * and for static sub-agents registered via SubAgentPlugin. Changes here affect
+ * all spawned sub-agents.
+ */
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import type { AgentPlugin, ToolDefinition } from "./Plugin.ts";
 import type { Message } from "./types.ts";

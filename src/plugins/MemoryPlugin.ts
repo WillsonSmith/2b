@@ -1,9 +1,31 @@
+/**
+ * MemoryPlugin — short-term conversation history with automatic summarization.
+ *
+ * Stores the rolling message history that BaseAgent replays on each LLM call.
+ * When the history exceeds MAX_MESSAGES (default 15), it fires a background LLM
+ * pass to condense old messages into a structured summary, then optionally runs
+ * a second pass to extract reusable procedures. The trimmed history plus summary
+ * are what the agent "remembers" going forward.
+ *
+ * This is distinct from CortexMemoryPlugin (long-term semantic memory). This
+ * plugin manages the LLM's context window; CortexMemoryPlugin manages
+ * persistent cross-session knowledge.
+ *
+ * Critical: every user and assistant message passes through `onMessage()`.
+ * Breaking this interrupts the agent's ability to follow multi-turn conversations.
+ *
+ * Depends on:
+ *   - LLMProvider — used for the background summarization and procedure extraction calls
+ *   - BaseAgent.getLastSystemPrompt() — included in summarization so the LLM has context
+ *   - BaseAgent.requestMemoryWrite() — to persist summaries and procedures to long-term memory
+ */
 import type { Message } from "../core/types.ts";
 import type { AgentPlugin } from "../core/Plugin.ts";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import type { BaseAgent } from "../core/BaseAgent.ts";
 import { logger } from "../logger.ts";
 
+/** @see module-level JSDoc above for full description. */
 export class MemoryPlugin implements AgentPlugin {
   name = "MemoryPlugin";
 

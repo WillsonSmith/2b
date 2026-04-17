@@ -1,3 +1,16 @@
+/**
+ * ModelCapabilityProvider — transparent decorator over any LLMProvider.
+ *
+ * Intercepts every `chat()` call to prepend a model-specific system prompt
+ * prefix (e.g. thinking-mode headers required by some models) before forwarding
+ * to the inner provider.
+ *
+ * Also surfaces `setModel` / `getModel` so the UI can hot-swap the active model
+ * without reconstructing the agent.
+ *
+ * Critical: all inference goes through this class. Adding a new capability
+ * (e.g. per-model max-tokens injection) belongs here.
+ */
 import type { LLMProvider, ChatResponse } from "./LLMProvider.ts";
 import type { ToolDefinition } from "../../core/Plugin.ts";
 import type { Message } from "../../core/types.ts";
@@ -29,6 +42,8 @@ export class ModelCapabilityProvider implements LLMProvider {
     onToken?: (token: string, isReasoning: boolean) => void,
   ): Promise<ChatResponse> {
     const { systemPromptPrefix } = getModelCapabilities(this.model);
+    // Build the effective system prompt: prefix takes precedence over a missing
+    // base prompt, but is always prepended when both are present.
     const effectivePrompt =
       systemPromptPrefix && systemPrompt !== undefined
         ? `${systemPromptPrefix}${systemPrompt}`

@@ -5,6 +5,10 @@ import { ModelCapabilityProvider } from "./ModelCapabilityProvider.ts";
 /**
  * Constructs an LLMProvider from environment variables.
  *
+ * Always returns a ModelCapabilityProvider wrapping the concrete backend so
+ * model-specific system prompt prefixes are applied transparently, and so
+ * `setModel()` / `getModel()` are always available for hot-swapping.
+ *
  * Set PROVIDER=ollama to use Ollama, otherwise LMStudio is used.
  *
  * Shared env vars:

@@ -1,3 +1,25 @@
+/**
+ * DynamicAgentPlugin — runtime sub-agent spawning and dispatch.
+ *
+ * Exposes four LLM-callable tools: list_capabilities, create_agent, call_agent,
+ * list_agents. When the LLM calls create_agent, the plugin constructs either a
+ * stateless HeadlessAgent or a persistent CortexSubAgent, wires up event
+ * forwarding to the parent, and stores it in the registry.
+ *
+ * All tool events emitted by sub-agents bubble up through the parent's
+ * "subagent_tool_call" event so the UI can display them without subscribing
+ * to each sub-agent individually.
+ *
+ * Critical: this plugin is on the path of every create_agent / call_agent
+ * invocation. Spawning a cortex agent creates a CortexSubAgent instance with
+ * in-memory SQLite — those stay alive for the session.
+ *
+ * Depends on:
+ *   - CAPABILITY_REGISTRY — maps capability names to plugin builder functions
+ *   - LLMProvider and PermissionManager passed at construction
+ *   - parentMemory (optional) — CortexMemoryPlugin from the orchestrator;
+ *     injected into cortex sub-agents via ParentMemoryBridgePlugin
+ */
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import type { BaseAgent } from "../core/BaseAgent.ts";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
@@ -187,6 +209,7 @@ export class DynamicAgentPlugin implements AgentPlugin {
   name = "DynamicAgent";
   private parentAgent?: BaseAgent;
   private readonly registry = new Map<string, DynamicAgentEntry>();
+  /** Tracks in-flight ask() calls so interruptAll() can cancel them. */
   private readonly activeAsks = new Set<AskableAgent>();
   private readonly llm: LLMProvider;
   private readonly permissionManager?: PermissionManager;
@@ -392,6 +415,8 @@ export class DynamicAgentPlugin implements AgentPlugin {
     if (this.parentAgent) {
       const parent = this.parentAgent;
 
+      // Forward every sub-agent tool call to the parent so UI subscribers
+      // (e.g. TerminalUI) can display them without wiring each sub-agent.
       agent.setToolCallHandler((toolName, toolArgs) => {
         parent.emit(
           "subagent_tool_call",
@@ -402,6 +427,8 @@ export class DynamicAgentPlugin implements AgentPlugin {
         );
       });
 
+      // Cortex sub-agents also emit state and error events so the UI can show
+      // per-agent thinking/idle state transitions.
       if (agentType === "cortex") {
         const cortexAgent = agent as CortexSubAgent;
         cortexAgent.setStateChangeHandler((state) => {
