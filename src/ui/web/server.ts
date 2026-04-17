@@ -32,6 +32,7 @@
  *   PATCH /api/memories/:id          → { content: string }
  *   DELETE /api/memories/:id
  *   GET  /api/behaviors/conflicts    → ConflictRecord[]
+ *   DELETE /api/behaviors/conflicts/:key
  *   POST /api/behaviors/synthesize   → { id_a, id_b }
  *   GET  /api/agents                 → DynamicAgentRecord[]
  *   GET  /api/trace/last             → RetrievalTrace | null
@@ -47,6 +48,7 @@ import type { ServerWebSocket } from "bun";
 import type { CortexAgent } from "../../core/CortexAgent.ts";
 import type { CortexMemoryPlugin } from "../../plugins/CortexMemoryPlugin.ts";
 import type { BehaviorPlugin } from "../../plugins/BehaviorPlugin.ts";
+import type { MemoryFilter } from "../../plugins/CortexMemoryDatabase.ts";
 import { ChatSession } from "../ChatSession.ts";
 import type { WebPermissionManager } from "./WebPermissionManager.ts";
 import index from "./index.html";
@@ -174,11 +176,11 @@ export async function startWebUI({
     const limit = Math.min(200, parseInt(url.searchParams.get("limit") ?? "50", 10));
     const search = url.searchParams.get("search") ?? undefined;
 
-    const filter: Record<string, unknown> = { limit };
+    const filter: MemoryFilter = { limit };
     if (type && type !== "all") filter.types = [type];
     if (search) filter.contains = search;
 
-    const rows = memoryPlugin.queryMemoriesRaw(filter as any);
+    const rows = memoryPlugin.queryMemoriesRaw(filter);
     return json(rows);
   }
 
@@ -208,6 +210,14 @@ export async function startWebUI({
   function handleGetConflicts(): Response {
     if (!behaviorPlugin) return jsonError("Behavior plugin not available", 503);
     return json(behaviorPlugin.getConflicts());
+  }
+
+  function handleDismissConflict(req: Request): Response {
+    if (!behaviorPlugin) return jsonError("Behavior plugin not available", 503);
+    const key = decodeURIComponent(new URL(req.url).pathname.split("/").at(-1) ?? "");
+    if (!key) return jsonError("Conflict key required");
+    behaviorPlugin.dismissConflict(key);
+    return json({ ok: true });
   }
 
   async function handleSynthesize(req: Request): Promise<Response> {
@@ -251,6 +261,7 @@ export async function startWebUI({
         },
       },
       "/api/behaviors/conflicts": { GET: handleGetConflicts },
+      "/api/behaviors/conflicts/:key": { DELETE: handleDismissConflict },
       "/api/behaviors/synthesize": { POST: handleSynthesize },
       "/api/agents": { GET: handleGetAgents },
       "/api/trace/last": { GET: handleGetTrace },

@@ -735,6 +735,13 @@ export class CortexMemoryDatabase {
     this.db.prepare("UPDATE memories SET status = ? WHERE id = ?").run(status, id);
   }
 
+  /** Mark a memory as superseded and set its forward pointer to the replacement. */
+  public setSupersededBy(oldId: string, newId: string): void {
+    this.db
+      .prepare("UPDATE memories SET status = 'superseded', superseded_by_id = ? WHERE id = ?")
+      .run(newId, oldId);
+  }
+
   /** Retrieve a memory by ID, including its tags, weight, and lineage columns. */
   public async getMemoryById(id: string): Promise<{
     id: string;

@@ -55,8 +55,8 @@ export class BehaviorPlugin implements AgentPlugin {
   /** Profile behaviors loaded via activate_profile — injected until session ends. */
   private profileBehaviors: Array<{ id: string; text: string; weight: number }> = [];
 
-  /** Pending conflict queue — exposed to web UI via REST. */
-  public pendingConflicts: Map<string, ConflictRecord> = new Map();
+  /** Pending conflict queue — accessed externally only via getConflicts() and dismissConflict(). */
+  private pendingConflicts: Map<string, ConflictRecord> = new Map();
 
   constructor(memoryPlugin: CortexMemoryPlugin, llm: LLMProvider) {
     this.memoryPlugin = memoryPlugin;
