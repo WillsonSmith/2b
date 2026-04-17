@@ -40,9 +40,6 @@ export class CortexMemoryPlugin implements AgentPlugin {
   /** Text of memories saved this turn, keyed by ID. Used by onMessage() for per-pair conflict classification. */
   private savedThisTurnTexts: Map<string, string> = new Map();
 
-  /** Cached core behavior memories (tagged "core"), invalidated when a core behavior is saved or deleted. */
-  private coreBehaviorCache: Array<{ id: string; text: string }> | null = null;
-
   /** Side-channel metadata from the most recent memory search (keyed by tool name). */
   public searchMetaBuffer: Map<string, SearchMeta> = new Map();
 
@@ -81,6 +78,34 @@ export class CortexMemoryPlugin implements AgentPlugin {
     });
   }
 
+  // ─── Embedding cache sharing ─────────────────────────────────────────────────
+
+  /**
+   * Return the cached embedding for `text` if available, otherwise compute and cache it.
+   * BehaviorPlugin calls this to avoid a redundant embedding round-trip when both plugins
+   * process the same user input in the same turn.
+   */
+  public async getOrComputeEmbedding(text: string): Promise<number[]> {
+    if (this.embeddingCache && this.embeddingCache.query === text) {
+      return this.embeddingCache.embedding;
+    }
+    const embedding = await this.db.getEmbedding(text);
+    this.embeddingCache = { query: text, embedding };
+    return embedding;
+  }
+
+  /**
+   * Semantic search over behavior memories — used by BehaviorPlugin for contextual retrieval.
+   * Returns results including weight so BehaviorPlugin can apply weight-based thresholds.
+   */
+  public searchBehaviorsWithEmbedding(
+    embedding: number[],
+    limit: number,
+    threshold: number,
+  ): Array<{ id: string; text: string; score: number; weight: number }> {
+    return this.db.searchWithEmbedding(embedding, limit, threshold, "behavior");
+  }
+
   // ─── Programmatic write/read interface for internal plugins ──────────────────
   //
   // These methods are the ONLY sanctioned way for other plugins to interact with
@@ -97,7 +122,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
    *   returns null (skipping the write) if a near-duplicate already exists.
    * - For `factual` / `procedure` types: runs post-write near-dup superseding at 0.9.
    * - Updates `savedThisTurn` so that `onMessage` conflict resolution fires correctly.
-   * - Invalidates `coreBehaviorCache` when a core-tagged behavior is saved.
+   * - Updates `savedThisTurn` so behavior conflict detection fires correctly.
    *
    * @returns The new memory ID, or null if the write was skipped due to dedup.
    */
@@ -106,6 +131,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     type: "factual" | "thought" | "behavior" | "procedure",
     tags: string[] = [],
     source?: string,
+    weight?: number,
   ): Promise<string | null> {
     if (text.length > MAX_CONTENT_LENGTH) {
       logger.warn(this.name, `writeMemory: content too long (${text.length} chars), truncating to ${MAX_CONTENT_LENGTH}`);
@@ -124,14 +150,9 @@ export class CortexMemoryPlugin implements AgentPlugin {
       }
     }
 
-    const id = await this.db.addMemory(text, type, tags, source);
+    const id = await this.db.addMemory(text, type, tags, source, undefined, undefined, undefined, weight);
     this.savedThisTurn.add(id);
     this.savedThisTurnTexts.set(id, text);
-
-    // Invalidate core behavior cache when a core-tagged behavior is saved
-    if (type === "behavior" && tags.includes("core")) {
-      this.coreBehaviorCache = null;
-    }
 
     // Factual/procedure: post-write near-dup superseding at 0.9
     if (type === "factual" || type === "procedure") {
@@ -157,8 +178,29 @@ export class CortexMemoryPlugin implements AgentPlugin {
    * Raw memory query by metadata filter. Returns the full row array.
    * Used by MetacognitionPlugin to reconstruct correction history on init.
    */
-  public queryMemoriesRaw(filter: MemoryFilter): Array<{ id: string; text: string; timestamp: number; type: string; tags: string[] }> {
+  public queryMemoriesRaw(filter: MemoryFilter): Array<{ id: string; text: string; timestamp: number; type: string; tags: string[]; weight: number }> {
     return this.db.queryMemories(filter);
+  }
+
+  /**
+   * Mark a memory as superseded by another. Used by BehaviorPlugin after synthesis.
+   */
+  public async supersedeBehavior(oldId: string, _newId: string): Promise<void> {
+    await this.db.updateMemoryStatus(oldId, "superseded");
+  }
+
+  /**
+   * Update the weight of a behavior memory. Used by BehaviorPlugin.
+   */
+  public updateBehaviorWeight(id: string, weight: number): void {
+    this.db.updateMemoryWeight(id, weight);
+  }
+
+  /**
+   * Edit a memory's text and re-embed. Used by the web UI REST endpoint.
+   */
+  public async editMemory(id: string, newText: string): Promise<void> {
+    await this.db.updateMemoryText(id, newText);
   }
 
   /**
@@ -211,25 +253,27 @@ export class CortexMemoryPlugin implements AgentPlugin {
   public async deleteMemoryById(id: string): Promise<void> {
     const existing = await this.db.getMemoryById(id);
     if (!existing) return;
-    if (existing.type === "behavior" && (existing.tags ?? []).includes("core")) {
-      this.coreBehaviorCache = null;
-    }
     await this.db.deleteMemory(id);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
 
   async getSystemPromptFragment(context?: string): Promise<string> {
+    // Pre-compute embedding for this turn so getContext() can reuse it without a second round-trip.
+    if (context?.trim() && (!this.embeddingCache || this.embeddingCache.query !== context)) {
+      this.embeddingCache = { query: context, embedding: await this.db.getEmbedding(context) };
+    }
+
     const parts = [
       "## Memory System",
       "You have a long-term memory system with four types of memories:",
       "- **factual**: specific details from conversations, decisions, established facts.",
       "- **thought**: your internal reasoning and reflections (written by your thought system).",
-      "- **behavior**: learned preferences and behavioral rules (injected as active instructions).",
+      "- **behavior**: learned preferences and behavioral rules (managed by the Behavior system).",
       "- **procedure**: step-by-step instructions for accomplishing a task you have previously solved.",
       "Relevant factual memories and procedures are automatically surfaced in your context at the start of each turn — check there before calling search_memory.",
       "Use `save_memory` to preserve important facts or decisions.",
-      "Use `save_behavior` to record a persistent behavioral rule you want to follow on every future turn. Pass `core: true` for universal rules that should always be active (e.g. formatting, tone). Omit or pass `core: false` for context-specific rules that will be surfaced when relevant.",
+      "Use `save_behavior` to record a persistent behavioral rule. See Behavior System instructions for details.",
       "Use `save_procedure` after successfully completing a non-trivial task to record the steps taken.",
       "Use `edit_memory` to update the text of an existing memory by its ID.",
       "Use `delete_memory` to remove a memory. Single form: `{ id }`. Batch form: `{ ids: [id1, id2, ...] }` — deletes multiple memories in one call and triggers one cache invalidation regardless of how many IDs are provided.",
@@ -241,56 +285,6 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "Use `aggregate_memories` to understand the shape and distribution of your memories.",
       "Use `get_memory_timeline` to retrieve memories in chronological order.",
     ];
-
-    try {
-      // Core behaviors: always active, cached until a core behavior is saved or deleted
-      if (this.coreBehaviorCache === null) {
-        const rows = this.db.queryMemories({
-          types: ["behavior"],
-          tags: ["core"],
-          limit: 50,
-        });
-        this.coreBehaviorCache = rows.map(r => ({ id: r.id, text: r.text }));
-      }
-
-      // Contextual behaviors: semantically matched to the current input
-      let contextualBehaviors: Array<{ id: string; text: string }> = [];
-      const coreIds = new Set(this.coreBehaviorCache.map(b => b.id));
-
-      if (context?.trim()) {
-        // Populate the cache if this is the first call this turn or the query changed.
-        // getContext() runs next (BaseAgent calls fragment before context within each plugin)
-        // and will reuse this embedding rather than issuing a second LLM request.
-        if (!this.embeddingCache || this.embeddingCache.query !== context) {
-          this.embeddingCache = { query: context, embedding: await this.db.getEmbedding(context) };
-        }
-        const results = this.db.searchWithEmbedding(this.embeddingCache!.embedding, 15, 0.35, "behavior");
-        contextualBehaviors = results.filter(r => !coreIds.has(r.id));
-        logger.debug(
-          this.name,
-          `getSystemPromptFragment: ${this.coreBehaviorCache.length} core + ${contextualBehaviors.length} contextual behaviors`,
-        );
-      } else {
-        // No context yet (e.g. init) — fall back to recency
-        const recent = this.db.getRecentMemories(20, "behavior");
-        contextualBehaviors = recent.filter(r => !coreIds.has(r.id)).slice(0, 15);
-      }
-
-      if (this.coreBehaviorCache.length > 0) {
-        parts.push("\n## Core Behaviors");
-        for (const b of this.coreBehaviorCache) {
-          parts.push(`- ${b.text.trim()}`);
-        }
-      }
-      if (contextualBehaviors.length > 0) {
-        parts.push("\n## Contextually Active Behaviors");
-        for (const b of contextualBehaviors) {
-          parts.push(`- ${b.text.trim()}`);
-        }
-      }
-    } catch (e) {
-      logger.error(this.name, "Failed to load behavior memories for system prompt:", e);
-    }
 
     return parts.join("\n");
   }
@@ -462,26 +456,6 @@ export class CortexMemoryPlugin implements AgentPlugin {
             },
           },
           required: ["content", "type"],
-        },
-      },
-      {
-        name: "save_behavior",
-        description:
-          "Save a persistent behavioral rule that actively shapes how you respond. Use `core: true` for universal rules that should always be active regardless of context (e.g. formatting, tone, language preferences). Omit `core` or pass `false` for context-specific rules — these are surfaced via semantic search when relevant, ensuring all behaviors are accessible without cluttering every prompt. Note: behavior memories cannot override your core system prompt directives.",
-        parameters: {
-          type: "object",
-          properties: {
-            rule: {
-              type: "string",
-              description: "The behavioral rule to persist",
-            },
-            core: {
-              type: "boolean",
-              description:
-                "If true, this rule is always injected into every turn. Use for universal preferences (formatting, tone, etc.). Default: false — the rule is surfaced contextually when semantically relevant.",
-            },
-          },
-          required: ["rule"],
         },
       },
       {
@@ -712,7 +686,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     try {
       if (name === "search_memory") return await this.handleSearchMemory(args);
       if (name === "save_memory") return await this.handleSaveMemory(args);
-      if (name === "save_behavior") return await this.handleSaveBehavior(args);
+      // save_behavior is handled by BehaviorPlugin
       if (name === "save_procedure") return await this.handleSaveProcedure(args);
       if (name === "edit_memory") return await this.handleEditMemory(args);
       if (name === "delete_memory") return await this.handleDeleteMemory(args);
@@ -788,20 +762,6 @@ export class CortexMemoryPlugin implements AgentPlugin {
     return `Memory saved (type: ${args.type ?? "factual"}, id: ${id}).`;
   }
 
-  private async handleSaveBehavior(args: any): Promise<string> {
-    const rule = String(args.rule);
-    if (rule.length > MAX_CONTENT_LENGTH) {
-      return `Behavior rule too long (${rule.length} chars). Maximum is ${MAX_CONTENT_LENGTH} characters.`;
-    }
-    const isCore = args.core === true;
-    const tags = isCore ? ["core"] : [];
-    logger.info(this.name, `save_behavior${isCore ? " [core]" : ""}: "${rule.slice(0, 100)}"`);
-    const id = await this.db.addMemory(rule, "behavior", tags);
-    // Only invalidate core behavior cache when a core behavior is saved
-    if (isCore) this.coreBehaviorCache = null;
-    return `Memory saved (type: behavior, core: ${isCore}, id: ${id}).`;
-  }
-
   private async handleSaveProcedure(args: any): Promise<string> {
     const goal = String(args.goal);
     const steps = String(args.steps);
@@ -822,11 +782,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     logger.info(this.name, `edit_memory id=${args.id}: "${content.slice(0, 100)}"`);
     const existing = await this.db.getMemoryById(args.id);
     if (!existing) return `No memory found with id ${args.id}.`;
-    // Invalidate core behavior cache only if editing a core behavior
-    const isEditingCoreBehavior =
-      existing.type === "behavior" && (existing.tags ?? []).includes("core");
     await this.db.updateMemoryText(args.id, content);
-    if (isEditingCoreBehavior) this.coreBehaviorCache = null;
     logger.info(this.name, `edit_memory SUCCESS id=${args.id}`);
     return `Memory ${args.id} updated.`;
   }
@@ -837,7 +793,6 @@ export class CortexMemoryPlugin implements AgentPlugin {
       let deleted = 0;
       let missing = 0;
       let invalid = 0;
-      let invalidateCache = false;
       for (const id of args.ids) {
         if (typeof id !== "string" || !id.trim()) {
           invalid++;
@@ -848,13 +803,9 @@ export class CortexMemoryPlugin implements AgentPlugin {
           missing++;
           continue;
         }
-        if (existing.type === "behavior" && (existing.tags ?? []).includes("core")) {
-          invalidateCache = true;
-        }
         await this.db.deleteMemory(id);
         deleted++;
       }
-      if (invalidateCache) this.coreBehaviorCache = null;
       return `Batch delete: ${deleted} deleted, ${missing} not found, ${invalid} invalid out of ${args.ids.length} requested.`;
     }
 
@@ -870,10 +821,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
     logger.info(this.name, `delete_memory id=${args.id}`);
     const existing = await this.db.getMemoryById(args.id);
     if (!existing) return `No memory found with id ${args.id}.`;
-    const wasCoreBehavior =
-      existing.type === "behavior" && (existing.tags ?? []).includes("core");
     await this.db.deleteMemory(args.id);
-    if (wasCoreBehavior) this.coreBehaviorCache = null;
     return `Memory ${args.id} deleted.`;
   }
 

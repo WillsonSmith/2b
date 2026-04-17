@@ -33,6 +33,7 @@ import { WebPermissionManager } from "./src/ui/web/WebPermissionManager.ts";
 import type { AgentPlugin, ToolDefinition } from "./src/core/Plugin.ts";
 import { createCodebaseExplainerAgent } from "./src/agents/sub-agents/createCodebaseExplainerAgent.ts";
 import { ScratchPlugin } from "./src/plugins/ScratchPlugin.ts";
+import { BehaviorPlugin } from "./src/plugins/BehaviorPlugin.ts";
 import { DynamicAgentPlugin } from "./src/plugins/DynamicAgentPlugin.ts";
 import { FileSystemPlugin } from "./src/plugins/FileSystemPlugin.ts";
 import { ShellPlugin } from "./src/plugins/ShellPlugin.ts";
@@ -174,6 +175,8 @@ agent.registerPlugin(
   }),
 );
 
+const behaviorPlugin = new BehaviorPlugin(agent.memoryPlugin, llm);
+agent.registerPlugin(behaviorPlugin);
 agent.registerPlugin(new FileSystemPlugin());
 agent.registerPlugin(new ShellPlugin());
 agent.registerPlugin(minimalToolsPlugin);
@@ -192,6 +195,8 @@ if (useWeb) {
     permissionManager: permissionManager as WebPermissionManager,
     onModelChange: (newModel) => llm.setModel(newModel),
     port,
+    memoryPlugin: agent.memoryPlugin,
+    behaviorPlugin,
   });
 } else {
   await startTerminalUI({
