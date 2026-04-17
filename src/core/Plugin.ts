@@ -1,7 +1,38 @@
+/**
+ * Core plugin interface for the 2b agent framework.
+ *
+ * Every capability the agent has beyond raw LLM inference is delivered through a
+ * plugin. Plugins can contribute any combination of:
+ *   - Tools the LLM can invoke (`getTools` / `executeTool`)
+ *   - Persistent system-prompt context (`getSystemPromptFragment`)
+ *   - Per-turn injected context (`getContext`)
+ *   - Conversation history (`getMessages`)
+ *   - Side effects on each message (`onMessage`)
+ *   - Pre-tool guards (`onBeforeToolCall`)
+ *   - Post-response transformations (`augmentResponse`)
+ *
+ * All plugin hooks are called inside try-catch by BaseAgent — a throwing plugin
+ * never crashes the agent.
+ *
+ * Critical: this file is the contract every plugin must satisfy. Changing these
+ * interfaces is a breaking change for all plugins.
+ */
 import type { BaseAgent } from "./BaseAgent.ts";
 import type { Message } from "./types.ts";
 import type { PermissionLevel } from "./PermissionManager.ts";
 
+/**
+ * Describes a single callable tool that the LLM can invoke.
+ *
+ * If `implementation` is provided, BaseAgent calls it directly (used for inline
+ * tools in 2b.ts). If omitted, the call is routed to `executeTool` on the plugin
+ * that returned this definition from `getTools()`.
+ *
+ * `permission` controls whether the user must approve each call:
+ *   - "none"      — always auto-approved (default)
+ *   - "per_call"  — user approves each invocation
+ *   - "session"   — user approves once; subsequent calls in the session are auto-approved
+ */
 export interface ToolDefinition {
   name: string;
   description: string;

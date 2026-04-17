@@ -2,7 +2,18 @@
 /**
  * Entry point for the 2b agent.
  *
- * Defines the agent, registers plugins, then hands off to the terminal UI.
+ * Parses CLI flags, constructs the LLM provider and CortexAgent, registers all
+ * plugins in dependency order, then delegates to either the terminal or web UI.
+ *
+ * Depends on:
+ *   - MODEL env var (overridden by --model flag) — LMStudio model identifier
+ *   - PORT env var (overridden by --port flag) — web UI port, default 3000
+ *   - DEBUG_TOKENS env var or --debug-tokens flag — streams raw tokens to stdout
+ *
+ * Critical: this is the only file that wires the agent together. Plugin
+ * registration order is largely free — `agent.memoryPlugin` is the
+ * CortexMemoryPlugin created inside CortexAgent's constructor and is available
+ * immediately, before any external plugin is registered.
  *
  * Usage:
  *   bun 2b.ts
@@ -43,6 +54,8 @@ const port =
 
 const debugTokens =
   args.includes("--debug-tokens") || process.env["DEBUG_TOKENS"] === "1";
+// When set, this callback is passed to providers / sub-agents so raw LLM tokens
+// stream to stdout as they arrive — useful for debugging slow or looping agents.
 const debugTokenCallback = debugTokens
   ? (token: string, isReasoning: boolean) => {
       // Gray for reasoning, plain for response tokens
@@ -51,6 +64,9 @@ const debugTokenCallback = debugTokens
   : undefined;
 
 // ── Inline tools ──────────────────────────────────────────────────────────────
+// These trivial utilities don't warrant their own plugin file. ToolDefinition
+// supports an `implementation` field so they can be registered as a bare plugin
+// object without subclassing. All other tools live in dedicated plugin files.
 
 const minimalTools: ToolDefinition[] = [
   {
@@ -86,6 +102,9 @@ const minimalToolsPlugin: AgentPlugin = {
 
 const llm = createProvider(model);
 
+// PermissionManager implementation is chosen by UI mode. WebPermissionManager
+// sends approval requests over SSE; InkPermissionManager renders an Ink prompt
+// inline in the terminal. Both implement the same PermissionManager interface.
 const permissionManager = useWeb
   ? new WebPermissionManager()
   : new InkPermissionManager();
@@ -112,6 +131,9 @@ const agent = new CortexAgent(llm, {
   systemPrompt,
 });
 
+// Resolve the absolute path to src/ relative to this entry file so the
+// codebase-explainer and DynamicAgentPlugin can scope file access correctly
+// regardless of the working directory from which `bun 2b.ts` is invoked.
 const sourceRoot = new URL("src/", import.meta.url).pathname;
 
 agent.registerPlugin(
@@ -177,6 +199,8 @@ if (useWeb) {
     model,
     systemPrompt,
     permissionManager: permissionManager as InkPermissionManager,
+    // onModelChange lets the UI swap the model at runtime without restarting
+    // the agent — the provider holds the current model string and updates it.
     onModelChange: (newModel) => llm.setModel(newModel),
   });
 }

@@ -1,3 +1,21 @@
+/**
+ * ChatSession — framework-agnostic bridge between an agent and a UI.
+ *
+ * Subscribes to the agent's event stream and normalises it into a flat list of
+ * ChatMessages, a per-turn active-tool list, and a dynamic-agent registry.
+ * UIs (TerminalChat, web server) subscribe to ChatSession events instead of
+ * wiring the agent directly — this keeps UI code decoupled from agent internals.
+ *
+ * Events emitted:
+ *   "message"               — new ChatMessage appended
+ *   "message_updated"       — existing message patched (streaming, tool calls, etc.)
+ *   "state_change"          — "idle" | "thinking"
+ *   "active_tools_changed"  — current list of in-flight tools
+ *   "dynamic_agents_changed"— current list of spawned sub-agents and their states
+ *
+ * Critical: both terminal and web UIs depend on this. Changes to event names or
+ * ChatMessage shape are breaking changes across both UIs.
+ */
 import { EventEmitter } from "node:events";
 import type { AgentEventMap } from "../core/types.ts";
 import type {

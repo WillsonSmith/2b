@@ -1,3 +1,32 @@
+/**
+ * FileSystemPlugin — full local filesystem access for the agent.
+ *
+ * Tools: read_file, write_file, append_file, list_directory, move_file,
+ * copy_file, delete_file, delete_directory, make_directory, stat_file,
+ * find_files, search_in_files, patch_file, patch_file_range.
+ *
+ * All paths are sandboxed to `allowedRoots` (default: process.cwd()).
+ * `resolveSafe()` is the enforcement point — every private method calls it
+ * before touching the filesystem.
+ *
+ * Mutating tools carry `permission: "per_call"` so the user is prompted
+ * before each destructive operation.
+ *
+ * patch_file uses a two-pass approach: validate all edits against the current
+ * file content first (fail fast, no partial writes), then apply in reverse
+ * offset order so earlier edits don't shift the positions of later ones.
+ * Falls back to a whitespace-normalized match when exact match fails.
+ *
+ * patch_file_range streams the file through a temp file to support large
+ * files (>10 MB) without loading them fully into memory.
+ *
+ * search_in_files uses ripgrep if available; falls back to a built-in
+ * Bun.Glob + regex scanner otherwise.
+ *
+ * Critical: this plugin gives the agent write access to the host filesystem.
+ * The path sandbox and per_call permission on write tools are the primary
+ * safeguards.
+ */
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { logger } from "../logger.ts";
 import { join, resolve, dirname, sep } from "node:path";
@@ -42,6 +71,13 @@ type MatchResult =
   | { found: true; start: number; end: number; fuzzy: boolean }
   | { found: false; error: string };
 
+/**
+ * Finds the unique occurrence of `search` in `content`.
+ * Returns the byte-offset range [start, end) if found exactly once.
+ * If not found exactly, retries with leading whitespace stripped from each
+ * line — useful when the LLM's indentation doesn't precisely match the file.
+ * Returns an error if the match is ambiguous (occurs more than once).
+ */
 function findMatch(content: string, search: string): MatchResult {
   // Exact match
   const first = content.indexOf(search);
@@ -115,6 +151,11 @@ export class FileSystemPlugin implements AgentPlugin {
       options?.allowedRoots?.map((r) => resolve(r)) ?? [process.cwd()];
   }
 
+  /**
+   * Resolves `path` to an absolute path and verifies it falls within one of the
+   * allowed roots. Throws for any path that escapes the sandbox (e.g. `../../etc`).
+   * This is the single enforcement point — all private file methods must call it.
+   */
   private resolveSafe(path: string): string {
     const resolved = resolve(this.allowedRoots[0]!, path);
     for (const root of this.allowedRoots) {
