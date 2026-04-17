@@ -634,7 +634,7 @@ function ConflictsPanel({
   onSynthesize,
 }: {
   conflicts: ConflictRecord[];
-  onDismiss: (c: ConflictRecord) => void;
+  onDismiss: (c: ConflictRecord) => Promise<void>;
   onSynthesize: (c: ConflictRecord) => Promise<void>;
 }) {
   const [synthesizing, setSynthesizing] = useState<string | null>(null);
@@ -841,7 +841,7 @@ function Sidebar({
   coreBehaviors: BehaviorRecord[];
   contextualBehaviors: ContextualBehaviorRecord[];
   dynamicAgents: DynamicAgentRecord[];
-  onDismissConflict: (c: ConflictRecord) => void;
+  onDismissConflict: (c: ConflictRecord) => Promise<void>;
   onSynthesize: (c: ConflictRecord) => Promise<void>;
 }) {
   const [activeTab, setActiveTab] = useState<PanelId>(panels[0] ?? "memory");
@@ -1185,7 +1185,9 @@ function App() {
     [sendToWs],
   );
 
-  const handleDismissConflict = useCallback((c: ConflictRecord) => {
+  const handleDismissConflict = useCallback(async (c: ConflictRecord) => {
+    const key = [c.newId, c.conflictId].sort().join("::");
+    await fetch(`/api/behaviors/conflicts/${encodeURIComponent(key)}`, { method: "DELETE" });
     setConflicts(prev =>
       prev.filter(x => !(x.newId === c.newId && x.conflictId === c.conflictId))
     );

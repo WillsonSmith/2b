@@ -185,8 +185,8 @@ export class CortexMemoryPlugin implements AgentPlugin {
   /**
    * Mark a memory as superseded by another. Used by BehaviorPlugin after synthesis.
    */
-  public async supersedeBehavior(oldId: string, _newId: string): Promise<void> {
-    await this.db.updateMemoryStatus(oldId, "superseded");
+  public async supersedeBehavior(oldId: string, newId: string): Promise<void> {
+    this.db.setSupersededBy(oldId, newId);
   }
 
   /**
