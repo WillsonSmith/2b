@@ -119,13 +119,13 @@ describe("onBeforeToolCall — tool blocking", () => {
     expect(plugin.onBeforeToolCall("search_memory", {})).toEqual({ allow: true });
   });
 
-  test("block reason includes the current memory access count and threshold", () => {
+  test("block reason includes the current memory access count and the effective limit (threshold+1)", () => {
     const { plugin } = makeMetaPlugin();
-    (plugin as any).currentTurn.memory_access_count = 7;
+    (plugin as any).currentTurn.memory_access_count = 14;
     (plugin as any).blockedTools.add("search_memory");
     const result = plugin.onBeforeToolCall("search_memory", {}) as { allow: false; reason: string };
-    expect(result.reason).toContain("7");  // access count
-    expect(result.reason).toContain("8");  // default threshold
+    expect(result.reason).toContain("14"); // access count
+    expect(result.reason).toContain("13"); // effective limit = default threshold (12) + 1
   });
 });
 
@@ -321,7 +321,11 @@ describe("checkCorrectionEffectiveness", () => {
     }];
 
     const afterDate = new Date();
-    (plugin as any).turnHistory = [makeTurn(["tool_saturation"], 6, [], afterDate)];
+    // ≥2 recurrences required to mark ineffective
+    (plugin as any).turnHistory = [
+      makeTurn(["tool_saturation"], 6, [], afterDate),
+      makeTurn(["tool_saturation"], 6, [], afterDate),
+    ];
 
     await (plugin as any).checkCorrectionEffectiveness();
 
@@ -348,7 +352,9 @@ describe("checkCorrectionEffectiveness", () => {
     }];
 
     const afterDate = new Date();
+    // ≥2 recurrences required to trigger strengthening
     (plugin as any).turnHistory = [
+      makeTurn([], 0, ["search_memory", "search_memory"], afterDate),
       makeTurn([], 0, ["search_memory", "search_memory"], afterDate),
     ];
 
@@ -483,24 +489,26 @@ describe("checkCorrectionEffectiveness", () => {
     expect((plugin as any).correctionHistory[0].effectiveness).toBe("pending");
   });
 
-  test("patternRecurredIn correctly detects redundancy pattern", () => {
+  test("patternRecurrenceCount correctly counts redundancy pattern", () => {
     const { plugin } = makeMetaPlugin();
     const redundantTurn = makeTurn([], 0, ["search_memory", "search_memory"]);
     const cleanTurn = makeTurn([], 0, ["search_memory"]);
 
-    expect((plugin as any).patternRecurredIn("redundancy", [redundantTurn])).toBe(true);
-    expect((plugin as any).patternRecurredIn("redundancy", [cleanTurn])).toBe(false);
+    expect((plugin as any).patternRecurrenceCount("redundancy", [redundantTurn])).toBe(1);
+    expect((plugin as any).patternRecurrenceCount("redundancy", [cleanTurn])).toBe(0);
+    expect((plugin as any).patternRecurrenceCount("redundancy", [redundantTurn, redundantTurn])).toBe(2);
   });
 
-  test("patternRecurredIn correctly detects hedged_no_search pattern", () => {
+  test("patternRecurrenceCount correctly counts hedged_no_search pattern", () => {
     const { plugin } = makeMetaPlugin();
     const hedgedTurn = makeTurn(["hedged_language"], 0);
     const hedgedWithSearch = makeTurn(["hedged_language"], 2);
     const cleanTurn = makeTurn([], 0);
 
-    expect((plugin as any).patternRecurredIn("hedged_no_search", [hedgedTurn])).toBe(true);
-    expect((plugin as any).patternRecurredIn("hedged_no_search", [hedgedWithSearch])).toBe(false);
-    expect((plugin as any).patternRecurredIn("hedged_no_search", [cleanTurn])).toBe(false);
+    expect((plugin as any).patternRecurrenceCount("hedged_no_search", [hedgedTurn])).toBe(1);
+    expect((plugin as any).patternRecurrenceCount("hedged_no_search", [hedgedWithSearch])).toBe(0);
+    expect((plugin as any).patternRecurrenceCount("hedged_no_search", [cleanTurn])).toBe(0);
+    expect((plugin as any).patternRecurrenceCount("hedged_no_search", [hedgedTurn, hedgedTurn])).toBe(2);
   });
 });
 
@@ -568,20 +576,20 @@ describe("getContext — user_query_uncertain directive", () => {
 
 describe("getContext — approaching saturation warning", () => {
   test("no approaching-saturation line when count is below warning threshold", () => {
-    // threshold=8, warningThreshold=ceil(8*0.6)=5; count=4 → below
+    // threshold=12, warningThreshold=ceil(12*0.6)=8; count=7 → below
     const { plugin } = makeMetaPlugin();
-    (plugin as any).currentTurn.memory_access_count = 4;
+    (plugin as any).currentTurn.memory_access_count = 7;
     const ctx = (plugin as any).getContext();
     expect(ctx).not.toContain("APPROACHING SATURATION");
   });
 
   test("emits approaching-saturation line when count >= warningThreshold and not yet saturated", () => {
-    // threshold=8, warningThreshold=5; count=5 → at threshold, not saturated
+    // threshold=12, warningThreshold=8; count=8 → at warning threshold, not yet saturated
     const { plugin } = makeMetaPlugin();
-    (plugin as any).currentTurn.memory_access_count = 5;
+    (plugin as any).currentTurn.memory_access_count = 8;
     const ctx = (plugin as any).getContext();
     expect(ctx).toContain("APPROACHING SATURATION");
-    expect(ctx).toContain("5/8");
+    expect(ctx).toContain("8/13");
   });
 
   test("does NOT emit approaching-saturation when already saturated; DIRECTIVE appears instead", () => {
@@ -593,11 +601,12 @@ describe("getContext — approaching saturation warning", () => {
     expect(ctx).toContain("DIRECTIVE:");
   });
 
-  test("approaching-saturation line includes correct count/threshold values", () => {
+  test("approaching-saturation line includes correct count / (threshold+1) values", () => {
+    // threshold=12, limit=13; count=9 is above warningThreshold(8) but below 13
     const { plugin } = makeMetaPlugin();
-    (plugin as any).currentTurn.memory_access_count = 6;
+    (plugin as any).currentTurn.memory_access_count = 9;
     const ctx = (plugin as any).getContext();
-    expect(ctx).toContain("6/8");
+    expect(ctx).toContain("9/13");
   });
 });
 
@@ -647,5 +656,303 @@ describe("tool_call event — sensitive key redaction", () => {
 
     const record = (plugin as any).currentTurn.tool_calls[0];
     expect(record.args_summary).toBe("[unserializable]");
+  });
+});
+
+// ── Archive all turns (including pure-inference) ──────────────────────────────
+
+describe("onMessage('user') — archive all turns including pure-inference", () => {
+  test("archives a turn even when it has zero tool calls", () => {
+    const { plugin } = makeMetaPlugin();
+    plugin.onMessage("user", "hello"); // no tool calls on current turn
+    expect((plugin as any).turnHistory.length).toBe(1);
+    expect((plugin as any).turnHistory[0].tool_calls.length).toBe(0);
+  });
+
+  test("hedged_language marker is preserved in an archived pure-inference turn", () => {
+    const { plugin } = makeMetaPlugin();
+    plugin.onMessage("assistant", "I'm probably not sure about this"); // sets hedged_language
+    plugin.onMessage("user", "ok"); // archives current turn (zero tool calls)
+    const archived = (plugin as any).turnHistory[0];
+    expect(archived.uncertainty_markers).toContain("hedged_language");
+    expect(archived.tool_calls.length).toBe(0);
+  });
+
+  test("pure-inference hedging turns contribute to hedged_no_search pattern detection", async () => {
+    const { plugin, memPlugin } = makeMetaPlugin();
+    // 3 pure-inference hedging turns (no tool calls, no memory access)
+    (plugin as any).turnHistory = [
+      ...Array.from({ length: 3 }, () => makeTurn(["hedged_language"], 0)),
+      ...Array.from({ length: 2 }, () => makeTurn()),
+    ];
+
+    await (plugin as any).maybeAutoCorrect();
+
+    const saved = memPlugin.queryMemoriesRaw({ types: ["behavior"], tags: ["metacognition-correction"] });
+    expect(saved.some((m: { text: string }) => m.text.includes("uncertain") || m.text.includes("hedging") || m.text.includes("memory"))).toBe(true);
+  });
+});
+
+// ── checkCorrectionEffectiveness — short-circuit ─────────────────────────────
+
+describe("checkCorrectionEffectiveness — short-circuit", () => {
+  test("returns early and leaves lastEffectivenessCheckTurnCount at 0 when correctionHistory is empty", async () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).turnHistory = [makeTurn(["tool_saturation"], 9)];
+    await (plugin as any).checkCorrectionEffectiveness();
+    expect((plugin as any).lastEffectivenessCheckTurnCount).toBe(0);
+  });
+
+  test("updates lastEffectivenessCheckTurnCount to current history length after running", async () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).correctionHistory = [{
+      id: "sc-1",
+      trigger: "saturation",
+      rule_saved: "rule",
+      behavior_memory_id: "fake",
+      applied_at: new Date(Date.now() - 1000),
+      turns_observed: 3,
+      effectiveness: "pending",
+      post_strengthen_count: 0,
+    }];
+    (plugin as any).turnHistory = [makeTurn([], 0, [], new Date())];
+    await (plugin as any).checkCorrectionEffectiveness();
+    expect((plugin as any).lastEffectivenessCheckTurnCount).toBe(1);
+  });
+
+  test("skips full evaluation when turnHistory.length matches lastEffectivenessCheckTurnCount", async () => {
+    const { plugin } = makeMetaPlugin();
+    const correctionDate = new Date(Date.now() - 1000);
+    (plugin as any).correctionHistory = [{
+      id: "sc-2",
+      trigger: "saturation",
+      rule_saved: "rule",
+      behavior_memory_id: "fake",
+      applied_at: correctionDate,
+      turns_observed: 3,
+      effectiveness: "pending",
+      post_strengthen_count: 0,
+    }];
+    const afterDate = new Date();
+    (plugin as any).turnHistory = [
+      makeTurn(["tool_saturation"], 9, [], afterDate),
+      makeTurn(["tool_saturation"], 9, [], afterDate),
+    ];
+    (plugin as any).lastEffectivenessCheckTurnCount = 2; // matches history length
+    await (plugin as any).checkCorrectionEffectiveness();
+    // Short-circuited — effectiveness stays pending despite 2 recurrences
+    expect((plugin as any).correctionHistory[0].effectiveness).toBe("pending");
+  });
+});
+
+// ── patternRecurrenceCount — threshold behaviour ──────────────────────────────
+
+describe("checkCorrectionEffectiveness — recurrence threshold", () => {
+  test("keeps correction pending after only 1 recurrence in first observation window", async () => {
+    const { plugin } = makeMetaPlugin();
+    const correctionDate = new Date(Date.now() - 1000);
+    (plugin as any).correctionHistory = [{
+      id: "rt-1",
+      trigger: "saturation",
+      rule_saved: "rule",
+      behavior_memory_id: "fake",
+      applied_at: correctionDate,
+      turns_observed: 3,
+      effectiveness: "pending",
+      post_strengthen_count: 0,
+    }];
+    const afterDate = new Date();
+    (plugin as any).turnHistory = [makeTurn(["tool_saturation"], 9, [], afterDate)]; // only 1
+    await (plugin as any).checkCorrectionEffectiveness();
+    expect((plugin as any).correctionHistory[0].effectiveness).toBe("pending");
+  });
+
+  test("marks correction ineffective after exactly 2 recurrences in first window", async () => {
+    const { plugin } = makeMetaPlugin();
+    const correctionDate = new Date(Date.now() - 1000);
+    (plugin as any).correctionHistory = [{
+      id: "rt-2",
+      trigger: "saturation",
+      rule_saved: "rule",
+      behavior_memory_id: "fake",
+      applied_at: correctionDate,
+      turns_observed: 3,
+      effectiveness: "pending",
+      post_strengthen_count: 0,
+    }];
+    const afterDate = new Date();
+    (plugin as any).turnHistory = [
+      makeTurn(["tool_saturation"], 9, [], afterDate),
+      makeTurn(["tool_saturation"], 9, [], afterDate),
+    ];
+    await (plugin as any).checkCorrectionEffectiveness();
+    expect((plugin as any).correctionHistory[0].effectiveness).toBe("ineffective");
+  });
+
+  test("marks correction failed after 1 recurrence in second window (post-strengthen)", async () => {
+    const { plugin, memPlugin } = makeMetaPlugin();
+    const behaviorId = await memPlugin.addMemoryRaw(
+      "CRITICAL rule",
+      "behavior",
+      ["metacognition-correction", "saturation", "metacognition-correction:ineffective"],
+    );
+    const correctionDate = new Date(Date.now() - 2000);
+    const strengthenDate = new Date(Date.now() - 1000);
+    (plugin as any).correctionHistory = [{
+      id: "rt-3",
+      trigger: "saturation",
+      rule_saved: "CRITICAL rule",
+      behavior_memory_id: behaviorId,
+      applied_at: correctionDate,
+      turns_observed: 3,
+      effectiveness: "ineffective",
+      strengthened_at: strengthenDate,
+      post_strengthen_count: 1,
+    }];
+    const afterDate = new Date();
+    (plugin as any).turnHistory = [makeTurn(["tool_saturation"], 9, [], afterDate)]; // 1 recurrence
+    await (plugin as any).checkCorrectionEffectiveness();
+    // Correction should be removed from history (effectiveness = "failed" then cleaned up)
+    expect((plugin as any).correctionHistory.find((c: { id: string }) => c.id === "rt-3")).toBeUndefined();
+  });
+});
+
+// ── getContext — saturation display shows threshold+1 as limit ────────────────
+
+describe("getContext — saturation display shows threshold+1 as true limit", () => {
+  test("header line always shows count / (threshold+1)", () => {
+    const { plugin } = makeMetaPlugin(); // default threshold=12, limit=13
+    (plugin as any).currentTurn.memory_access_count = 5;
+    const ctx = (plugin as any).getContext();
+    expect(ctx).toContain("5 / 13");
+  });
+
+  test("approaching-saturation message shows count/(threshold+1)", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).currentTurn.memory_access_count = 10; // above warning threshold (8)
+    const ctx = (plugin as any).getContext();
+    expect(ctx).toContain("APPROACHING SATURATION");
+    expect(ctx).toContain("10/13");
+  });
+
+  test("block reason references threshold+1 as the limit, not threshold", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).currentTurn.memory_access_count = 14;
+    (plugin as any).blockedTools.add("search_memory");
+    const result = plugin.onBeforeToolCall("search_memory", {}) as { allow: false; reason: string };
+    expect(result.reason).toContain("14"); // access count
+    expect(result.reason).toContain("13"); // limit = threshold+1
+  });
+});
+
+// ── onBeforeToolCall — query deduplication ────────────────────────────────────
+
+describe("onBeforeToolCall — query deduplication", () => {
+  test("allows first call with any query on a search tool", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).searchToolNames.add("search_memory");
+    expect(plugin.onBeforeToolCall("search_memory", { query: "what is X" }).allow).toBe(true);
+  });
+
+  test("blocks second call with identical normalized query to same tool", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).searchToolNames.add("search_memory");
+    plugin.onBeforeToolCall("search_memory", { query: "what is X" });
+    const result = plugin.onBeforeToolCall("search_memory", { query: "what is X" });
+    expect(result.allow).toBe(false);
+    expect((result as any).reason).toContain("Duplicate query");
+  });
+
+  test("normalizes whitespace and case before comparing", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).searchToolNames.add("search_memory");
+    plugin.onBeforeToolCall("search_memory", { query: "  What Is X  " });
+    const result = plugin.onBeforeToolCall("search_memory", { query: "what is x" });
+    expect(result.allow).toBe(false);
+  });
+
+  test("allows second call with a different query to the same tool", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).searchToolNames.add("search_memory");
+    plugin.onBeforeToolCall("search_memory", { query: "what is X" });
+    expect(plugin.onBeforeToolCall("search_memory", { query: "what is Y" }).allow).toBe(true);
+  });
+
+  test("tracks seen queries per tool independently — same query on different tools is allowed", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).searchToolNames.add("search_memory");
+    (plugin as any).searchToolNames.add("hybrid_search");
+    plugin.onBeforeToolCall("search_memory", { query: "what is X" });
+    expect(plugin.onBeforeToolCall("hybrid_search", { query: "what is X" }).allow).toBe(true);
+  });
+
+  test("does not apply dedup to tools not in searchToolNames", () => {
+    const { plugin } = makeMetaPlugin();
+    // save_memory is not a search tool — repeat calls with same query should not be blocked
+    plugin.onBeforeToolCall("save_memory", { query: "some text" });
+    expect(plugin.onBeforeToolCall("save_memory", { query: "some text" }).allow).toBe(true);
+  });
+
+  test("dedup state resets on new user message (new turn)", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).searchToolNames.add("search_memory");
+    plugin.onBeforeToolCall("search_memory", { query: "what is X" });
+    plugin.onMessage("user", "next question"); // starts new turn, clears seen_queries
+    expect(plugin.onBeforeToolCall("search_memory", { query: "what is X" }).allow).toBe(true);
+  });
+
+  test("skips dedup when tool is in searchToolNames but arg has no query string", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).searchToolNames.add("search_memory");
+    // No query arg — dedup should not apply
+    expect(plugin.onBeforeToolCall("search_memory", {}).allow).toBe(true);
+    expect(plugin.onBeforeToolCall("search_memory", {}).allow).toBe(true);
+  });
+});
+
+// ── searchToolNames — dynamic build ──────────────────────────────────────────
+
+describe("searchToolNames — built dynamically from memory tool schemas", () => {
+  function initPlugin() {
+    const memPlugin = makeMemoryPlugin();
+    const plugin = new MetacognitionPlugin(memPlugin);
+    // onInit needs an agent ref for event subscriptions — provide minimal stub
+    plugin.onInit({ on: () => {} } as any);
+    return { plugin, memPlugin };
+  }
+
+  test("includes search_memory (has 'query' param)", () => {
+    const { plugin } = initPlugin();
+    expect((plugin as any).searchToolNames.has("search_memory")).toBe(true);
+  });
+
+  test("includes hybrid_search (has 'query' param)", () => {
+    const { plugin } = initPlugin();
+    expect((plugin as any).searchToolNames.has("hybrid_search")).toBe(true);
+  });
+
+  test("includes query_memories (has 'contains' param)", () => {
+    const { plugin } = initPlugin();
+    expect((plugin as any).searchToolNames.has("query_memories")).toBe(true);
+  });
+
+  test("excludes write and delete tools", () => {
+    const { plugin } = initPlugin();
+    const searchTools: Set<string> = (plugin as any).searchToolNames;
+    expect(searchTools.has("save_memory")).toBe(false);
+    expect(searchTools.has("delete_memory")).toBe(false);
+    expect(searchTools.has("edit_memory")).toBe(false);
+  });
+
+  test("saturation blocks all searchToolNames, including query_memories", () => {
+    const { plugin } = initPlugin();
+    // Manually simulate saturation blocking using the dynamic set
+    for (const name of (plugin as any).searchToolNames as Set<string>) {
+      (plugin as any).blockedTools.add(name);
+    }
+    expect(plugin.onBeforeToolCall("search_memory", {}).allow).toBe(false);
+    expect(plugin.onBeforeToolCall("hybrid_search", {}).allow).toBe(false);
+    expect(plugin.onBeforeToolCall("query_memories", {}).allow).toBe(false);
+    expect(plugin.onBeforeToolCall("save_memory", {}).allow).toBe(true);
   });
 });

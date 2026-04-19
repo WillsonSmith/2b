@@ -90,10 +90,14 @@ export class MetacognitionPlugin implements AgentPlugin {
     // Build category sets from live plugin state rather than hardcoded lists
     for (const t of this.memoryPlugin.getTools()) {
       this.memoryToolNames.add(t.name);
-      // Any memory tool that accepts a 'query' param is considered a search tool
-      // and will be blocked on saturation / subject to query deduplication.
+      // Memory tools that accept 'query' or 'contains' are search-like tools:
+      // blocked on saturation and subject to query deduplication.
       const props = t.parameters.properties;
-      if (props !== null && typeof props === "object" && "query" in (props as object)) {
+      if (
+        props !== null &&
+        typeof props === "object" &&
+        ("query" in (props as object) || "contains" in (props as object))
+      ) {
         this.searchToolNames.add(t.name);
       }
     }
