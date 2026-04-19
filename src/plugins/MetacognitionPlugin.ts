@@ -56,6 +56,7 @@ export class MetacognitionPlugin implements AgentPlugin {
   private correctionHistory: CorrectionRecord[] = [];
   private readonly blockedTools = new Set<string>();
   private readonly saturationThreshold: number;
+  private readonly saturationLimit: number;
   private agentRef: BaseAgent | null = null;
   private memoryToolNames = new Set<string>();
   private systemToolNames = new Set<string>();
@@ -69,6 +70,7 @@ export class MetacognitionPlugin implements AgentPlugin {
     // Default raised from 5 → 8 → 12; blunt count limits caused false positives
     // on complex multi-lookup turns. Query deduplication now handles true loops.
     this.saturationThreshold = options?.toolSaturationThreshold ?? 12;
+    this.saturationLimit = this.saturationThreshold + 1;
     this.currentTurn = this.newTurn();
   }
 
@@ -224,7 +226,7 @@ export class MetacognitionPlugin implements AgentPlugin {
     const parts = [
       "[Metacognition]",
       `Turn: ${t.turn_id.slice(0, 8)}`,
-      `Memory accesses this turn: ${t.memory_access_count} / ${this.saturationThreshold + 1}${saturationWarning}`,
+      `Memory accesses this turn: ${t.memory_access_count} / ${this.saturationLimit}${saturationWarning}`,
       `Active behavioral rules: ${rules}`,
       `Last tool: ${lastTool}`,
       `Uncertainty: ${markers}`,
@@ -236,7 +238,7 @@ export class MetacognitionPlugin implements AgentPlugin {
 
     if (isApproaching) {
       parts.push(
-        `APPROACHING SATURATION: ${t.memory_access_count}/${this.saturationThreshold + 1} memory accesses used. ` +
+        `APPROACHING SATURATION: ${t.memory_access_count}/${this.saturationLimit} memory accesses used. ` +
         `Synthesize from retrieved context where possible rather than issuing additional memory searches.`,
       );
     }
@@ -360,6 +362,7 @@ export class MetacognitionPlugin implements AgentPlugin {
       // tool_calls naturally, so archiving them doesn't introduce false positives.
       // hedged_no_search requires this to detect hedging on inference-only turns.
       this.currentTurn.ended_at = new Date();
+      this.currentTurn.seen_queries = new Map(); // dedup state not needed on archived turns
       this.turnHistory.push(this.currentTurn);
       if (this.turnHistory.length > TURN_HISTORY_LIMIT) {
         this.turnHistory.shift();
@@ -399,9 +402,11 @@ export class MetacognitionPlugin implements AgentPlugin {
     _args: Record<string, unknown>,
   ): { allow: true } | { allow: false; reason: string } {
     // Deduplication gate: block repeated identical queries before the saturation check.
-    // Only applies to search tools (those with a 'query' parameter).
-    if (this.searchToolNames.has(name) && typeof _args.query === "string") {
-      const normalized = _args.query.toLowerCase().trim().replace(/\s+/g, " ");
+    // Prefers _args.query; falls back to _args.contains for tools like query_memories
+    // that use 'contains' as their search-text parameter instead of 'query'.
+    const rawKey = typeof _args.query === "string" ? _args.query : _args.contains;
+    if (this.searchToolNames.has(name) && typeof rawKey === "string") {
+      const normalized = rawKey.toLowerCase().trim().replace(/\s+/g, " ");
       const seen = this.currentTurn.seen_queries.get(name) ?? new Set<string>();
       if (seen.has(normalized)) {
         return {
@@ -422,7 +427,7 @@ export class MetacognitionPlugin implements AgentPlugin {
         reason:
           `[Metacognition] '${name}' is blocked this turn. Memory access count ` +
           `(${this.currentTurn.memory_access_count}) exceeded limit ` +
-          `(${this.saturationThreshold + 1}). Synthesize from already-retrieved context ` +
+          `(${this.saturationLimit}). Synthesize from already-retrieved context ` +
           `rather than issuing another memory search.`,
       };
     }
