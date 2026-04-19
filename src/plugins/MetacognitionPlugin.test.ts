@@ -908,6 +908,22 @@ describe("onBeforeToolCall — query deduplication", () => {
     expect(plugin.onBeforeToolCall("search_memory", {}).allow).toBe(true);
     expect(plugin.onBeforeToolCall("search_memory", {}).allow).toBe(true);
   });
+
+  test("blocks second query_memories call with identical contains value", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).searchToolNames.add("query_memories");
+    plugin.onBeforeToolCall("query_memories", { contains: "meeting notes" });
+    const result = plugin.onBeforeToolCall("query_memories", { contains: "meeting notes" });
+    expect(result.allow).toBe(false);
+    expect((result as any).reason).toContain("Duplicate query");
+  });
+
+  test("allows second query_memories call with a different contains value", () => {
+    const { plugin } = makeMetaPlugin();
+    (plugin as any).searchToolNames.add("query_memories");
+    plugin.onBeforeToolCall("query_memories", { contains: "meeting notes" });
+    expect(plugin.onBeforeToolCall("query_memories", { contains: "action items" }).allow).toBe(true);
+  });
 });
 
 // ── searchToolNames — dynamic build ──────────────────────────────────────────
