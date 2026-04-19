@@ -117,7 +117,6 @@ const systemPrompt = [
   "Use list_agents to see what exists. Use list_capabilities to see what plugins are available when creating new agents.",
   "When calling any agent, include all relevant context it needs in the task field — agents have no access to your memory or conversation history.",
   "Prefer an existing agent for its domain. Create a new one only when the task requires a focus or capability set that doesn't match any existing agent.",
-  'Use "headless" for isolated one-shot tasks. Use "cortex" when the agent needs to remember context across multiple calls.',
   "",
   "The explore_codebase tool is separate — use it to read and understand this agent's own source code.",
   "",

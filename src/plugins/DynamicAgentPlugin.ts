@@ -163,10 +163,12 @@ interface DynamicAgentEntry {
   createdAt: Date;
 }
 
-/** A preset is a headless agent created automatically at plugin init time. */
+/** A preset is an agent created automatically at plugin init time. */
 export interface AgentPreset {
   system_prompt: string;
   capabilities: string[];
+  /** Defaults to "headless". Set to "cortex" for a persistent preset agent. */
+  agent_type?: AgentType;
 }
 
 interface DynamicAgentPluginOptions {
@@ -189,6 +191,11 @@ interface DynamicAgentPluginOptions {
    * allows them to persist facts and procedures to this parent memory store.
    */
   parentMemory?: CortexMemoryPlugin;
+  /**
+   * Timeout per ask() call for cortex sub-agents, in milliseconds.
+   * Defaults to 120s. Raise this for long-running research or media tasks.
+   */
+  subAgentTimeoutMs?: number;
 }
 
 // ── Plugin ────────────────────────────────────────────────────────────────────
@@ -217,6 +224,7 @@ export class DynamicAgentPlugin implements AgentPlugin {
   private readonly pluginBuildOptions: PluginBuildOptions;
   private readonly presets: Record<string, AgentPreset>;
   private readonly parentMemory: CortexMemoryPlugin | undefined;
+  private readonly subAgentTimeoutMs: number | undefined;
 
   constructor(llm: LLMProvider, options: DynamicAgentPluginOptions = {}) {
     this.llm = llm;
@@ -224,6 +232,7 @@ export class DynamicAgentPlugin implements AgentPlugin {
     this.model = options.model ?? "";
     this.presets = options.presets ?? {};
     this.parentMemory = options.parentMemory;
+    this.subAgentTimeoutMs = options.subAgentTimeoutMs;
     this.pluginBuildOptions = {
       sourceRoot: options.sourceRoot,
       visionModel: options.visionModel,
@@ -239,7 +248,7 @@ export class DynamicAgentPlugin implements AgentPlugin {
         this.spawnAgent(
           name,
           preset.system_prompt,
-          "headless",
+          preset.agent_type ?? "headless",
           preset.capabilities,
         );
         logger.info("DynamicAgent", `Preset agent "${name}" ready`);
@@ -313,7 +322,7 @@ export class DynamicAgentPlugin implements AgentPlugin {
               type: "array",
               items: { type: "string" },
               description:
-                "Plugin capabilities for this agent. Use list_capabilities to see options. Ignored for cortex agents (they use their built-in memory stack). Always included for headless agents: a KV store (agent_memory_set/get/delete/list).",
+                "Plugin capabilities for headless agents only — ignored for cortex agents, which use their built-in memory stack. Use list_capabilities to see options. A KV store is always included for headless agents.",
             },
           },
           required: ["name", "system_prompt", "agent_type"],
@@ -349,6 +358,21 @@ export class DynamicAgentPlugin implements AgentPlugin {
           required: [],
         },
       },
+      {
+        name: "delete_agent",
+        description:
+          "Remove a previously spawned agent. If the agent is currently processing a task it will be interrupted first. Use this to clean up misconfigured agents or free resources.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "Name of the agent to delete.",
+            },
+          },
+          required: ["name"],
+        },
+      },
     ];
   }
 
@@ -370,6 +394,8 @@ export class DynamicAgentPlugin implements AgentPlugin {
         return this.callAgent(args.name as string, args.task as string);
       case "list_agents":
         return this.listAgents();
+      case "delete_agent":
+        return this.deleteAgent(args.name as string);
       default:
         return undefined;
     }
@@ -442,10 +468,17 @@ export class DynamicAgentPlugin implements AgentPlugin {
       parent.emit("agent_spawned", name, agentType, capabilities);
     }
 
+    if (agentType === "cortex" && capabilities.length > 0) {
+      logger.warn(
+        "DynamicAgent",
+        `Capabilities ignored for cortex agent "${name}": ${capabilities.join(", ")}. Cortex agents use their built-in memory stack.`,
+      );
+    }
+
     this.registry.set(name, {
       agent,
       type: agentType,
-      capabilities,
+      capabilities: agentType === "cortex" ? [] : capabilities,
       createdAt: new Date(),
     });
     logger.info(
@@ -465,7 +498,7 @@ export class DynamicAgentPlugin implements AgentPlugin {
         systemPrompt,
         permissionManager: this.permissionManager,
       },
-      { permissionManager: this.permissionManager },
+      { permissionManager: this.permissionManager, timeoutMs: this.subAgentTimeoutMs },
     );
     if (this.parentMemory) {
       agent.registerPlugin(
@@ -534,6 +567,25 @@ export class DynamicAgentPlugin implements AgentPlugin {
     if (entry && this.activeAsks.has(entry.agent)) {
       entry.agent.interrupt?.();
     }
+  }
+
+  private async deleteAgent(name: string): Promise<unknown> {
+    const entry = this.registry.get(name);
+    if (!entry) {
+      const available = Array.from(this.registry.keys()).join(", ") || "none";
+      throw new Error(
+        `Agent "${name}" not found. Available agents: ${available}.`,
+      );
+    }
+    if (this.activeAsks.has(entry.agent)) {
+      entry.agent.interrupt?.();
+    }
+    if (entry.type === "cortex") {
+      await (entry.agent as CortexSubAgent).stop();
+    }
+    this.registry.delete(name);
+    logger.info("DynamicAgent", `Deleted agent "${name}"`);
+    return { deleted: name };
   }
 
   private listAgents(): unknown {
