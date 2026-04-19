@@ -461,7 +461,7 @@ export class MetacognitionPlugin implements AgentPlugin {
         ...behaviors.map((b) => {
           const date = new Date(b.timestamp).toISOString().slice(0, 10);
           const tags = b.tags.length > 0 ? ` [${b.tags.join(", ")}]` : "";
-          return `[${b.id.slice(0, 8)}] (${date}${tags}) ${b.text}`;
+          return `[${b.id}] (${date}${tags}) ${b.text}`;
         }),
       ].join("\n");
     } catch (e) {
@@ -730,9 +730,9 @@ export class MetacognitionPlugin implements AgentPlugin {
           ? ` [strengthened ${c.strengthened_at.toISOString().slice(0, 10)}]`
           : "";
         return (
-          `[${c.id.slice(0, 8)}] (${date}) trigger=${c.trigger} effectiveness=${c.effectiveness}${strengthenNote}\n` +
+          `[${c.id}] (${date}) trigger=${c.trigger} effectiveness=${c.effectiveness}${strengthenNote}\n` +
           `  rule: ${c.rule_saved.slice(0, 120)}\n` +
-          `  behavior_id: ${c.behavior_memory_id.slice(0, 8)}`
+          `  behavior_id: ${c.behavior_memory_id}`
         );
       }),
     ].join("\n");

@@ -309,7 +309,7 @@ export class BehaviorPlugin implements AgentPlugin {
         const conflictKey = [id, c.id].sort().join("::");
         this.pendingConflicts.set(conflictKey, conflict);
         conflictWarnings.push(
-          `⚠ Possible conflict with [${c.id.slice(0, 8)}] (similarity ${(c.score * 100).toFixed(0)}%): "${c.text.slice(0, 80)}${c.text.length > 80 ? "…" : ""}" — call synthesize_behaviors("${id}", "${c.id}") to resolve.`,
+          `⚠ Possible conflict with [${c.id}] (similarity ${(c.score * 100).toFixed(0)}%): "${c.text.slice(0, 80)}${c.text.length > 80 ? "…" : ""}" — call synthesize_behaviors("${id}", "${c.id}") to resolve.`,
         );
         if (this.agent) {
           this.agent.emit("behavior:conflict_detected", id, rule, c.id, c.text, c.score);
