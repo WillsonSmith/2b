@@ -268,7 +268,7 @@ export class DynamicAgentPlugin implements AgentPlugin {
       "- create_agent: Spawn a new agent with a custom system prompt and capability set.",
       "- call_agent: Send a task to any agent. Pre-created agents are available immediately.",
       "",
-      'Use "headless" agents for isolated, one-shot tasks. Use "cortex" agents when the agent needs to remember context across multiple calls.',
+      'Use "headless" for isolated tasks — each call is independent, with a manual KV store for state. Use "cortex" for ongoing collaboration: it auto-surfaces relevant past findings by meaning, persists reasoning across calls, and can learn and adapt its behavior over time.',
     ]
       .filter(Boolean)
       .join("\n");
