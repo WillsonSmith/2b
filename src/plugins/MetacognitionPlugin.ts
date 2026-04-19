@@ -60,6 +60,7 @@ export class MetacognitionPlugin implements AgentPlugin {
   private memoryToolNames = new Set<string>();
   private systemToolNames = new Set<string>();
   private searchToolNames = new Set<string>();
+  private lastEffectivenessCheckTurnCount = 0;
 
   constructor(
     private memoryPlugin: CortexMemoryPlugin,
@@ -219,7 +220,7 @@ export class MetacognitionPlugin implements AgentPlugin {
     const parts = [
       "[Metacognition]",
       `Turn: ${t.turn_id.slice(0, 8)}`,
-      `Memory accesses this turn: ${t.memory_access_count}${saturationWarning}`,
+      `Memory accesses this turn: ${t.memory_access_count} / ${this.saturationThreshold + 1}${saturationWarning}`,
       `Active behavioral rules: ${rules}`,
       `Last tool: ${lastTool}`,
       `Uncertainty: ${markers}`,
@@ -231,7 +232,7 @@ export class MetacognitionPlugin implements AgentPlugin {
 
     if (isApproaching) {
       parts.push(
-        `APPROACHING SATURATION: ${t.memory_access_count}/${this.saturationThreshold} memory accesses used. ` +
+        `APPROACHING SATURATION: ${t.memory_access_count}/${this.saturationThreshold + 1} memory accesses used. ` +
         `Synthesize from retrieved context where possible rather than issuing additional memory searches.`,
       );
     }
@@ -350,14 +351,14 @@ export class MetacognitionPlugin implements AgentPlugin {
 
   onMessage(role: Message["role"], content: string): void {
     if (role === "user") {
-      // Intentional: only archive turns with tool calls. Pure-inference turns (no tools)
-      // are excluded from pattern detection; hedged_no_search won't fire on them.
-      if (this.currentTurn.tool_calls.length > 0) {
-        this.currentTurn.ended_at = new Date();
-        this.turnHistory.push(this.currentTurn);
-        if (this.turnHistory.length > TURN_HISTORY_LIMIT) {
-          this.turnHistory.shift();
-        }
+      // Archive every completed turn, including pure-inference turns (no tool calls).
+      // Pattern checks (redundancy, dead_search, saturation) return false/0 on empty
+      // tool_calls naturally, so archiving them doesn't introduce false positives.
+      // hedged_no_search requires this to detect hedging on inference-only turns.
+      this.currentTurn.ended_at = new Date();
+      this.turnHistory.push(this.currentTurn);
+      if (this.turnHistory.length > TURN_HISTORY_LIMIT) {
+        this.turnHistory.shift();
       }
       this.currentTurn = this.newTurn();
       this.blockedTools.clear();
@@ -416,8 +417,8 @@ export class MetacognitionPlugin implements AgentPlugin {
         allow: false,
         reason:
           `[Metacognition] '${name}' is blocked this turn. Memory access count ` +
-          `(${this.currentTurn.memory_access_count}) exceeded saturation threshold ` +
-          `(${this.saturationThreshold}). Synthesize from already-retrieved context ` +
+          `(${this.currentTurn.memory_access_count}) exceeded limit ` +
+          `(${this.saturationThreshold + 1}). Synthesize from already-retrieved context ` +
           `rather than issuing another memory search.`,
       };
     }
@@ -881,11 +882,11 @@ export class MetacognitionPlugin implements AgentPlugin {
     }
   }
 
-  private patternRecurredIn(
+  private patternRecurrenceCount(
     trigger: CorrectionRecord["trigger"],
     turns: TurnState[],
-  ): boolean {
-    return turns.some((t) => {
+  ): number {
+    return turns.filter((t) => {
       if (trigger === "saturation") {
         return t.uncertainty_markers.includes("tool_saturation");
       }
@@ -900,12 +901,17 @@ export class MetacognitionPlugin implements AgentPlugin {
         t.uncertainty_markers.includes("hedged_language") &&
         t.memory_access_count === 0
       );
-    });
+    }).length;
   }
 
   private async checkCorrectionEffectiveness(): Promise<void> {
+    if (this.correctionHistory.length === 0) return;
+    if (this.turnHistory.length === this.lastEffectivenessCheckTurnCount) return;
+    this.lastEffectivenessCheckTurnCount = this.turnHistory.length;
+
     const EFFECTIVE_TURNS = 10;
     const STALE_TURNS = EFFECTIVE_TURNS * 2; // 20 clean turns → matches TURN_HISTORY_LIMIT
+    const MIN_RECURRENCE_INEFFECTIVE = 2; // first window: require ≥2 recurrences before marking ineffective
 
     // Pre-compute filtered turn slices keyed by timestamp to avoid O(n*m) re-filtering
     const turnsSinceCache = new Map<number, TurnState[]>();
@@ -929,9 +935,9 @@ export class MetacognitionPlugin implements AgentPlugin {
         const turns = turnsSince(correction.applied_at);
         if (turns.length === 0) continue;
 
-        const recurred = this.patternRecurredIn(correction.trigger, turns);
+        const recurrences = this.patternRecurrenceCount(correction.trigger, turns);
 
-        if (recurred) {
+        if (recurrences >= MIN_RECURRENCE_INEFFECTIVE) {
           correction.effectiveness = "ineffective";
           // Only strengthen once — ceiling guard in strengthenCorrectiveRule handles re-entry
           if (correction.post_strengthen_count === 0) {
@@ -959,10 +965,8 @@ export class MetacognitionPlugin implements AgentPlugin {
         const turns = turnsSince(correction.strengthened_at);
         if (turns.length === 0) continue;
 
-        const recurredAfterStrengthen = this.patternRecurredIn(
-          correction.trigger,
-          turns,
-        );
+        const recurredAfterStrengthen =
+          this.patternRecurrenceCount(correction.trigger, turns) >= 1;
 
         if (
           !recurredAfterStrengthen &&
