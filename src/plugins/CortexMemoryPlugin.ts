@@ -842,6 +842,12 @@ export class CortexMemoryPlugin implements AgentPlugin {
     const filter: MemoryFilter = this.buildFilter(args);
     const results = this.db.queryMemories(filter);
     logger.debug(this.name, `query_memories found ${results.length} results`);
+    this.searchMetaBuffer.set("query_memories", {
+      total_candidates: results.length,
+      result_count: results.length,
+      retrieval_method: "fulltext",
+      filter_applied: [],
+    });
     if (results.length === 0) return "No memories match the given filter.";
     return results
       .map(r => {

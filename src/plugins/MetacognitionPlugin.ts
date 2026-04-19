@@ -21,6 +21,7 @@ interface TurnState {
   memory_access_count: number;
   behavioral_rules_active: string[];
   uncertainty_markers: string[];
+  seen_queries: Map<string, Set<string>>;
 }
 
 const TURN_HISTORY_LIMIT = 20;
@@ -58,14 +59,15 @@ export class MetacognitionPlugin implements AgentPlugin {
   private agentRef: BaseAgent | null = null;
   private memoryToolNames = new Set<string>();
   private systemToolNames = new Set<string>();
+  private searchToolNames = new Set<string>();
 
   constructor(
     private memoryPlugin: CortexMemoryPlugin,
     options?: { toolSaturationThreshold?: number },
   ) {
-    // Default raised from 5 → 8; the old value was too aggressive and caused
-    // false saturation warnings on normal multi-step turns.
-    this.saturationThreshold = options?.toolSaturationThreshold ?? 8;
+    // Default raised from 5 → 8 → 12; blunt count limits caused false positives
+    // on complex multi-lookup turns. Query deduplication now handles true loops.
+    this.saturationThreshold = options?.toolSaturationThreshold ?? 12;
     this.currentTurn = this.newTurn();
   }
 
@@ -77,6 +79,7 @@ export class MetacognitionPlugin implements AgentPlugin {
       memory_access_count: 0,
       behavioral_rules_active: [],
       uncertainty_markers: [],
+      seen_queries: new Map(),
     };
   }
 
@@ -86,6 +89,12 @@ export class MetacognitionPlugin implements AgentPlugin {
     // Build category sets from live plugin state rather than hardcoded lists
     for (const t of this.memoryPlugin.getTools()) {
       this.memoryToolNames.add(t.name);
+      // Any memory tool that accepts a 'query' param is considered a search tool
+      // and will be blocked on saturation / subject to query deduplication.
+      const props = t.parameters.properties;
+      if (props !== null && typeof props === "object" && "query" in (props as object)) {
+        this.searchToolNames.add(t.name);
+      }
     }
     for (const t of this.getTools()) {
       this.systemToolNames.add(t.name);
@@ -168,9 +177,9 @@ export class MetacognitionPlugin implements AgentPlugin {
           !this.currentTurn.uncertainty_markers.includes("tool_saturation")
         ) {
           this.currentTurn.uncertainty_markers.push("tool_saturation");
-          this.blockedTools.add("search_memory");
-          this.blockedTools.add("hybrid_search");
-          this.blockedTools.add("query_memories");
+          for (const toolName of this.searchToolNames) {
+            this.blockedTools.add(toolName);
+          }
         }
         const meta = this.memoryPlugin.searchMetaBuffer.get(name);
         if (meta) {
@@ -384,6 +393,24 @@ export class MetacognitionPlugin implements AgentPlugin {
     name: string,
     _args: Record<string, unknown>,
   ): { allow: true } | { allow: false; reason: string } {
+    // Deduplication gate: block repeated identical queries before the saturation check.
+    // Only applies to search tools (those with a 'query' parameter).
+    if (this.searchToolNames.has(name) && typeof _args.query === "string") {
+      const normalized = _args.query.toLowerCase().trim().replace(/\s+/g, " ");
+      const seen = this.currentTurn.seen_queries.get(name) ?? new Set<string>();
+      if (seen.has(normalized)) {
+        return {
+          allow: false,
+          reason:
+            `[Metacognition] Duplicate query blocked: '${name}' was already called with ` +
+            `this query this turn. The previous result is already in context — synthesize ` +
+            `from it rather than re-querying.`,
+        };
+      }
+      seen.add(normalized);
+      this.currentTurn.seen_queries.set(name, seen);
+    }
+
     if (this.blockedTools.has(name)) {
       return {
         allow: false,
