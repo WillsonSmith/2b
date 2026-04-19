@@ -406,6 +406,25 @@ describe("query_memories", () => {
     const result = await plugin.executeTool("query_memories", { types: ["procedure"] });
     expect(result).toContain("No memories match");
   });
+
+  test("populates searchMetaBuffer with result_count after execution", async () => {
+    const plugin = makePlugin();
+    await plugin.executeTool("save_memory", { content: "a fact", type: "factual" });
+
+    // Call with a filter that matches
+    await plugin.executeTool("query_memories", { types: ["factual"] });
+    const metaHit = plugin.searchMetaBuffer.get("query_memories");
+    expect(metaHit).toBeDefined();
+    expect(metaHit!.result_count).toBe(1);
+  });
+
+  test("populates searchMetaBuffer with result_count=0 when no results match", async () => {
+    const plugin = makePlugin();
+    await plugin.executeTool("query_memories", { types: ["procedure"] }); // empty DB
+    const metaEmpty = plugin.searchMetaBuffer.get("query_memories");
+    expect(metaEmpty).toBeDefined();
+    expect(metaEmpty!.result_count).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
