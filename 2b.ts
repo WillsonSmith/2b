@@ -37,6 +37,10 @@ import { BehaviorPlugin } from "./src/plugins/BehaviorPlugin.ts";
 import { DynamicAgentPlugin } from "./src/plugins/DynamicAgentPlugin.ts";
 import { FileSystemPlugin } from "./src/plugins/FileSystemPlugin.ts";
 import { ShellPlugin } from "./src/plugins/ShellPlugin.ts";
+import { VerificationPlugin } from "./src/plugins/VerificationPlugin.ts";
+import { RetryPlugin } from "./src/plugins/RetryPlugin.ts";
+import { PlanPlugin } from "./src/plugins/PlanPlugin.ts";
+import { DecisionPlugin } from "./src/plugins/DecisionPlugin.ts";
 import { startTerminalUI } from "./src/ui/terminal/run.tsx";
 import { startWebUI } from "./src/ui/web/server.ts";
 
@@ -120,7 +124,9 @@ const systemPrompt = [
   "",
   "The explore_codebase tool is separate — use it to read and understand this agent's own source code.",
   "",
-  "Multi-turn tasks: When the user gives you a task that spans multiple turns (e.g. 'ask me questions about X for 20 turns', 'work through this list one item at a time'), call set_active_goal immediately with a description of the task and any progress tracking. This pins the goal into every system prompt for the session so it survives message summarization. Call clear_active_goal when the task is finished.",
+  "Multi-step tasks: Use create_plan when a task has discrete checkable steps (e.g. 'research and write a report', 'refactor this module'). Update each step with update_step as you work, and call complete_plan when done. Use set_active_goal instead for ongoing focus across turns where steps aren't discrete (e.g. 'ask me 20 questions about X', 'work through this list one at a time') — it pins a lightweight goal string into every prompt without step tracking.",
+  "",
+  "Decisions: When facing a meaningful choice, use evaluate_options to compare alternatives with structured analysis. Then call record_decision to log what you chose and why — this builds a searchable decision history you can reference later.",
 ].join("\n");
 
 const agent = new CortexAgent(llm, {
@@ -167,8 +173,13 @@ agent.registerPlugin(
       },
       coder: {
         system_prompt:
-          "You are a senior TypeScript engineer. You write clean, correct, idiomatic TypeScript and execute it yourself using execute_typescript.\n\nWhen given a coding task:\n- Write the code directly — do not describe what you would write, just write it.\n- Prefer Bun APIs (Bun.file, bun:sqlite, Bun.serve, etc.) over Node.js equivalents.\n- Use TypeScript types properly. Avoid `any`.\n- No unnecessary abstractions. Solve the problem directly.\n- If something fails, read the error and fix it.\n\nSandbox constraints: no npm packages (Bun built-ins only), no network, no host filesystem.\nInput: `const data = JSON.parse(process.env.INPUT_DATA ?? 'null');`\nOutput: `console.log(...)`",
-        capabilities: ["bun_sandbox", "files", "scratch"],
+          "You are a senior TypeScript engineer. You write clean, correct, idiomatic TypeScript and execute it yourself using execute_typescript.\n\nWhen given a coding task:\n- Write the code directly — do not describe what you would write, just write it.\n- Prefer Bun APIs (Bun.file, bun:sqlite, Bun.serve, etc.) over Node.js equivalents.\n- Use TypeScript types properly. Avoid `any`.\n- No unnecessary abstractions. Solve the problem directly.\n- If something fails, read the error and fix it. Use retry_tool to re-invoke a tool after a transient failure. Use verify_file_contains or verify_shell_output to confirm writes and commands succeeded.\n\nSandbox constraints: no npm packages (Bun built-ins only), no network, no host filesystem.\nInput: `const data = JSON.parse(process.env.INPUT_DATA ?? 'null');`\nOutput: `console.log(...)`",
+        capabilities: ["bun_sandbox", "files", "scratch", "retry", "verification"],
+      },
+      analyst: {
+        system_prompt:
+          "You are a research and decision analyst. Gather information from multiple sources, compare options with structured analysis, and record decisions with clear rationale.\n\nWhen given a research or decision task:\n- Search multiple sources before drawing conclusions.\n- Use evaluate_options to compare alternatives before committing.\n- Use record_decision to log the chosen option and why — build a paper trail.\n- Be concise and cite your sources.",
+        capabilities: ["web", "wikipedia", "decision"],
       },
     },
   }),
@@ -176,13 +187,20 @@ agent.registerPlugin(
 
 const behaviorPlugin = new BehaviorPlugin(agent.memoryPlugin, llm);
 agent.registerPlugin(behaviorPlugin);
+// VerificationPlugin needs the memory plugin to support verify_memory_exists
+agent.registerPlugin(new VerificationPlugin(llm, agent.memoryPlugin));
 agent.registerPlugin(new FileSystemPlugin());
 agent.registerPlugin(new ShellPlugin());
 agent.registerPlugin(minimalToolsPlugin);
 agent.registerPlugin(new ScratchPlugin());
+agent.registerPlugin(new PlanPlugin());
+agent.registerPlugin(new DecisionPlugin(llm));
 agent.registerPlugin(
   new MemoryPlugin(llm),
 );
+// RetryPlugin last — dispatchTool routes through collectTools(), which must
+// include every plugin whose tools might be retried.
+agent.registerPlugin(new RetryPlugin());
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 

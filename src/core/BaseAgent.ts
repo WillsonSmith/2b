@@ -515,21 +515,19 @@ export class BaseAgent extends EventEmitter {
   }
 
   /**
-   * Route a tool call directly to the plugin that owns it, bypassing the LLM
-   * tool-call loop. Used by RetryPlugin's `retry_tool` so the LLM can explicitly
-   * re-invoke any registered tool.
+   * Route a tool call through the full built wrapper for the named tool —
+   * identical to what the LLM tool-call loop does. Applies permission gating,
+   * onBeforeToolCall veto checks, retry policy, and verifyAfter hooks.
    *
-   * Does NOT apply permission checks, veto logic, or retry policies — callers are
-   * responsible for those concerns. Returns an error string if no plugin handles
-   * the named tool.
+   * Used by RetryPlugin's `retry_tool` so re-invoked tools respect the same
+   * per_call approval prompts as the original call.
+   *
+   * Returns an error string if no tool with that name is registered.
    */
   public async dispatchTool(toolName: string, args: Record<string, unknown>): Promise<unknown> {
-    for (const plugin of this.plugins) {
-      if (!plugin.getTools || !plugin.executeTool) continue;
-      const owned = plugin.getTools().some(t => t.name === toolName);
-      if (owned) return plugin.executeTool(toolName, args);
-    }
-    return `No tool named '${toolName}' is registered.`;
+    const tool = this.collectTools().find(t => t.name === toolName);
+    if (!tool?.implementation) return `No tool named '${toolName}' is registered.`;
+    return tool.implementation(args);
   }
 
   /**

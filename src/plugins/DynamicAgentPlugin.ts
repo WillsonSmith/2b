@@ -44,6 +44,10 @@ import { YtDlpPlugin } from "./YtDlpPlugin.ts";
 import { FFmpegPlugin } from "./FFmpegPlugin.ts";
 import { BunSandboxPlugin } from "./BunSandboxPlugin.ts";
 import { SourceReaderPlugin } from "./SourceReaderPlugin.ts";
+import { VerificationPlugin } from "./VerificationPlugin.ts";
+import { RetryPlugin } from "./RetryPlugin.ts";
+import { PlanPlugin } from "./PlanPlugin.ts";
+import { DecisionPlugin } from "./DecisionPlugin.ts";
 import { logger } from "../logger.ts";
 import type { CortexMemoryPlugin } from "./CortexMemoryPlugin.ts";
 import { ParentMemoryBridgePlugin } from "./ParentMemoryBridgePlugin.ts";
@@ -62,6 +66,7 @@ interface CapabilityDef {
 
 /** Options forwarded from DynamicAgentPlugin constructor to per-capability builders. */
 interface PluginBuildOptions {
+  llm: LLMProvider;
   sourceRoot?: string;
   visionModel?: string;
   visionBaseUrl?: string;
@@ -141,6 +146,26 @@ const CAPABILITY_REGISTRY: Record<string, CapabilityDef> = {
     description:
       "Read-only access to this agent's own source code: read files, browse directories, grep for definitions.",
     build: (opts) => [new SourceReaderPlugin({ sourceRoot: opts.sourceRoot })],
+  },
+  verification: {
+    description:
+      "Post-action verification: confirm file contents, shell output, or any free-form assertion after a write or command.",
+    build: (opts) => [new VerificationPlugin(opts.llm)],
+  },
+  retry: {
+    description:
+      "Explicit tool retry: re-invoke any registered tool with optional argument changes after a transient failure.",
+    build: () => [new RetryPlugin()],
+  },
+  plan: {
+    description:
+      "Structured multi-step planning: create a plan with ordered steps, track progress, mark steps done or failed.",
+    build: () => [new PlanPlugin(":memory:")],
+  },
+  decision: {
+    description:
+      "Decision support: compare options with LLM analysis, record chosen option and rationale for future reference.",
+    build: (opts) => [new DecisionPlugin(opts.llm, ":memory:")],
   },
 };
 
@@ -234,6 +259,7 @@ export class DynamicAgentPlugin implements AgentPlugin {
     this.parentMemory = options.parentMemory;
     this.subAgentTimeoutMs = options.subAgentTimeoutMs;
     this.pluginBuildOptions = {
+      llm,
       sourceRoot: options.sourceRoot,
       visionModel: options.visionModel,
       visionBaseUrl: options.visionBaseUrl,

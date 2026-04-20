@@ -1,6 +1,7 @@
 import { test, expect, describe, mock, beforeEach } from "bun:test";
 import { BaseAgent } from "../core/BaseAgent";
 import { RetryPlugin } from "./RetryPlugin";
+import { AutoDenyPermissionManager, AutoApprovePermissionManager } from "../core/PermissionManager";
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin";
 import type { LLMProvider } from "../providers/llm/LLMProvider";
 import type { AgentConfig } from "../core/types";
@@ -80,7 +81,7 @@ describe("RetryPlugin - registration", () => {
 // ── dispatchTool ───────────────────────────────────────────────────────────────
 
 describe("BaseAgent.dispatchTool", () => {
-  test("routes call to the correct plugin", async () => {
+  test("routes call to the correct plugin via built wrapper", async () => {
     const executeTool = mock(async () => "dispatch result");
     const plugin: AgentPlugin = {
       name: "P",
@@ -92,7 +93,7 @@ describe("BaseAgent.dispatchTool", () => {
 
     const result = await agent.dispatchTool("my_tool", { x: 1 });
     expect(result).toBe("dispatch result");
-    expect(executeTool).toHaveBeenCalledWith("my_tool", { x: 1 });
+    expect(executeTool).toHaveBeenCalledTimes(1);
   });
 
   test("returns error string for unknown tool name", async () => {
@@ -123,6 +124,50 @@ describe("BaseAgent.dispatchTool", () => {
     expect(result).toBe("from A");
     expect(execA).toHaveBeenCalledTimes(1);
     expect(execB).toHaveBeenCalledTimes(0);
+  });
+
+  test("per_call permission is denied when AutoDenyPermissionManager is set", async () => {
+    const executeTool = mock(async () => "should not reach");
+    const plugin: AgentPlugin = {
+      name: "P",
+      getTools: (): ToolDefinition[] => [{
+        name: "protected",
+        description: "",
+        parameters: {},
+        permission: "per_call",
+      }],
+      executeTool,
+    };
+    const agent = new BaseAgent(makeLLM(), makeConfig({
+      permissionManager: new AutoDenyPermissionManager(),
+    }));
+    agent.registerPlugin(plugin);
+
+    const result = await agent.dispatchTool("protected", {}) as Record<string, unknown>;
+    expect(result.error).toContain("Permission denied");
+    expect(executeTool).toHaveBeenCalledTimes(0);
+  });
+
+  test("per_call permission is approved when AutoApprovePermissionManager is set", async () => {
+    const executeTool = mock(async () => "approved result");
+    const plugin: AgentPlugin = {
+      name: "P",
+      getTools: (): ToolDefinition[] => [{
+        name: "protected",
+        description: "",
+        parameters: {},
+        permission: "per_call",
+      }],
+      executeTool,
+    };
+    const agent = new BaseAgent(makeLLM(), makeConfig({
+      permissionManager: new AutoApprovePermissionManager(),
+    }));
+    agent.registerPlugin(plugin);
+
+    const result = await agent.dispatchTool("protected", {});
+    expect(result).toBe("approved result");
+    expect(executeTool).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -199,6 +244,67 @@ describe("retry_tool - RetryPlugin", () => {
       reason: "missing tool_name",
     }) as string;
     expect(result).toContain("tool_name");
+    agent.stop();
+  });
+
+  test("retry_tool respects per_call permission on the target tool", async () => {
+    const targetExec = mock(async () => "should not run");
+    const targetPlugin: AgentPlugin = {
+      name: "T",
+      getTools: (): ToolDefinition[] => [{
+        name: "guarded",
+        description: "",
+        parameters: {},
+        permission: "per_call",
+      }],
+      executeTool: targetExec,
+    };
+
+    const retryPlugin = new RetryPlugin();
+    const agent = new BaseAgent(makeLLM(), makeConfig({
+      permissionManager: new AutoDenyPermissionManager(),
+    }));
+    agent.registerPlugin(targetPlugin);
+    agent.registerPlugin(retryPlugin);
+    await agent.start();
+
+    const result = await retryPlugin.executeTool("retry_tool", {
+      tool_name: "guarded",
+      reason: "retry after failure",
+    }) as Record<string, unknown>;
+    // AutoDenyPermissionManager blocks the call — executeTool never reached
+    expect(result.error).toContain("Permission denied");
+    expect(targetExec).toHaveBeenCalledTimes(0);
+    agent.stop();
+  });
+
+  test("retry_tool succeeds when permission is approved", async () => {
+    const targetExec = mock(async () => "approved retry result");
+    const targetPlugin: AgentPlugin = {
+      name: "T",
+      getTools: (): ToolDefinition[] => [{
+        name: "guarded",
+        description: "",
+        parameters: {},
+        permission: "per_call",
+      }],
+      executeTool: targetExec,
+    };
+
+    const retryPlugin = new RetryPlugin();
+    const agent = new BaseAgent(makeLLM(), makeConfig({
+      permissionManager: new AutoApprovePermissionManager(),
+    }));
+    agent.registerPlugin(targetPlugin);
+    agent.registerPlugin(retryPlugin);
+    await agent.start();
+
+    const result = await retryPlugin.executeTool("retry_tool", {
+      tool_name: "guarded",
+      reason: "retry after failure",
+    });
+    expect(result).toBe("approved retry result");
+    expect(targetExec).toHaveBeenCalledTimes(1);
     agent.stop();
   });
 });
