@@ -1,6 +1,7 @@
 import { test, expect, describe, mock, afterEach } from "bun:test";
 import { BaseAgent } from "./BaseAgent";
 import type { AgentPlugin } from "./Plugin";
+import { InputSource } from "./InputSource";
 import type { LLMProvider } from "../providers/llm/LLMProvider";
 import { AutoApprovePermissionManager, AutoDenyPermissionManager } from "./PermissionManager";
 import type { AgentConfig } from "./types";
@@ -633,5 +634,186 @@ describe("BaseAgent - concurrent collectSystemPrompt (perf)", () => {
     const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![1];
     expect(systemPrompt).toContain("CTX_FROM_P2");
     agent.stop();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cooperative Yield — yieldControl()
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BaseAgent - yieldControl", () => {
+  test("yieldControl emits agent_yield event", async () => {
+    const agent = new BaseAgent(makeLLM(), makeConfig());
+    const fired: Array<string | undefined> = [];
+    agent.on("agent_yield", (partial) => fired.push(partial));
+
+    const p = agent.yieldControl("partial text");
+    expect(fired).toHaveLength(1);
+    expect(fired[0]).toBe("partial text");
+
+    agent.addDirect("go");
+    await p;
+    agent.stop();
+  });
+
+  test("yieldControl emits speak when partialResult is provided", async () => {
+    const agent = new BaseAgent(makeLLM(), makeConfig());
+    const spoken: string[] = [];
+    agent.on("speak", (t) => spoken.push(t));
+
+    const p = agent.yieldControl("I have partial output");
+    expect(spoken).toContain("I have partial output");
+
+    agent.addDirect("continue");
+    await p;
+    agent.stop();
+  });
+
+  test("yieldControl does not emit speak when partialResult is undefined", async () => {
+    const agent = new BaseAgent(makeLLM(), makeConfig());
+    const spoken: string[] = [];
+    agent.on("speak", (t) => spoken.push(t));
+
+    const p = agent.yieldControl();
+    expect(spoken).toHaveLength(0);
+
+    agent.addDirect("go");
+    await p;
+    agent.stop();
+  });
+
+  test("addDirect resolves a pending yield instead of enqueuing", async () => {
+    const llm = makeLLM();
+    const agent = new BaseAgent(llm, makeConfig());
+
+    const p = agent.yieldControl();
+    agent.addDirect("continuation text");
+    const result = await p;
+
+    expect(result).toBe("continuation text");
+    // LLM should not have been called (no tick was triggered by the yielding addDirect)
+    expect((llm.chat as ReturnType<typeof mock>).mock.calls).toHaveLength(0);
+    agent.stop();
+  });
+
+  test("second addDirect after yield is resolved re-enqueues normally", async () => {
+    const llm = makeLLM("response");
+    const agent = new BaseAgent(llm, makeConfig());
+
+    const p = agent.yieldControl();
+    agent.addDirect("first — resolves yield");
+    await p;
+
+    const speakPromise = waitForEvent(agent, "speak");
+    agent.addDirect("second — normal enqueue");
+    await speakPromise;
+
+    expect((llm.chat as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
+    agent.stop();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Plugin-registered input sources — createInputSources hook
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MockInputSource extends InputSource {
+  name = "MockInput";
+  started = false;
+  stopped = false;
+
+  async start() { this.running = true; this.started = true; }
+  async stop() { this.running = false; this.stopped = true; }
+
+  fire(text: string) { this.emit("direct_input", text); }
+}
+
+describe("BaseAgent - createInputSources hook", () => {
+  test("plugin-registered input source is started during agent.start()", async () => {
+    const source = new MockInputSource();
+    const plugin: AgentPlugin = {
+      name: "SourcePlugin",
+      createInputSources: () => [source],
+    };
+
+    const agent = new BaseAgent(makeLLM(), makeConfig());
+    agent.registerPlugin(plugin);
+    await agent.start();
+
+    expect(source.started).toBe(true);
+    await agent.stop();
+  });
+
+  test("plugin-registered source direct_input reaches the agent loop", async () => {
+    const source = new MockInputSource();
+    const plugin: AgentPlugin = {
+      name: "SourcePlugin",
+      createInputSources: () => [source],
+    };
+
+    const llm = makeLLM("hello from agent");
+    const agent = new BaseAgent(llm, makeConfig());
+    agent.registerPlugin(plugin);
+    await agent.start();
+
+    const speakPromise = waitForEvent(agent, "speak");
+    source.fire("hello from source");
+    const [reply] = await speakPromise;
+
+    expect(reply).toBe("hello from agent");
+    await agent.stop();
+  });
+
+  test("plugin-registered source is stopped when agent stops", async () => {
+    const source = new MockInputSource();
+    const plugin: AgentPlugin = {
+      name: "SourcePlugin",
+      createInputSources: () => [source],
+    };
+
+    const agent = new BaseAgent(makeLLM(), makeConfig());
+    agent.registerPlugin(plugin);
+    await agent.start();
+    await agent.stop();
+
+    expect(source.stopped).toBe(true);
+  });
+
+  test("failing createInputSources does not prevent other sources from starting", async () => {
+    const goodSource = new MockInputSource();
+    const badPlugin: AgentPlugin = {
+      name: "BadPlugin",
+      createInputSources: async () => { throw new Error("source creation failed"); },
+    };
+    const goodPlugin: AgentPlugin = {
+      name: "GoodPlugin",
+      createInputSources: () => [goodSource],
+    };
+
+    const agent = new BaseAgent(makeLLM(), makeConfig());
+    agent.registerPlugin(badPlugin);
+    agent.registerPlugin(goodPlugin);
+    await agent.start();
+
+    expect(goodSource.started).toBe(true);
+    await agent.stop();
+  });
+
+  test("async createInputSources resolves before sources are started", async () => {
+    const source = new MockInputSource();
+    const plugin: AgentPlugin = {
+      name: "AsyncSourcePlugin",
+      createInputSources: async () => {
+        await new Promise((r) => setTimeout(r, 10));
+        return [source];
+      },
+    };
+
+    const agent = new BaseAgent(makeLLM(), makeConfig());
+    agent.registerPlugin(plugin);
+    await agent.start();
+
+    expect(source.started).toBe(true);
+    await agent.stop();
   });
 });

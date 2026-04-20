@@ -36,12 +36,64 @@ export interface AgentEventMap {
   "behavior:conflict_detected": [newId: string, newText: string, conflictId: string, conflictText: string, score: number];
   /** Emitted by BehaviorPlugin after each turn's system prompt fragment is assembled. */
   "behaviors_loaded": [core: Array<{ id: string; text: string; weight: number }>, contextual: Array<{ id: string; text: string; score: number; weight: number }>];
+  /** Emitted when the agent yields control mid-turn, optionally with a partial result already spoken. */
+  "agent_yield": [partialResult: string | undefined];
+}
+
+/**
+ * Result returned by a tool's `verifyAfter` hook. When `passed` is false,
+ * BaseAgent appends a `[Verification failed: message]` suffix to the tool
+ * result string returned to the LLM, and emits a "log" event.
+ */
+export interface VerificationResult {
+  passed: boolean;
+  /** The actual value observed (for human-readable context in the failure message). */
+  actual: string;
+  /** The expected value or condition (for human-readable context). */
+  expected: string;
+  /** Short human-readable summary, included in the LLM failure suffix. */
+  message: string;
+}
+
+/**
+ * Thrown by a tool implementation to signal cooperative yield.
+ * The agent emits any partialResult as a "speak" event, then suspends
+ * until the next addDirect() call resumes it with continuation input.
+ * Prefer calling agent.yieldControl() from within a tool rather than throwing
+ * this directly, which requires the LLM provider to propagate it correctly.
+ */
+export class YieldSignal extends Error {
+  constructor(public readonly partialResult?: string) {
+    super("yield");
+    this.name = "YieldSignal";
+  }
 }
 
 export type Message = {
   role: "user" | "assistant" | "system";
   content: string;
 };
+
+export type PlanStepStatus = "pending" | "in_progress" | "done" | "skipped" | "failed";
+export type PlanStatus = "active" | "completed" | "abandoned";
+
+export interface PlanStep {
+  id: string;
+  planId: string;
+  position: number;
+  description: string;
+  status: PlanStepStatus;
+  notes: string | null;
+}
+
+export interface Plan {
+  id: string;
+  goal: string;
+  status: PlanStatus;
+  steps: PlanStep[];
+  createdAt: number;
+  updatedAt: number;
+}
 
 export interface AgentConfig {
   model: string;
