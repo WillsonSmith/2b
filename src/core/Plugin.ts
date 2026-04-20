@@ -18,8 +18,26 @@
  * interfaces is a breaking change for all plugins.
  */
 import type { BaseAgent } from "./BaseAgent.ts";
-import type { Message } from "./types.ts";
+import type { InputSource } from "./InputSource.ts";
+import type { Message, VerificationResult } from "./types.ts";
 import type { PermissionLevel } from "./PermissionManager.ts";
+
+/**
+ * Retry policy for automatic tool-level retries on transient failures.
+ *
+ * `maxAttempts` is the total number of attempts including the first call (so
+ * `maxAttempts: 3` means one initial call plus two retries).
+ *
+ * `retryOn` is an optional predicate called with the thrown error. When omitted
+ * every thrown error triggers a retry. When provided, only errors for which it
+ * returns `true` are retried — all other errors are returned immediately.
+ */
+export interface RetryPolicy {
+  maxAttempts: number;
+  delayMs?: number;
+  backoff?: "fixed" | "exponential";
+  retryOn?: (error: unknown) => boolean;
+}
 
 /**
  * Describes a single callable tool that the LLM can invoke.
@@ -40,6 +58,20 @@ export interface ToolDefinition {
   implementation?: (args: any) => any | Promise<any>;
   /** Whether this tool requires user approval before execution. Default: "none". */
   permission?: PermissionLevel;
+  /**
+   * Optional automatic retry policy. When set, BaseAgent retries the tool call on
+   * thrown errors up to `maxAttempts` times total before returning an error string.
+   * Applied before `verifyAfter`.
+   */
+  retry?: RetryPolicy;
+  /**
+   * Optional post-execution verification hook. Called by BaseAgent after a successful
+   * tool execution. If the returned VerificationResult has `passed: false`, BaseAgent
+   * appends a `[Verification failed: <message>]` suffix to the tool result string sent
+   * to the LLM and emits a "log" event. Errors thrown by this hook are swallowed and
+   * logged but do not fail the tool call.
+   */
+  verifyAfter?: (args: Record<string, unknown>, result: unknown) => Promise<VerificationResult>;
 }
 
 export interface AgentPlugin {
@@ -79,4 +111,14 @@ export interface AgentPlugin {
    * Useful for routing to a vision model, a larger synthesis model, etc.
    */
   augmentResponse?: (response: string) => string | Promise<string>;
+  /**
+   * Called during agent.start(), after all onInit() hooks have completed.
+   * Return InputSource instances to register with the agent. Sources returned here
+   * are started alongside any sources added directly via agent.addInputSource().
+   *
+   * This is the hook that allows plugins to contribute reactive input channels
+   * (e.g. a webhook listener, a file watcher, a socket connection) without
+   * requiring the orchestrator to know about them at construction time.
+   */
+  createInputSources?: (agent: BaseAgent) => InputSource[] | Promise<InputSource[]>;
 }
