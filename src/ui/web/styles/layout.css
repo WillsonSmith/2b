@@ -1,0 +1,115 @@
+/* ── App shell (grid layout) ── */
+
+.app-shell {
+  display: grid;
+  height: 100dvh;
+  overflow: hidden;
+  grid-template-columns: 220px 1fr;
+  grid-template-areas: "chat-list main";
+}
+
+.app-shell--sidebar-open {
+  grid-template-columns: 220px 1fr 300px;
+  grid-template-areas: "chat-list main sidebar";
+}
+
+/* ── App column ── */
+
+.app {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* ── Header ── */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-title {
+  font-weight: bold;
+  color: var(--cyan);
+  font-size: 16px;
+}
+
+.header-model {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* ── Header right ── */
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  position: relative;
+}
+
+.sidebar-toggle:hover {
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+
+/* ── Hamburger (mobile only) ── */
+
+.hamburger-btn {
+  display: none;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  line-height: 1.4;
+}
+
+.hamburger-btn:hover {
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 699px) {
+  /* Collapse to single column; chat-list becomes a fixed overlay */
+  .app-shell,
+  .app-shell--sidebar-open {
+    grid-template-columns: 1fr;
+    grid-template-areas: "main";
+  }
+
+  .hamburger-btn {
+    display: block;
+  }
+}
