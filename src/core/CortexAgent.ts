@@ -26,6 +26,7 @@ import type { AgentConfig, AgentEventMap, AmbientOptions } from "./types.ts";
 import { CortexMemoryPlugin } from "../plugins/CortexMemoryPlugin.ts";
 import { ThoughtPlugin } from "../plugins/ThoughtPlugin.ts";
 import { MetacognitionPlugin } from "../plugins/MetacognitionPlugin.ts";
+import { YieldPlugin } from "../plugins/YieldPlugin.ts";
 
 export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
   private inner: BaseAgent;
@@ -68,6 +69,7 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
     this.inner.registerPlugin(this.memoryPlugin);
     this.inner.registerPlugin(thoughtPlugin);
     this.inner.registerPlugin(metacognitionPlugin);
+    this.inner.registerPlugin(new YieldPlugin());
   }
 
   /** Register an additional plugin with the underlying agent. */
@@ -115,6 +117,16 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
   /** Interrupt all subagents and the main agent's current LLM call. */
   public interruptAll(): void {
     this.inner.interruptAll();
+  }
+
+  /**
+   * Cooperatively yield control mid-turn. Emits "speak" with partialResult if
+   * provided, emits "agent_yield", then suspends until the next addDirect() call.
+   * Returns a Promise that resolves with the continuation text.
+   * Intended to be called from within a tool's executeTool() implementation.
+   */
+  public yieldControl(partialResult?: string): Promise<string> {
+    return this.inner.yieldControl(partialResult);
   }
 
   /** Register a callback that receives each token as the LLM streams its response. */

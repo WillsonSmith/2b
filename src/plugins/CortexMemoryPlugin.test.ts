@@ -760,3 +760,221 @@ describe("CortexMemoryPlugin - selectWithMMR correctness (perf)", () => {
     expect(ctx).toContain("only fact");
   });
 });
+
+// ---------------------------------------------------------------------------
+// synthesize_memories
+// ---------------------------------------------------------------------------
+
+function makePluginWithChat(chatResponse = "Consolidated insight about the topic.") {
+  const llm = {
+    getEmbedding: mock(async (_t: string) => [1, 0, 0, 0]),
+    chat: mock(async () => ({
+      response: chatResponse,
+      nonReasoningContent: chatResponse,
+      reasoningContent: "",
+      reasoningText: "",
+    })),
+  };
+  return { plugin: new CortexMemoryPlugin(llm as any, "test", ":memory:"), llm };
+}
+
+describe("synthesize_memories", () => {
+  test("returns no-memories message when DB is empty", async () => {
+    const { plugin } = makePluginWithChat();
+    const result = await plugin.executeTool("synthesize_memories", { query: "anything" }) as string;
+    expect(result).toContain("No memories found");
+    expect(result).toContain("Nothing to synthesize");
+  });
+
+  test("calls LLM and returns synthesis when memories exist", async () => {
+    const { plugin, llm } = makePluginWithChat("Key insight: Paris is a capital.");
+    await plugin.addMemoryRaw("Paris is the capital of France", "factual");
+    await plugin.addMemoryRaw("I think about geography often", "thought");
+    const result = await plugin.executeTool("synthesize_memories", { query: "capital cities" }) as string;
+    expect(result).toContain("Synthesis:");
+    expect(result).toContain("Key insight");
+    expect((llm.chat as ReturnType<typeof mock>).mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("includes source memory IDs in the result", async () => {
+    const { plugin } = makePluginWithChat("Synthesized.");
+    await plugin.addMemoryRaw("some fact", "factual");
+    const result = await plugin.executeTool("synthesize_memories", { query: "fact" }) as string;
+    expect(result).toContain("Source memories:");
+    expect(result).toMatch(/[0-9a-f-]{36}/);
+  });
+
+  test("saves synthesis when save_as is provided", async () => {
+    const { plugin } = makePluginWithChat("Saved synthesis result.");
+    await plugin.addMemoryRaw("a piece of knowledge", "factual");
+    const result = await plugin.executeTool("synthesize_memories", {
+      query: "knowledge",
+      save_as: "factual",
+      synthesis_label: "knowledge-summary",
+    }) as string;
+    expect(result).toContain("saved as factual");
+    // Verify the saved memory is queryable
+    const saved = plugin.queryMemoriesRaw({ contains: "Saved synthesis result." });
+    expect(saved.length).toBeGreaterThanOrEqual(1);
+    expect(saved[0]!.tags).toContain("reflection");
+    expect(saved[0]!.tags).toContain("knowledge-summary");
+  });
+
+  test("does not save when save_as is not provided", async () => {
+    const { plugin } = makePluginWithChat("No save.");
+    await plugin.addMemoryRaw("transient fact", "factual");
+    const beforeCount = plugin.queryMemoriesRaw({}).length;
+    await plugin.executeTool("synthesize_memories", { query: "fact" });
+    const afterCount = plugin.queryMemoriesRaw({}).length;
+    // No new memory should have been saved
+    expect(afterCount).toBe(beforeCount);
+  });
+
+  test("filters to specified types only", async () => {
+    const { plugin, llm } = makePluginWithChat("Factual only.");
+    // All embeddings are identical so both would score >= 0.6
+    await plugin.addMemoryRaw("fact one", "factual");
+    await plugin.addMemoryRaw("procedure one", "procedure");
+    await plugin.executeTool("synthesize_memories", { query: "one", types: ["factual"] });
+    const chatCall = (llm.chat as ReturnType<typeof mock>).mock.calls[0];
+    const prompt = chatCall?.[0]?.[0]?.content as string;
+    expect(prompt).toContain("[factual]");
+    expect(prompt).not.toContain("[procedure]");
+  });
+
+  test("returns error message when LLM chat throws", async () => {
+    const llm = {
+      getEmbedding: mock(async () => [1, 0, 0, 0]),
+      chat: mock(async () => { throw new Error("LLM unavailable"); }),
+    };
+    const plugin = new CortexMemoryPlugin(llm as any, "test", ":memory:");
+    await plugin.addMemoryRaw("some fact", "factual");
+    const result = await plugin.executeTool("synthesize_memories", { query: "fact" }) as string;
+    expect(result).toContain("Synthesis failed");
+    expect(result).toContain("LLM unavailable");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reflect_on_topic
+// ---------------------------------------------------------------------------
+
+describe("reflect_on_topic", () => {
+  test("returns no-memories message when DB is empty", async () => {
+    const { plugin } = makePluginWithChat();
+    const result = await plugin.executeTool("reflect_on_topic", { topic: "philosophy" }) as string;
+    expect(result).toContain("No memories found");
+    expect(result).toContain("Nothing to reflect on");
+  });
+
+  test("surface depth returns synthesis without saving", async () => {
+    const { plugin } = makePluginWithChat("Surface synthesis result.");
+    await plugin.addMemoryRaw("A factual memory", "factual");
+    const beforeCount = plugin.queryMemoriesRaw({}).length;
+    const result = await plugin.executeTool("reflect_on_topic", { topic: "test topic", depth: "surface" }) as string;
+    expect(result).toContain("surface");
+    expect(result).toContain("Surface synthesis result.");
+    // No new memory saved
+    expect(plugin.queryMemoriesRaw({}).length).toBe(beforeCount);
+  });
+
+  test("surface depth does not include behavior type memories", async () => {
+    const llm = {
+      getEmbedding: mock(async () => [1, 0, 0, 0]),
+      chat: mock(async () => ({
+        response: "synthesis",
+        nonReasoningContent: "synthesis",
+        reasoningContent: "",
+        reasoningText: "",
+      })),
+    };
+    const plugin = new CortexMemoryPlugin(llm as any, "test", ":memory:");
+    await plugin.addMemoryRaw("behavior rule", "behavior");
+    await plugin.addMemoryRaw("a fact", "factual");
+    await plugin.executeTool("reflect_on_topic", { topic: "test", depth: "surface" });
+    const prompt = ((llm.chat as ReturnType<typeof mock>).mock.calls[0]?.[0]?.[0]?.content ?? "") as string;
+    expect(prompt).toContain("[factual]");
+    expect(prompt).not.toContain("[behavior]");
+  });
+
+  test("deep depth calls LLM twice (synthesis + behavioral insight)", async () => {
+    const llm = {
+      getEmbedding: mock(async () => [1, 0, 0, 0]),
+      chat: mock(async (_msgs: any, system: string) => {
+        const isBehavioral = system?.includes("behavioral");
+        return {
+          response: isBehavioral ? "I should always verify assumptions." : "Deep synthesis.",
+          nonReasoningContent: isBehavioral ? "I should always verify assumptions." : "Deep synthesis.",
+          reasoningContent: "",
+          reasoningText: "",
+        };
+      }),
+    };
+    const plugin = new CortexMemoryPlugin(llm as any, "test", ":memory:");
+    await plugin.addMemoryRaw("a fact", "factual");
+    const result = await plugin.executeTool("reflect_on_topic", { topic: "test", depth: "deep" }) as string;
+    expect((llm.chat as ReturnType<typeof mock>).mock.calls.length).toBe(2);
+    expect(result).toContain("Behavioral insight");
+    expect(result).toContain("I should always verify assumptions.");
+  });
+
+  test("deep depth saves reflection to factual memory with correct tags", async () => {
+    const llm = {
+      getEmbedding: mock(async () => [1, 0, 0, 0]),
+      chat: mock(async () => ({
+        response: "Deep insight text.",
+        nonReasoningContent: "Deep insight text.",
+        reasoningContent: "",
+        reasoningText: "",
+      })),
+    };
+    const plugin = new CortexMemoryPlugin(llm as any, "test", ":memory:");
+    await plugin.addMemoryRaw("seed fact", "factual");
+    await plugin.executeTool("reflect_on_topic", { topic: "architecture", depth: "deep" });
+    const saved = plugin.queryMemoriesRaw({ contains: "Deep insight text." });
+    expect(saved.length).toBeGreaterThanOrEqual(1);
+    const mem = saved[0]!;
+    expect(mem.type).toBe("factual");
+    expect(mem.tags).toContain("reflection");
+    expect(mem.tags).toContain("deep");
+    expect(mem.tags).toContain("architecture");
+  });
+
+  test("deep is the default depth", async () => {
+    const llm = {
+      getEmbedding: mock(async () => [1, 0, 0, 0]),
+      chat: mock(async () => ({
+        response: "Default depth result.",
+        nonReasoningContent: "Default depth result.",
+        reasoningContent: "",
+        reasoningText: "",
+      })),
+    };
+    const plugin = new CortexMemoryPlugin(llm as any, "test", ":memory:");
+    await plugin.addMemoryRaw("seed", "factual");
+    const result = await plugin.executeTool("reflect_on_topic", { topic: "test" }) as string;
+    // Deep path saves and emits "(Saved to memory)"
+    expect(result).toContain("Saved to memory");
+  });
+
+  test("deep depth result includes behavioral insight in return string", async () => {
+    const callCount = { n: 0 };
+    const llm = {
+      getEmbedding: mock(async () => [1, 0, 0, 0]),
+      chat: mock(async () => {
+        callCount.n++;
+        return {
+          response: callCount.n === 1 ? "Synthesis text." : "When in doubt, ask.",
+          nonReasoningContent: callCount.n === 1 ? "Synthesis text." : "When in doubt, ask.",
+          reasoningContent: "",
+          reasoningText: "",
+        };
+      }),
+    };
+    const plugin = new CortexMemoryPlugin(llm as any, "test", ":memory:");
+    await plugin.addMemoryRaw("fact", "factual");
+    const result = await plugin.executeTool("reflect_on_topic", { topic: "questions", depth: "deep" }) as string;
+    expect(result).toContain("Synthesis text.");
+    expect(result).toContain("When in doubt, ask.");
+  });
+});

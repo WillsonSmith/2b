@@ -28,6 +28,7 @@ export interface CortexMemoryPluginOptions {
 export class CortexMemoryPlugin implements AgentPlugin {
   name = "CortexMemory";
   private db: CortexMemoryDatabase;
+  private readonly llm: LLMProvider;
 
   /**
    * Events captured from the current turn's getContext() call.
@@ -61,6 +62,7 @@ export class CortexMemoryPlugin implements AgentPlugin {
 
   constructor(llmProvider: LLMProvider, name: string, dbPath?: string, options?: CortexMemoryPluginOptions) {
     this.db = new CortexMemoryDatabase(llmProvider, name, dbPath);
+    this.llm = llmProvider;
     this.factualBudget = options?.factualContextBudgetChars ?? 1200;
     this.procedureBudget = options?.procedureContextBudgetChars ?? 600;
   }
@@ -284,6 +286,8 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "Use `hybrid_search` to combine semantic similarity search with metadata filters.",
       "Use `aggregate_memories` to understand the shape and distribution of your memories.",
       "Use `get_memory_timeline` to retrieve memories in chronological order.",
+      "Use `synthesize_memories` to consolidate memories across types into a single insight; pass `save_as` to persist the result.",
+      "Use `reflect_on_topic` before beginning complex tasks to integrate everything you know; 'deep' depth also derives a behavioral insight and saves the reflection.",
     ];
 
     return parts.join("\n");
@@ -679,6 +683,49 @@ export class CortexMemoryPlugin implements AgentPlugin {
           additionalProperties: false,
         },
       },
+      {
+        name: "synthesize_memories",
+        description:
+          "Gather memories across one or more types for a query topic and synthesize them into a single consolidated insight using the LLM. Optionally save the result as a new memory.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "The topic or question to synthesize memories about." },
+            types: {
+              type: "array",
+              items: { type: "string", enum: ["factual", "thought", "behavior", "procedure"] },
+              description: "Memory types to include. Defaults to all four types.",
+            },
+            save_as: {
+              type: "string",
+              enum: ["factual", "thought", "behavior", "procedure"],
+              description: "If provided, save the synthesis as a new memory of this type.",
+            },
+            synthesis_label: {
+              type: "string",
+              description: "Optional label tag applied alongside 'reflection' when saving the synthesis.",
+            },
+          },
+          required: ["query"],
+        },
+      },
+      {
+        name: "reflect_on_topic",
+        description:
+          "Synthesize all available knowledge about a topic into a coherent reflection. 'surface' synthesizes factual and thought memories without saving. 'deep' (default) additionally includes behaviors, derives a behavioral insight, and saves the result as a factual reflection memory.",
+        parameters: {
+          type: "object",
+          properties: {
+            topic: { type: "string", description: "The topic or question to reflect on." },
+            depth: {
+              type: "string",
+              enum: ["surface", "deep"],
+              description: "Reflection depth. 'surface' returns synthesis without saving. 'deep' includes behaviors and saves. Default: 'deep'.",
+            },
+          },
+          required: ["topic"],
+        },
+      },
     ];
   }
 
@@ -697,6 +744,8 @@ export class CortexMemoryPlugin implements AgentPlugin {
       if (name === "aggregate_memories") return this.handleAggregateMemories(args);
       if (name === "get_memory_timeline") return this.handleGetMemoryTimeline(args);
       if (name === "memory_retrieval_trace") return this.handleMemoryRetrievalTrace();
+      if (name === "synthesize_memories") return await this.handleSynthesizeMemories(args);
+      if (name === "reflect_on_topic") return await this.handleReflectOnTopic(args);
     } catch (e) {
       logger.error(this.name, `Tool error (${name}):`, e);
       return `Tool error: ${e instanceof Error ? e.message : String(e)}`;
@@ -948,6 +997,156 @@ export class CortexMemoryPlugin implements AgentPlugin {
         return `[${r.id}] (${r.type}, ${date}${tagsStr}) ${text}`;
       })
       .join("\n");
+  }
+
+  private async handleSynthesizeMemories(args: any): Promise<string> {
+    const query = String(args.query);
+    const types: string[] = Array.isArray(args.types)
+      ? args.types
+      : ["factual", "thought", "behavior", "procedure"];
+    const saveAs = typeof args.save_as === "string" ? args.save_as as "factual" | "thought" | "behavior" | "procedure" : undefined;
+    const synthesisLabel = typeof args.synthesis_label === "string" ? args.synthesis_label : undefined;
+
+    logger.info(this.name, `synthesize_memories: "${query.slice(0, 80)}" types=[${types.join(",")}]`);
+
+    // Compute embedding once and reuse across all type searches
+    const embedding = await this.db.getEmbedding(query);
+
+    const allMemories: Array<{ type: string; id: string; text: string }> = [];
+    for (const type of types) {
+      const results = this.db.searchWithEmbedding(embedding, 5, 0.6, [type]);
+      for (const r of results) {
+        allMemories.push({ type, id: r.id, text: r.text });
+      }
+    }
+
+    if (allMemories.length === 0) {
+      return `No memories found for topic: "${query}". Nothing to synthesize.`;
+    }
+
+    const memoriesList = allMemories
+      .map(m => `[${m.type}] ${m.text.trim().slice(0, 200)}`)
+      .join("\n");
+
+    const synthesisPrompt = `You are consolidating memory fragments about a topic. Produce a single concise synthesis (max 400 characters) that resolves contradictions and captures the most important insight.
+
+Topic: ${query}
+
+Memories:
+${memoriesList}
+
+Synthesis (max 400 chars):`;
+
+    let synthesis: string;
+    try {
+      const { nonReasoningContent } = await this.llm.chat(
+        [{ role: "user", content: synthesisPrompt }],
+        "You are a memory synthesis assistant. Produce a single concise insight (max 400 chars).",
+      );
+      synthesis = nonReasoningContent.trim().slice(0, 400);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return `Synthesis failed: ${msg}`;
+    }
+
+    const sourceIds = allMemories.map(m => m.id);
+
+    if (saveAs) {
+      const tags = ["reflection"];
+      if (synthesisLabel) tags.push(synthesisLabel);
+      await this.writeMemory(synthesis, saveAs, tags, "synthesize_memories", 0.8);
+      logger.info(this.name, `synthesize_memories: saved as ${saveAs}`);
+      return `Synthesis (saved as ${saveAs}):\n${synthesis}\n\nSource memories: ${sourceIds.join(", ")}`;
+    }
+
+    return `Synthesis:\n${synthesis}\n\nSource memories: ${sourceIds.join(", ")}`;
+  }
+
+  private async handleReflectOnTopic(args: any): Promise<string> {
+    const topic = String(args.topic);
+    const depth = args.depth === "surface" ? "surface" : "deep";
+
+    logger.info(this.name, `reflect_on_topic: "${topic.slice(0, 80)}" depth=${depth}`);
+
+    const synthesisTypes = depth === "surface"
+      ? ["factual", "thought"]
+      : ["factual", "thought", "behavior"];
+
+    const embedding = await this.db.getEmbedding(topic);
+
+    const allMemories: Array<{ type: string; id: string; text: string }> = [];
+    for (const type of synthesisTypes) {
+      const results = this.db.searchWithEmbedding(embedding, 5, 0.5, [type]);
+      for (const r of results) {
+        allMemories.push({ type, id: r.id, text: r.text });
+      }
+    }
+
+    if (allMemories.length === 0) {
+      return `No memories found for topic: "${topic}". Nothing to reflect on.`;
+    }
+
+    const memoriesList = allMemories
+      .map(m => `[${m.type}] ${m.text.trim().slice(0, 200)}`)
+      .join("\n");
+
+    const synthesisPrompt = `You are reflecting on accumulated knowledge about a topic. Produce a concise synthesis (max 400 characters) that integrates the key insights.
+
+Topic: ${topic}
+
+Knowledge fragments:
+${memoriesList}
+
+Synthesis (max 400 chars):`;
+
+    let synthesis: string;
+    try {
+      const { nonReasoningContent } = await this.llm.chat(
+        [{ role: "user", content: synthesisPrompt }],
+        "You are a reflective synthesis assistant. Produce a single concise insight (max 400 chars).",
+      );
+      synthesis = nonReasoningContent.trim().slice(0, 400);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return `Reflection failed during synthesis: ${msg}`;
+    }
+
+    if (depth === "surface") {
+      return `Reflection on "${topic}" (surface):\n${synthesis}`;
+    }
+
+    // Deep: second pass — derive actionable behavioral insight
+    const behavioralPrompt = `Based on this reflection, what should be remembered or done differently in future?
+
+Topic: ${topic}
+Reflection: ${synthesis}
+
+Actionable insight (max 200 chars, starting with "I should" or "When"):`;
+
+    let behavioralInsight = "";
+    try {
+      const { nonReasoningContent } = await this.llm.chat(
+        [{ role: "user", content: behavioralPrompt }],
+        "You are a behavioral insight assistant. Produce one actionable rule (max 200 chars).",
+      );
+      behavioralInsight = nonReasoningContent.trim().slice(0, 200);
+    } catch {
+      // Non-fatal — surface synthesis is still returned
+    }
+
+    const combined = behavioralInsight
+      ? `${synthesis}\n\nBehavioral insight: ${behavioralInsight}`
+      : synthesis;
+
+    await this.writeMemory(
+      combined.slice(0, MAX_CONTENT_LENGTH),
+      "factual",
+      ["reflection", "deep", topic.slice(0, 50)],
+      "reflect_on_topic",
+      0.85,
+    );
+
+    return `Reflection on "${topic}" (deep):\n${synthesis}${behavioralInsight ? `\n\nBehavioral insight: ${behavioralInsight}` : ""}\n\n(Saved to memory)`;
   }
 
   private handleMemoryRetrievalTrace(): string {

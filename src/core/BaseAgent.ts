@@ -51,6 +51,12 @@ export class BaseAgent extends EventEmitter {
   private tokenCallback: ((token: string, isReasoning: boolean) => void) | undefined = undefined;
   private proactiveTasks: Array<{ intervalMs: number; task: () => string | null; lastRun: number }> = [];
   private proactiveTimer: ReturnType<typeof setInterval> | null = null;
+  /**
+   * Resolver set by yieldControl(). When non-null the agent is suspended mid-turn
+   * awaiting continuation input. The next addDirect() call resolves it instead of
+   * enqueuing, allowing the in-flight LLM tool loop to resume.
+   */
+  private yieldResolver: ((input: string) => void) | null = null;
 
   public get name(): string {
     return this.config.name ?? "Agent";
@@ -79,6 +85,12 @@ export class BaseAgent extends EventEmitter {
 
   /** Queue input that requires a response and immediately schedule a tick. */
   public addDirect(text: string) {
+    if (this.yieldResolver) {
+      const resolver = this.yieldResolver;
+      this.yieldResolver = null;
+      resolver(text);
+      return;
+    }
     this.directQueue.push(text);
     this.tick();
   }
@@ -137,6 +149,38 @@ export class BaseAgent extends EventEmitter {
     this.interrupt();
   }
 
+  /**
+   * Cooperatively yield control mid-turn, suspending until the next addDirect() call.
+   *
+   * Intended to be called from within a tool's executeTool() implementation.
+   * The agent emits "speak" with partialResult (if provided) and "agent_yield",
+   * then blocks the tool call loop by returning a Promise that resolves only when
+   * the caller supplies new direct input via addDirect().
+   *
+   * The resolved value (the continuation text) is returned to the LLM as the
+   * tool's result, allowing the in-flight turn to continue with the new context.
+   *
+   * If the current AbortController fires before input arrives, the Promise rejects
+   * with "Yield interrupted." — the tool loop will surface this as an error.
+   */
+  public yieldControl(partialResult?: string): Promise<string> {
+    if (partialResult) this.emit("speak", partialResult);
+    this.emit("agent_yield", partialResult);
+    return new Promise<string>((resolve, reject) => {
+      this.yieldResolver = resolve;
+      this.currentAbortController?.signal.addEventListener(
+        "abort",
+        () => {
+          if (this.yieldResolver === resolve) {
+            this.yieldResolver = null;
+            reject(new Error("Yield interrupted."));
+          }
+        },
+        { once: true },
+      );
+    });
+  }
+
   /** Register a recurring background task. If task() returns a non-null string, it is enqueued as ambient input. */
   public scheduleProactiveTick(intervalMs: number, task: () => string | null): void {
     this.proactiveTasks.push({ intervalMs, task, lastRun: 0 });
@@ -183,6 +227,29 @@ export class BaseAgent extends EventEmitter {
     // Initialize all plugins concurrently. allSettled is used instead of all so
     // a single failing plugin doesn't block the others from starting.
     await Promise.allSettled(this.plugins.map(p => p.onInit?.(this)));
+
+    // After onInit, give plugins the chance to register their own InputSources.
+    // Results are collected with allSettled so a failing plugin doesn't prevent
+    // others from contributing sources. Sources are added via addInputSource() so
+    // they appear in this.inputSources before the start loop below.
+    const pluginsWithSources = this.plugins.filter(p => p.createInputSources);
+    if (pluginsWithSources.length > 0) {
+      const sourceResults = await Promise.allSettled(
+        pluginsWithSources.map(p => p.createInputSources!(this)),
+      );
+      for (let i = 0; i < sourceResults.length; i++) {
+        const result = sourceResults[i]!;
+        const plugin = pluginsWithSources[i]!;
+        if (result.status === "fulfilled") {
+          for (const source of result.value) {
+            this.addInputSource(source);
+          }
+        } else {
+          logger.error("BaseAgent", `createInputSources failed in ${plugin.name}:`, result.reason);
+        }
+      }
+    }
+
     for (const source of this.inputSources) {
       await source.start();
     }
@@ -376,7 +443,54 @@ export class BaseAgent extends EventEmitter {
                 return { error: "Interrupted." };
               }
               this.emit("tool_call", toolName, args);
-              const toolResult = await plugin.executeTool!(toolName, args);
+
+              // ── Retry loop ───────────────────────────────────────────────
+              const retryPolicy = rawTool.retry;
+              const maxAttempts = retryPolicy?.maxAttempts ?? 1;
+              let toolResult: unknown;
+              let lastError: unknown = null;
+              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                if (attempt > 1 && retryPolicy) {
+                  const base = retryPolicy.delayMs ?? 0;
+                  const wait = retryPolicy.backoff === "exponential"
+                    ? base * 2 ** (attempt - 2)
+                    : base;
+                  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+                  this.emit("log", `[Retry] ${toolName}: attempt ${attempt}/${maxAttempts}`);
+                }
+                try {
+                  toolResult = await plugin.executeTool!(toolName, args);
+                  lastError = null;
+                  break;
+                } catch (e) {
+                  lastError = e;
+                  const shouldRetry = retryPolicy?.retryOn ? retryPolicy.retryOn(e) : true;
+                  if (!shouldRetry || attempt >= maxAttempts) break;
+                }
+              }
+              if (lastError !== null) {
+                const msg = lastError instanceof Error ? lastError.message : String(lastError);
+                this.emit("log", `[Tool error] ${toolName} failed after ${maxAttempts} attempt(s): ${msg}`);
+                this.emit("tool_result", toolName);
+                return `Tool error after ${maxAttempts} attempt(s): ${msg}`;
+              }
+              // ── End retry loop ───────────────────────────────────────────
+
+              if (rawTool.verifyAfter) {
+                try {
+                  const vr = await rawTool.verifyAfter(args as Record<string, unknown>, toolResult);
+                  if (!vr.passed) {
+                    this.emit("log", `[Verification failed] ${toolName}: ${vr.message}`);
+                    this.emit("tool_result", toolName);
+                    const resultStr = typeof toolResult === "string"
+                      ? toolResult
+                      : JSON.stringify(toolResult);
+                    return `${resultStr}\n[Verification failed: ${vr.message}]`;
+                  }
+                } catch (e) {
+                  this.emit("log", `[Verification error] ${toolName}: ${e instanceof Error ? e.message : String(e)}`);
+                }
+              }
               this.emit("tool_result", toolName);
               return toolResult;
             };
@@ -398,6 +512,22 @@ export class BaseAgent extends EventEmitter {
       this.cachedTools = this.buildTools();
     }
     return this.cachedTools;
+  }
+
+  /**
+   * Route a tool call through the full built wrapper for the named tool —
+   * identical to what the LLM tool-call loop does. Applies permission gating,
+   * onBeforeToolCall veto checks, retry policy, and verifyAfter hooks.
+   *
+   * Used by RetryPlugin's `retry_tool` so re-invoked tools respect the same
+   * per_call approval prompts as the original call.
+   *
+   * Returns an error string if no tool with that name is registered.
+   */
+  public async dispatchTool(toolName: string, args: Record<string, unknown>): Promise<unknown> {
+    const tool = this.collectTools().find(t => t.name === toolName);
+    if (!tool?.implementation) return `No tool named '${toolName}' is registered.`;
+    return tool.implementation(args);
   }
 
   /**
