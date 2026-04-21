@@ -43,6 +43,7 @@ import { PlanPlugin } from "./src/plugins/PlanPlugin.ts";
 import { DecisionPlugin } from "./src/plugins/DecisionPlugin.ts";
 import { startTerminalUI } from "./src/ui/terminal/run.tsx";
 import { startWebUI } from "./src/ui/web/server.ts";
+import { ChatSessionStore } from "./src/ui/web/ChatSessionStore.ts";
 
 // ── Parse CLI args ────────────────────────────────────────────────────────────
 
@@ -214,6 +215,7 @@ if (useWeb) {
     port,
     memoryPlugin: agent.memoryPlugin,
     behaviorPlugin,
+    sessionStore: new ChatSessionStore(),
   });
 } else {
   await startTerminalUI({
