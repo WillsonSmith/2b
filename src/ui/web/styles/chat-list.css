@@ -132,6 +132,12 @@
   opacity: 1;
 }
 
+@media (hover: none) {
+  .chat-list-item-delete {
+    opacity: 1;
+  }
+}
+
 .chat-list-item-delete:hover {
   color: var(--red);
 }
