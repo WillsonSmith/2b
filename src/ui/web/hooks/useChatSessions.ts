@@ -39,6 +39,7 @@ export function useChatSessions({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSaveRef = useRef<(() => void) | null>(null);
   const activeIdRef = useRef(activeId);
+  const loadedCountRef = useRef(0);
   useEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
@@ -91,6 +92,7 @@ export function useChatSessions({
       .then(async (res) => {
         if (!res.ok) return;
         const msgs = (await res.json()) as ChatMessage[];
+        loadedCountRef.current = msgs.length;
         if (msgs.length > 0) ws.setMessages(msgs);
       })
       .catch(() => {});
@@ -107,21 +109,27 @@ export function useChatSessions({
     }
   }, []);
 
-  const snapshotMessages = useCallback((msgs: ChatMessage[]) => {
-    const id = activeIdRef.current;
-    if (!id) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    const save = () => {
-      pendingSaveRef.current = null;
-      fetch(`/api/sessions/${id}/messages`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: msgs }),
-      }).catch(() => {});
-    };
-    pendingSaveRef.current = save;
-    debounceRef.current = setTimeout(save, 500);
-  }, []);
+  const snapshotMessages = useCallback(
+    (msgs: ChatMessage[]) => {
+      const id = activeIdRef.current;
+      if (!id) return;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      const touch = msgs.length > loadedCountRef.current;
+      const save = () => {
+        pendingSaveRef.current = null;
+        fetch(`/api/sessions/${id}/messages`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: msgs, touch }),
+        })
+          .then(() => { if (touch) refreshSessions(); })
+          .catch(() => {});
+      };
+      pendingSaveRef.current = save;
+      debounceRef.current = setTimeout(save, 500);
+    },
+    [refreshSessions],
+  );
 
   const createSession = useCallback(async () => {
     const id = generateId();
@@ -130,6 +138,7 @@ export function useChatSessions({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
+    loadedCountRef.current = 0;
     ws.send({ type: "clear" });
     ws.setMessages([]);
     setActiveAndNavigate(id);
@@ -142,6 +151,7 @@ export function useChatSessions({
       ws.send({ type: "clear" });
       const res = await fetch(`/api/sessions/${id}/messages`);
       const msgs = res.ok ? ((await res.json()) as ChatMessage[]) : [];
+      loadedCountRef.current = msgs.length;
       ws.setMessages(msgs);
       setActiveAndNavigate(id);
     },

@@ -261,14 +261,14 @@ export async function startWebUI({
     if (!sessionStore) return jsonError("Session store not available", 503);
     const id = new URL(req.url).pathname.split("/")[3] ?? "";
     if (!sessionStore.getSession(id)) return jsonError("Session not found", 404);
-    let body: { messages?: ChatMessage[] };
+    let body: { messages?: ChatMessage[]; touch?: boolean };
     try {
-      body = await req.json() as { messages?: ChatMessage[] };
+      body = await req.json() as { messages?: ChatMessage[]; touch?: boolean };
     } catch {
       return jsonError("Invalid JSON body");
     }
     if (!Array.isArray(body.messages)) return jsonError("messages array is required");
-    sessionStore.saveMessages(id, body.messages);
+    sessionStore.saveMessages(id, body.messages, body.touch !== false);
     return json({ ok: true });
   }
 

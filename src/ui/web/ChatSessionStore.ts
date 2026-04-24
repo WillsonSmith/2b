@@ -89,11 +89,18 @@ export class ChatSessionStore {
     );
   }
 
-  saveMessages(id: string, messages: ChatMessage[]): void {
-    this.db.run(
-      "UPDATE sessions SET messages = ?, updated_at = ? WHERE id = ?",
-      [JSON.stringify(messages), Date.now(), id],
-    );
+  saveMessages(id: string, messages: ChatMessage[], bumpTimestamp = true): void {
+    if (bumpTimestamp) {
+      this.db.run(
+        "UPDATE sessions SET messages = ?, updated_at = ? WHERE id = ?",
+        [JSON.stringify(messages), Date.now(), id],
+      );
+    } else {
+      this.db.run(
+        "UPDATE sessions SET messages = ? WHERE id = ?",
+        [JSON.stringify(messages), id],
+      );
+    }
   }
 
   deleteSession(id: string): void {
