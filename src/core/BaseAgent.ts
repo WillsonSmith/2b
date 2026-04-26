@@ -163,9 +163,9 @@ export class BaseAgent extends EventEmitter {
    * If the current AbortController fires before input arrives, the Promise rejects
    * with "Yield interrupted." — the tool loop will surface this as an error.
    */
-  public yieldControl(partialResult?: string): Promise<string> {
+  public yieldControl(partialResult?: string, reason?: string): Promise<string> {
     if (partialResult) this.emit("speak", partialResult);
-    this.emit("agent_yield", partialResult);
+    this.emit("agent_yield", reason, partialResult);
     return new Promise<string>((resolve, reject) => {
       this.yieldResolver = resolve;
       this.currentAbortController?.signal.addEventListener(

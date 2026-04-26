@@ -12,6 +12,7 @@
  *   "state_change"          — "idle" | "thinking"
  *   "active_tools_changed"  — current list of in-flight tools
  *   "dynamic_agents_changed"— current list of spawned sub-agents and their states
+ *   "yield_requested"       — agent paused mid-turn; payload: { reason, partialResult }
  *
  * Critical: both terminal and web UIs depend on this. Changes to event names or
  * ChatMessage shape are breaking changes across both UIs.
@@ -282,6 +283,10 @@ export class ChatSession extends EventEmitter {
         this._dynamicAgents.set(agentName, { ...record, state });
         this.emit("dynamic_agents_changed", this.dynamicAgents);
       }
+    });
+
+    this.agent.on("agent_yield", (reason, partialResult) => {
+      this.emit("yield_requested", { reason, partialResult });
     });
 
     this.agent.on("agent_error", (agentName) => {

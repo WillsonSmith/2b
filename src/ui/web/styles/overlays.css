@@ -91,3 +91,36 @@
   background: var(--red);
   color: #fff;
 }
+
+/* ── Yield dialog ── */
+
+.yield-dialog {
+  border-color: var(--blue, #3b82f6);
+}
+
+.yield-title {
+  color: var(--blue, #3b82f6);
+}
+
+.yield-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text);
+  resize: vertical;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.yield-input:focus {
+  border-color: var(--blue, #3b82f6);
+}
+
+.perm-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
