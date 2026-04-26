@@ -71,6 +71,7 @@ export type WsMessage =
         args: Record<string, unknown>;
       };
     }
+  | { type: "agent_yield"; reason: string | undefined; partialResult: string | undefined }
   | { type: "model_changed"; model: string }
   | { type: "system_prompt"; systemPrompt: string; model: string }
   | {
@@ -91,6 +92,11 @@ export interface PermissionRequest {
   agentName: string;
   toolName: string;
   args: Record<string, unknown>;
+}
+
+export interface YieldRequest {
+  reason: string | undefined;
+  partialResult: string | undefined;
 }
 
 const MAX_ARG_VALUE_LENGTH = 200;

@@ -11,6 +11,7 @@ import type {
   PanelId,
   PermissionRequest,
   WsMessage,
+  YieldRequest,
 } from "../types.ts";
 
 export interface UseWebSocketReturn {
@@ -24,6 +25,8 @@ export interface UseWebSocketReturn {
   setPendingPermission: React.Dispatch<
     React.SetStateAction<PermissionRequest | null>
   >;
+  pendingYield: YieldRequest | null;
+  setPendingYield: React.Dispatch<React.SetStateAction<YieldRequest | null>>;
   currentModel: string;
   setCurrentModel: React.Dispatch<React.SetStateAction<string>>;
   systemPrompt: string;
@@ -43,6 +46,7 @@ export function useWebSocket(): UseWebSocketReturn {
   const [dynamicAgents, setDynamicAgents] = useState<DynamicAgentRecord[]>([]);
   const [pendingPermission, setPendingPermission] =
     useState<PermissionRequest | null>(null);
+  const [pendingYield, setPendingYield] = useState<YieldRequest | null>(null);
   const [currentModel, setCurrentModel] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [connected, setConnected] = useState(false);
@@ -134,6 +138,9 @@ export function useWebSocket(): UseWebSocketReturn {
         case "permission_request":
           setPendingPermission(msg.request);
           break;
+        case "agent_yield":
+          setPendingYield({ reason: msg.reason, partialResult: msg.partialResult });
+          break;
         case "model_changed":
           setCurrentModel(msg.model);
           break;
@@ -195,6 +202,8 @@ export function useWebSocket(): UseWebSocketReturn {
     dynamicAgents,
     pendingPermission,
     setPendingPermission,
+    pendingYield,
+    setPendingYield,
     currentModel,
     setCurrentModel,
     systemPrompt,

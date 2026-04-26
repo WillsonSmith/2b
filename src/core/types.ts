@@ -36,8 +36,8 @@ export interface AgentEventMap {
   "behavior:conflict_detected": [newId: string, newText: string, conflictId: string, conflictText: string, score: number];
   /** Emitted by BehaviorPlugin after each turn's system prompt fragment is assembled. */
   "behaviors_loaded": [core: Array<{ id: string; text: string; weight: number }>, contextual: Array<{ id: string; text: string; score: number; weight: number }>];
-  /** Emitted when the agent yields control mid-turn, optionally with a partial result already spoken. */
-  "agent_yield": [partialResult: string | undefined];
+  /** Emitted when the agent yields control mid-turn, awaiting user continuation. */
+  "agent_yield": [reason: string | undefined, partialResult: string | undefined];
 }
 
 /**

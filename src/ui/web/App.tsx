@@ -13,6 +13,7 @@ import { ChatInput } from "./components/chat/ChatInput.tsx";
 import { ChatList } from "./components/chat-list/ChatList.tsx";
 import { Sidebar } from "./components/sidebar/Sidebar.tsx";
 import { PermissionDialog } from "./components/overlays/PermissionDialog.tsx";
+import { YieldDialog } from "./components/overlays/YieldDialog.tsx";
 
 export function App() {
   const ws = useWebSocket();
@@ -86,6 +87,14 @@ export function App() {
     [ws.setPendingPermission, ws.send],
   );
 
+  const handleYield = useCallback(
+    (text: string) => {
+      ws.setPendingYield(null);
+      ws.send({ type: "yield_response", text });
+    },
+    [ws.setPendingYield, ws.send],
+  );
+
   const handleDismissConflict = useCallback(
     async (c: ConflictRecord) => {
       const key = [c.newId, c.conflictId].sort().join("::");
@@ -112,7 +121,7 @@ export function App() {
     [ws.setConflicts],
   );
 
-  const isBlocked = ws.state === "thinking" || !!ws.pendingPermission;
+  const isBlocked = ws.state === "thinking" || !!ws.pendingPermission || !!ws.pendingYield;
   const showSidebar = sidebarOpen && ws.availablePanels.length > 0;
 
   return (
@@ -181,6 +190,12 @@ export function App() {
         <PermissionDialog
           request={ws.pendingPermission}
           onRespond={handlePermission}
+        />
+      )}
+      {ws.pendingYield && (
+        <YieldDialog
+          request={ws.pendingYield}
+          onRespond={handleYield}
         />
       )}
     </AppShell>

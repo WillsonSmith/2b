@@ -11,6 +11,7 @@
  *   { type: "interrupt",         scope: "main"|"subagents"|"all" }
  *   { type: "clear" }
  *   { type: "permission_response", response: "yes"|"always"|"no" }
+ *   { type: "yield_response",    text }
  *   { type: "model_change",      model }
  *   { type: "system_prompt_request" }
  *
@@ -22,6 +23,7 @@
  *   { type: "active_tools_changed", tools }
  *   { type: "dynamic_agents_changed", agents }
  *   { type: "permission_request", ...request }   — via WebPermissionManager transport
+ *   { type: "agent_yield",       reason, partialResult }
  *   { type: "model_changed",     model }
  *   { type: "system_prompt",     systemPrompt, model }
  *   { type: "behavior_conflict", newId, newText, conflictId, conflictText, score }
@@ -117,6 +119,9 @@ export async function startWebUI({
   session.on("state_change", (state) => broadcast({ type: "state_change", state }));
   session.on("active_tools_changed", (tools) => broadcast({ type: "active_tools_changed", tools }));
   session.on("dynamic_agents_changed", (agents) => broadcast({ type: "dynamic_agents_changed", agents }));
+  session.on("yield_requested", ({ reason, partialResult }: { reason: string | undefined; partialResult: string | undefined }) =>
+    broadcast({ type: "agent_yield", reason, partialResult }),
+  );
   agent.on("behavior:conflict_detected", (newId, newText, conflictId, conflictText, score) =>
     broadcast({ type: "behavior_conflict", newId, newText, conflictId, conflictText, score }),
   );
@@ -358,6 +363,13 @@ export async function startWebUI({
               lastPermissionToolName = null;
             }
             permissionManager.resolvePermission(approved, alwaysApprove);
+            break;
+          }
+          case "yield_response": {
+            const text = msg.text;
+            if (typeof text === "string" && text.trim().length > 0) {
+              agent.addDirect(text.trim());
+            }
             break;
           }
           case "model_change": {
