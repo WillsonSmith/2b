@@ -65,7 +65,7 @@ export class YieldPlugin implements AgentPlugin {
     const { reason, partial_result } = args as { reason: string; partial_result?: string };
 
     this.agent.emit("log", `[Yield] ${reason}`);
-    const continuation = await this.agent.yieldControl(partial_result);
+    const continuation = await this.agent.yieldControl(partial_result, reason);
     return `Resuming after yield. Continuation: ${continuation}`;
   }
 }

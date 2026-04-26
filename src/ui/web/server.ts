@@ -2,14 +2,16 @@
  * Web UI entry point — Bun HTTP + WebSocket server.
  *
  * Serves the bundled SPA (index.html) and upgrades any WebSocket connection to
- * a real-time agent session. Only one WebSocket client is tracked at a time
- * (`activeWs`); a new connection replaces the previous one's event listeners.
+ * a real-time agent session. All connected clients are tracked in a Set and
+ * receive broadcasts simultaneously; connecting from a second device does not
+ * disrupt existing connections.
  *
  * WebSocket message protocol (client → server):
  *   { type: "send",              text }
  *   { type: "interrupt",         scope: "main"|"subagents"|"all" }
  *   { type: "clear" }
  *   { type: "permission_response", response: "yes"|"always"|"no" }
+ *   { type: "yield_response",    text }
  *   { type: "model_change",      model }
  *   { type: "system_prompt_request" }
  *
@@ -21,6 +23,7 @@
  *   { type: "active_tools_changed", tools }
  *   { type: "dynamic_agents_changed", agents }
  *   { type: "permission_request", ...request }   — via WebPermissionManager transport
+ *   { type: "agent_yield",       reason, partialResult }
  *   { type: "model_changed",     model }
  *   { type: "system_prompt",     systemPrompt, model }
  *   { type: "behavior_conflict", newId, newText, conflictId, conflictText, score }
@@ -51,6 +54,8 @@ import type { BehaviorPlugin } from "../../plugins/BehaviorPlugin.ts";
 import type { MemoryFilter } from "../../plugins/CortexMemoryDatabase.ts";
 import { ChatSession } from "../ChatSession.ts";
 import type { WebPermissionManager } from "./WebPermissionManager.ts";
+import { ChatSessionStore } from "./ChatSessionStore.ts";
+import type { ChatMessage } from "../types.ts";
 import index from "./index.html";
 
 interface StartWebUIOptions {
@@ -62,6 +67,7 @@ interface StartWebUIOptions {
   port?: number;
   memoryPlugin?: CortexMemoryPlugin;
   behaviorPlugin?: BehaviorPlugin;
+  sessionStore?: ChatSessionStore;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -87,17 +93,18 @@ export async function startWebUI({
   port = 3000,
   memoryPlugin,
   behaviorPlugin,
+  sessionStore,
 }: StartWebUIOptions): Promise<void> {
   await agent.start();
 
   const session = new ChatSession(agent);
   let currentModel = model;
-  let activeWs: ServerWebSocket<unknown> | null = null;
+  const clients = new Set<ServerWebSocket<unknown>>();
 
-  // Forward permission requests to the connected client
-  permissionManager.setTransport((msg) => {
-    activeWs?.send(JSON.stringify(msg));
-  });
+  const broadcast = (msg: unknown) => {
+    const str = JSON.stringify(msg);
+    for (const client of clients) client.send(str);
+  };
 
   // Track the last permission request's toolName so "always" can cache it
   const originalRequestApproval = permissionManager.requestApproval.bind(permissionManager);
@@ -106,54 +113,23 @@ export async function startWebUI({
     return originalRequestApproval(request);
   };
 
-  // Cleanup function for the current WebSocket's session listeners
-  let unbindSession: (() => void) | null = null;
+  // Bind session listeners once — broadcast to all connected clients
+  session.on("message", (message) => broadcast({ type: "message", message }));
+  session.on("message_updated", (message) => broadcast({ type: "message_updated", message }));
+  session.on("state_change", (state) => broadcast({ type: "state_change", state }));
+  session.on("active_tools_changed", (tools) => broadcast({ type: "active_tools_changed", tools }));
+  session.on("dynamic_agents_changed", (agents) => broadcast({ type: "dynamic_agents_changed", agents }));
+  session.on("yield_requested", ({ reason, partialResult }: { reason: string | undefined; partialResult: string | undefined }) =>
+    broadcast({ type: "agent_yield", reason, partialResult }),
+  );
+  agent.on("behavior:conflict_detected", (newId, newText, conflictId, conflictText, score) =>
+    broadcast({ type: "behavior_conflict", newId, newText, conflictId, conflictText, score }),
+  );
+  agent.on("behaviors_loaded", (core, contextual) =>
+    broadcast({ type: "behaviors_loaded", core, contextual }),
+  );
 
-  function bindSessionToWs(ws: ServerWebSocket<unknown>): void {
-    // Remove previous connection's listeners before adding new ones
-    unbindSession?.();
-
-    const send = (msg: unknown) => ws.send(JSON.stringify(msg));
-
-    // Forward permission requests to this client
-    permissionManager.setTransport(send);
-    activeWs = ws;
-
-    // Send current snapshot
-    send({ type: "snapshot", ...session.getSnapshot() });
-
-    const onMessage = (message: unknown) => send({ type: "message", message });
-    const onMessageUpdated = (message: unknown) => send({ type: "message_updated", message });
-    const onStateChange = (state: unknown) => send({ type: "state_change", state });
-    const onActiveToolsChanged = (tools: unknown) => send({ type: "active_tools_changed", tools });
-    const onDynamicAgentsChanged = (agents: unknown) => send({ type: "dynamic_agents_changed", agents });
-    const onBehaviorConflict = (
-      newId: string, newText: string, conflictId: string, conflictText: string, score: number,
-    ) => send({ type: "behavior_conflict", newId, newText, conflictId, conflictText, score });
-    const onBehaviorsLoaded = (
-      core: Array<{ id: string; text: string; weight: number }>,
-      contextual: Array<{ id: string; text: string; score: number; weight: number }>,
-    ) => send({ type: "behaviors_loaded", core, contextual });
-
-    session.on("message", onMessage);
-    session.on("message_updated", onMessageUpdated);
-    session.on("state_change", onStateChange);
-    session.on("active_tools_changed", onActiveToolsChanged);
-    session.on("dynamic_agents_changed", onDynamicAgentsChanged);
-    agent.on("behavior:conflict_detected", onBehaviorConflict);
-    agent.on("behaviors_loaded", onBehaviorsLoaded);
-
-    unbindSession = () => {
-      session.off("message", onMessage);
-      session.off("message_updated", onMessageUpdated);
-      session.off("state_change", onStateChange);
-      session.off("active_tools_changed", onActiveToolsChanged);
-      session.off("dynamic_agents_changed", onDynamicAgentsChanged);
-      agent.off("behavior:conflict_detected", onBehaviorConflict);
-      agent.off("behaviors_loaded", onBehaviorsLoaded);
-      unbindSession = null;
-    };
-  }
+  permissionManager.setTransport(broadcast);
 
   // ── REST route handlers ───────────────────────────────────────────────────
 
@@ -242,10 +218,78 @@ export async function startWebUI({
     return json(memoryPlugin.lastRetrievalTrace);
   }
 
+  // ── Session route handlers ────────────────────────────────────────────────
+
+  function handleListSessions(): Response {
+    if (!sessionStore) return jsonError("Session store not available", 503);
+    return json(sessionStore.listSessions());
+  }
+
+  async function handleCreateSession(req: Request): Promise<Response> {
+    if (!sessionStore) return jsonError("Session store not available", 503);
+    let body: { id?: string };
+    try {
+      body = await req.json() as { id?: string };
+    } catch {
+      return jsonError("Invalid JSON body");
+    }
+    if (!body.id?.trim()) return jsonError("id is required");
+    const existing = sessionStore.getSession(body.id.trim());
+    if (existing) return json(existing);
+    return json(sessionStore.createSession(body.id.trim()), 201);
+  }
+
+  function handleGetSessionMessages(req: Request): Response {
+    if (!sessionStore) return jsonError("Session store not available", 503);
+    const id = new URL(req.url).pathname.split("/")[3] ?? "";
+    const session = sessionStore.getSession(id);
+    if (!session) return jsonError("Session not found", 404);
+    return json(session.messages);
+  }
+
+  async function handlePatchSessionTitle(req: Request): Promise<Response> {
+    if (!sessionStore) return jsonError("Session store not available", 503);
+    const id = new URL(req.url).pathname.split("/")[3] ?? "";
+    if (!sessionStore.getSession(id)) return jsonError("Session not found", 404);
+    let body: { title?: string };
+    try {
+      body = await req.json() as { title?: string };
+    } catch {
+      return jsonError("Invalid JSON body");
+    }
+    if (!body.title?.trim()) return jsonError("title is required");
+    sessionStore.updateTitle(id, body.title.trim());
+    return json({ ok: true });
+  }
+
+  async function handlePatchSessionMessages(req: Request): Promise<Response> {
+    if (!sessionStore) return jsonError("Session store not available", 503);
+    const id = new URL(req.url).pathname.split("/")[3] ?? "";
+    if (!sessionStore.getSession(id)) return jsonError("Session not found", 404);
+    let body: { messages?: ChatMessage[]; touch?: boolean };
+    try {
+      body = await req.json() as { messages?: ChatMessage[]; touch?: boolean };
+    } catch {
+      return jsonError("Invalid JSON body");
+    }
+    if (!Array.isArray(body.messages)) return jsonError("messages array is required");
+    sessionStore.saveMessages(id, body.messages, body.touch !== false);
+    return json({ ok: true });
+  }
+
+  function handleDeleteSession(req: Request): Response {
+    if (!sessionStore) return jsonError("Session store not available", 503);
+    const id = new URL(req.url).pathname.split("/").at(-1) ?? "";
+    if (!sessionStore.getSession(id)) return jsonError("Session not found", 404);
+    sessionStore.deleteSession(id);
+    return json({ ok: true });
+  }
+
   Bun.serve({
     port,
     routes: {
       "/": index,
+      "/chat/:id": index,
       "/api/capabilities": { GET: handleCapabilities },
       "/api/memories": {
         GET: handleGetMemories,
@@ -265,10 +309,25 @@ export async function startWebUI({
       "/api/behaviors/synthesize": { POST: handleSynthesize },
       "/api/agents": { GET: handleGetAgents },
       "/api/trace/last": { GET: handleGetTrace },
+      "/api/sessions": {
+        GET: handleListSessions,
+        POST: handleCreateSession,
+      },
+      "/api/sessions/:id/messages": {
+        GET: handleGetSessionMessages,
+        PATCH: handlePatchSessionMessages,
+      },
+      "/api/sessions/:id/title": {
+        PATCH: handlePatchSessionTitle,
+      },
+      "/api/sessions/:id": {
+        DELETE: handleDeleteSession,
+      },
     },
     websocket: {
       open(ws) {
-        bindSessionToWs(ws);
+        clients.add(ws);
+        ws.send(JSON.stringify({ type: "snapshot", ...session.getSnapshot() }));
       },
 
       message(ws, raw) {
@@ -306,6 +365,13 @@ export async function startWebUI({
             permissionManager.resolvePermission(approved, alwaysApprove);
             break;
           }
+          case "yield_response": {
+            const text = msg.text;
+            if (typeof text === "string" && text.trim().length > 0) {
+              agent.addDirect(text.trim());
+            }
+            break;
+          }
           case "model_change": {
             const newModel = msg.model;
             if (typeof newModel === "string" && newModel.trim().length > 0) {
@@ -321,9 +387,8 @@ export async function startWebUI({
         }
       },
 
-      close() {
-        unbindSession?.();
-        activeWs = null;
+      close(ws) {
+        clients.delete(ws);
       },
     },
 
