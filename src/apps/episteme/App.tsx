@@ -3,6 +3,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Editor } from "./components/Editor.tsx";
 import { FileTree } from "./components/FileTree.tsx";
 import { AISidecar, type SidecarMessage } from "./components/AISidecar.tsx";
+import { SettingsPanel } from "./components/SettingsPanel.tsx";
+import type { Tone } from "./features/tone.ts";
+import type { LintIssue } from "./features/lint.ts";
 import "./styles.css";
 
 // ── WebSocket protocol ────────────────────────────────────────────────────────
@@ -18,6 +21,9 @@ type ServerMsg =
   | { type: "autocomplete_suggestion"; text: string }
   | { type: "insert_text"; text: string }
   | { type: "ingest_result"; success: boolean; message: string }
+  | { type: "tone_result"; text: string; from: number; to: number }
+  | { type: "summarize_result"; text: string; insertPos: number }
+  | { type: "lint_result"; issues: LintIssue[] }
   | { type: "error"; message: string };
 
 // ── Debounce ──────────────────────────────────────────────────────────────────
@@ -37,6 +43,7 @@ function App() {
   const [agentState, setAgentState] = useState<"idle" | "thinking" | "disconnected">("disconnected");
   const [messages, setMessages] = useState<SidecarMessage[]>([]);
   const [sidecarCollapsed, setSidecarCollapsed] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Editor state
   const [activeFile, setActiveFile] = useState<string | null>(null);
@@ -47,6 +54,13 @@ function App() {
   // Autocomplete / outline
   const [ghostText, setGhostText] = useState("");
   const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
+
+  // Tone / summarize
+  const [toneReplacement, setToneReplacement] = useState<{ text: string; from: number; to: number } | null>(null);
+  const [summarizeResult, setSummarizeResult] = useState<{ text: string; insertPos: number } | null>(null);
+
+  // Lint
+  const [lintIssues, setLintIssues] = useState<LintIssue[]>([]);
 
   // Drag-drop
   const [isDragOver, setIsDragOver] = useState(false);
@@ -104,7 +118,8 @@ function App() {
             setEditorContent(msg.content);
             setSavedContent(msg.content);
             setIsDirty(false);
-            setGhostText(""); // clear ghost on file switch
+            setGhostText("");
+            setLintIssues([]); // clear stale lint on file switch
             break;
           case "file_saved":
             setSavedContent(editorContentRef.current);
@@ -132,6 +147,15 @@ function App() {
             ]);
             // Refresh file list so new research .md appears in tree
             wsRef.current?.send(JSON.stringify({ type: "list_workspace" }));
+            break;
+          case "lint_result":
+            setLintIssues(msg.issues);
+            break;
+          case "tone_result":
+            setToneReplacement({ text: msg.text, from: msg.from, to: msg.to });
+            break;
+          case "summarize_result":
+            setSummarizeResult({ text: msg.text, insertPos: msg.insertPos });
             break;
           case "error":
             setMessages((prev) => [
@@ -232,6 +256,24 @@ function App() {
     wsRef.current.send(JSON.stringify({ type: "outline_request", topic }));
   }, [agentState, activeFile, isGeneratingOutline]);
 
+  // ── Tone / Summarize ──────────────────────────────────────────────────────────
+
+  const handleToneRequest = useCallback(
+    (text: string, tone: Tone, from: number, to: number) => {
+      if (!wsRef.current || agentState === "disconnected") return;
+      wsRef.current.send(JSON.stringify({ type: "tone_transform", text, tone, from, to }));
+    },
+    [agentState],
+  );
+
+  const handleSummarizeRequest = useCallback(
+    (text: string, insertPos: number) => {
+      if (!wsRef.current || agentState === "disconnected") return;
+      wsRef.current.send(JSON.stringify({ type: "summarize_request", text, insertPos }));
+    },
+    [agentState],
+  );
+
   // ── Drag-drop ─────────────────────────────────────────────────────────────────
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -290,10 +332,19 @@ function App() {
         <span className="app-header-title">Episteme</span>
         <span className="app-header-workspace">{workspaceName}</span>
         <div className="app-header-spacer" />
+        <button
+          className="header-settings-btn"
+          title="Style Guide"
+          onClick={() => setShowSettings(true)}
+        >
+          ⚙
+        </button>
         <span className={`app-header-status${agentState === "thinking" ? " thinking" : ""}`}>
           {statusLabel}
         </span>
       </div>
+
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
 
       {/* Drag-over overlay */}
       {isDragOver && (
@@ -334,6 +385,13 @@ function App() {
             onGhostDismiss={handleGhostDismiss}
             onGenerateOutline={handleGenerateOutline}
             isGeneratingOutline={isGeneratingOutline}
+            onToneRequest={handleToneRequest}
+            onSummarizeRequest={handleSummarizeRequest}
+            toneReplacement={toneReplacement}
+            summarizeResult={summarizeResult}
+            onToneApplied={() => setToneReplacement(null)}
+            onSummarizeApplied={() => setSummarizeResult(null)}
+            lintIssues={lintIssues}
           />
 
           {/* Status bar */}

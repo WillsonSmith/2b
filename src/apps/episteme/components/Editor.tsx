@@ -1,4 +1,5 @@
 import { useEditor, EditorContent, Extension } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { Plugin as ProseMirrorPlugin, PluginKey } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
@@ -6,21 +7,26 @@ import { Markdown } from "tiptap-markdown";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
 import { useEffect, useRef, useCallback } from "react";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import type { Tone } from "../features/tone.ts";
+import type { LintIssue } from "../features/lint.ts";
 
 interface EditorProps {
   content: string;
   onUpdate: (markdown: string) => void;
-  /** Called when the editor wants an autocomplete suggestion for the current context. */
   onAutocompleteRequest?: (context: string) => void;
-  /** Ghost-text suggestion to display. Clear by setting to "". */
   ghostText?: string;
-  /** Called when the user accepts (Tab) or dismisses (Escape) the ghost suggestion. */
   onGhostAccept?: (text: string) => void;
   onGhostDismiss?: () => void;
-  /** Called when the Generate Outline button is clicked. */
   onGenerateOutline?: () => void;
-  /** True while outline generation is in flight. */
   isGeneratingOutline?: boolean;
+  onToneRequest?: (text: string, tone: Tone, from: number, to: number) => void;
+  onSummarizeRequest?: (text: string, insertPos: number) => void;
+  toneReplacement?: { text: string; from: number; to: number } | null;
+  summarizeResult?: { text: string; insertPos: number } | null;
+  onToneApplied?: () => void;
+  onSummarizeApplied?: () => void;
+  lintIssues?: LintIssue[];
 }
 
 // ── Ghost-text TipTap extension ───────────────────────────────────────────────
@@ -85,6 +91,78 @@ function GhostTextExtension(
   });
 }
 
+// ── Lint decoration plugin ────────────────────────────────────────────────────
+
+interface ResolvedIssue extends LintIssue {
+  pmFrom: number;
+  pmTo: number;
+}
+
+const lintKey = new PluginKey<DecorationSet>("lint-decos");
+
+function buildLintPlugin(getIssues: () => ResolvedIssue[]) {
+  return new ProseMirrorPlugin({
+    key: lintKey,
+    state: {
+      init: () => DecorationSet.empty,
+      apply(tr, old) {
+        if (tr.getMeta("lint-refresh")) {
+          const issues = getIssues();
+          if (!issues.length) return DecorationSet.empty;
+          const decos = issues.map((issue) =>
+            Decoration.inline(issue.pmFrom, issue.pmTo, {
+              class: `lint-${issue.type}`,
+              title: `[${issue.type}] ${issue.suggestion}`,
+            }),
+          );
+          return DecorationSet.create(tr.doc, decos);
+        }
+        if (tr.docChanged) return old.map(tr.mapping, tr.doc);
+        return old;
+      },
+    },
+    props: {
+      decorations: (state) => lintKey.getState(state) ?? DecorationSet.empty,
+    },
+  });
+}
+
+function LintExtension(lintRef: React.MutableRefObject<ResolvedIssue[]>) {
+  return Extension.create({
+    name: "lint",
+    addProseMirrorPlugins() {
+      return [buildLintPlugin(() => lintRef.current)];
+    },
+  });
+}
+
+function resolveIssuePositions(doc: ProseMirrorNode, issues: LintIssue[]): ResolvedIssue[] {
+  const chars: string[] = [];
+  const positions: number[] = [];
+
+  doc.descendants((node, pos) => {
+    if (node.isText && node.text) {
+      for (let i = 0; i < node.text.length; i++) {
+        chars.push(node.text[i] ?? "");
+        positions.push(pos + i);
+      }
+    }
+  });
+
+  const fullText = chars.join("");
+  const resolved: ResolvedIssue[] = [];
+
+  for (const issue of issues) {
+    const idx = fullText.indexOf(issue.text);
+    if (idx === -1 || idx + issue.text.length > positions.length) continue;
+    const pmFrom = positions[idx] ?? 0;
+    const pmTo = (positions[idx + issue.text.length - 1] ?? 0) + 1;
+    resolved.push({ ...issue, pmFrom, pmTo });
+  }
+
+  return resolved;
+}
+
 // ── Toolbar button ────────────────────────────────────────────────────────────
 
 function ToolbarButton({
@@ -124,8 +202,16 @@ export function Editor({
   onGhostDismiss,
   onGenerateOutline,
   isGeneratingOutline,
+  onToneRequest,
+  onSummarizeRequest,
+  toneReplacement,
+  summarizeResult,
+  onToneApplied,
+  onSummarizeApplied,
+  lintIssues = [],
 }: EditorProps) {
   const ghostRef = useRef(ghostText);
+  const lintRef = useRef<ResolvedIssue[]>([]);
 
   // Stable callbacks for the extension — avoids recreating editor on every render
   const acceptRef = useRef(onGhostAccept);
@@ -143,6 +229,7 @@ export function Editor({
       Placeholder.configure({ placeholder: "Start writing…" }),
       CharacterCount,
       GhostTextExtension(ghostRef, handleAccept, handleDismiss),
+      LintExtension(lintRef),
     ],
     content,
     onUpdate({ editor }) {
@@ -171,6 +258,33 @@ export function Editor({
       editor.commands.setContent(content);
     }
   }, [content]);
+
+  // Apply tone replacement when result arrives
+  useEffect(() => {
+    if (!editor || !toneReplacement) return;
+    const { from, to, text } = toneReplacement;
+    editor.chain().focus().insertContentAt({ from, to }, text).run();
+    onToneApplied?.();
+  }, [toneReplacement]);
+
+  // Insert TL;DR blockquote when summarize result arrives
+  useEffect(() => {
+    if (!editor || !summarizeResult) return;
+    const { insertPos, text } = summarizeResult;
+    editor.chain().focus().insertContentAt(insertPos, {
+      type: "blockquote",
+      content: [{ type: "paragraph", content: [{ type: "text", text: `[TL;DR]: ${text}` }] }],
+    }).run();
+    onSummarizeApplied?.();
+  }, [summarizeResult]);
+
+  // Resolve lint issue positions and redraw decorations when issues change
+  useEffect(() => {
+    if (!editor) return;
+    lintRef.current = resolveIssuePositions(editor.state.doc, lintIssues);
+    const { tr } = editor.state;
+    editor.view.dispatch(tr.setMeta("lint-refresh", true));
+  }, [lintIssues, editor]);
 
   // Autocomplete: fire after 800ms idle after typing
   const autocompleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -324,6 +438,46 @@ export function Editor({
       </div>
 
       <div className="editor-scroll">
+        {editor && (
+          <BubbleMenu
+            editor={editor}
+            shouldShow={({ editor: ed }) => {
+              const { from, to } = ed.state.selection;
+              return from !== to;
+            }}
+          >
+            <div className="bubble-menu">
+              {(["professional", "casual", "academic"] as Tone[]).map((tone) => (
+                <button
+                  key={tone}
+                  className="bubble-btn"
+                  title={`Rewrite as ${tone}`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    const { from, to } = editor.state.selection;
+                    const text = editor.state.doc.textBetween(from, to, " ");
+                    if (text) onToneRequest?.(text, tone, from, to);
+                  }}
+                >
+                  {tone.slice(0, 1).toUpperCase() + tone.slice(1)}
+                </button>
+              ))}
+              <div className="bubble-sep" />
+              <button
+                className="bubble-btn"
+                title="Summarize selection"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  const { from, to } = editor.state.selection;
+                  const text = editor.state.doc.textBetween(from, to, "\n");
+                  if (text) onSummarizeRequest?.(text, to);
+                }}
+              >
+                TL;DR
+              </button>
+            </div>
+          </BubbleMenu>
+        )}
         <EditorContent editor={editor} />
       </div>
     </div>

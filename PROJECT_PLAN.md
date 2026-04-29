@@ -24,7 +24,7 @@ See [`/Users/willsonsmith/.claude/plans/mission-directive-project-episteme-piped
 | 0 | Foundation & Architecture | ✅ Complete — server boots, DB scoped to workspace |
 | 1 | Core Editor UI | ✅ Complete — TipTap editor, FileTree, AISidecar, WorkspacePlugin |
 | 2 | Drafting & Ideation | ✅ Complete — outline, ghost-text autocomplete, ResearchPlugin (URL+PDF ingestion), drag-drop |
-| 3 | Editing & Refinement | ⬜ Not started |
+| 3 | Editing & Refinement | ✅ Complete — BubbleMenu tone/summarize, AI lint on save, StyleGuidePlugin, fact_check stub |
 | 4 | Structural Intelligence | ⬜ Not started |
 | 5 | Research Workstation | ⬜ Not started |
 | 6 | Workflow & Ecosystem | ⬜ Not started |

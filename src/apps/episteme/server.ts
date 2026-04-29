@@ -12,6 +12,8 @@
  *   { type: "outline_request",     topic }              — generate outline for topic
  *   { type: "ingest_url",          url }                — ingest URL via ResearchPlugin
  *   { type: "ingest_pdf",          path }               — ingest workspace PDF path
+ *   { type: "tone_transform",      text, tone, from, to } — transform selection tone
+ *   { type: "summarize_request",   text, insertPos }    — summarize text, insert at pos
  *
  * WebSocket protocol (server → client):
  *   { type: "speak",                text }
@@ -24,10 +26,15 @@
  *   { type: "autocomplete_suggestion", text }           — ghost-text response
  *   { type: "insert_text",          text }              — insert at cursor (outline)
  *   { type: "ingest_result",        success, message }  — ingest outcome
+ *   { type: "tone_result",          text, from, to }    — transformed text + original range
+ *   { type: "summarize_result",     text, insertPos }   — summary text + insertion position
+ *   { type: "lint_result",          issues }            — array of LintIssue after file_save
  *   { type: "error",                message }
  *
  * REST:
  *   GET  /api/health
+ *   GET  /api/style-guide
+ *   PATCH /api/style-guide    body: raw Markdown text
  *   GET  /api/config
  *   PATCH /api/config         { models }
  */
@@ -38,6 +45,11 @@ import type { EpistemeConfig } from "./config.ts";
 import { saveConfig } from "./config.ts";
 import { AutocompleteRunner } from "./features/autocomplete.ts";
 import { generateOutline } from "./features/outline.ts";
+import { transformTone } from "./features/tone.ts";
+import { summarizeSection } from "./features/summarize.ts";
+import { LintRunner } from "./features/lint.ts";
+import type { Tone } from "./features/tone.ts";
+import type { LintIssue } from "./features/lint.ts";
 import index from "./index.html";
 
 type ClientMsg =
@@ -50,7 +62,9 @@ type ClientMsg =
   | { type: "autocomplete_request"; context: string }
   | { type: "outline_request"; topic: string }
   | { type: "ingest_url"; url: string }
-  | { type: "ingest_pdf"; path: string };
+  | { type: "ingest_pdf"; path: string }
+  | { type: "tone_transform"; text: string; tone: Tone; from: number; to: number }
+  | { type: "summarize_request"; text: string; insertPos: number };
 
 type ServerMsg =
   | { type: "speak"; text: string }
@@ -63,6 +77,9 @@ type ServerMsg =
   | { type: "autocomplete_suggestion"; text: string }
   | { type: "insert_text"; text: string }
   | { type: "ingest_result"; success: boolean; message: string }
+  | { type: "tone_result"; text: string; from: number; to: number }
+  | { type: "summarize_result"; text: string; insertPos: number }
+  | { type: "lint_result"; issues: LintIssue[] }
   | { type: "error"; message: string };
 
 function json(data: unknown, status = 200): Response {
@@ -88,12 +105,13 @@ export async function startEpistemServer(
   config: EpistemeConfig,
   port: number,
 ): Promise<void> {
-  const { agent, editorContext } = bundle;
+  const { agent, editorContext, styleGuide } = bundle;
   const absRoot = resolve(workspaceRoot);
 
   await agent.start();
 
   const autocomplete = new AutocompleteRunner(config);
+  const linter = new LintRunner(config);
 
   const clients = new Set<ServerWebSocket<unknown>>();
 
@@ -118,6 +136,18 @@ export async function startEpistemServer(
       "/api/health": {
         GET: () =>
           json({ status: "ok", app: "episteme", workspace: workspaceRoot }),
+      },
+      "/api/style-guide": {
+        GET: () => json({ content: styleGuide.currentContent }),
+        PATCH: async (req: Request) => {
+          try {
+            const content = await req.text();
+            await styleGuide.save(content);
+            return json({ success: true });
+          } catch {
+            return json({ error: "Failed to save style guide" }, 500);
+          }
+        },
       },
       "/api/config": {
         GET: () => json(config),
@@ -198,6 +228,10 @@ export async function startEpistemServer(
             try {
               await Bun.write(absolute, msg.content);
               send(ws, { type: "file_saved" });
+              // Async lint — non-blocking, only send to the saving client
+              linter.run(msg.content).then((issues) => {
+                send(ws, { type: "lint_result", issues });
+              }).catch(() => {});
             } catch {
               send(ws, { type: "error", message: `Cannot save: ${msg.path}` });
             }
@@ -235,6 +269,24 @@ export async function startEpistemServer(
             if (!path) break;
             agent.addDirect(`ingest_pdf ${path}`);
             send(ws, { type: "ingest_result", success: true, message: `Ingesting PDF ${path}…` });
+            break;
+          }
+
+          case "tone_transform": {
+            const { text, tone, from, to } = msg;
+            if (!text?.trim()) break;
+            transformTone(text, tone, config).then((result) => {
+              send(ws, { type: "tone_result", text: result.trim(), from, to });
+            }).catch(() => {});
+            break;
+          }
+
+          case "summarize_request": {
+            const { text, insertPos } = msg;
+            if (!text?.trim()) break;
+            summarizeSection(text, config).then((result) => {
+              send(ws, { type: "summarize_result", text: result.trim(), insertPos });
+            }).catch(() => {});
             break;
           }
         }
