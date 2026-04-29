@@ -2,25 +2,39 @@
 
 ## Status
 
-- [ ] Implement `features/tone.ts` — tone transformation (Professional / Casual / Academic)
-- [ ] Add selection context menu to `Editor.tsx` with tone options
-- [ ] Implement `features/summarize.ts` — semantic summarization of selection or current section
-- [ ] Add "Summarize Section" command to editor toolbar / context menu
-- [ ] Implement `features/lint.ts` — AI linter (clarity, conciseness, fluff detection)
-- [ ] Run linter automatically on `file_save`; return `{ range, suggestion, type }` array
-- [ ] Render lint decorations as inline underlines in TipTap
-- [ ] Build `StyleGuidePlugin.ts` — reads `.episteme/style-guide.md`, injects as system prompt fragment
-- [ ] Add style guide upload UI to `SettingsPanel.tsx` (or a simple modal)
-- [ ] Stub `fact_check(claim)` tool on `WorkspacePlugin` (searches workspace memory for contradictions; full implementation Phase 5)
-- [ ] Update `docs/tasks/phase-3-editing.md` with results before ending session
+- [x] Implement `features/tone.ts` — tone transformation (Professional / Casual / Academic)
+- [x] Add selection context menu to `Editor.tsx` with tone options (BubbleMenu: Professional / Casual / Academic / TL;DR)
+- [x] Implement `features/summarize.ts` — semantic summarization of selection or current section
+- [x] Add "Summarize Section" command to editor toolbar / context menu (TL;DR button in BubbleMenu)
+- [x] Implement `features/lint.ts` — AI linter (clarity, conciseness, fluff detection)
+- [x] Run linter automatically on `file_save`; return `{ text, suggestion, type }` array
+- [x] Render lint decorations as inline underlines in TipTap (blue=clarity, amber=conciseness, red=fluff; browser `title` tooltip on hover)
+- [x] Build `StyleGuidePlugin.ts` — reads `.episteme/style-guide.md`, injects as system prompt fragment; exposes `get_style_guide` / `set_style_guide` agent tools
+- [x] Add style guide upload UI to `SettingsPanel.tsx` — modal with textarea, Save/Clear, ⚙ button in header
+- [x] Stub `fact_check(claim)` tool on `WorkspacePlugin` (searches workspace memory via FTS5; full contradiction detection Phase 5)
+- [x] Update `docs/tasks/phase-3-editing.md` with results before ending session
 
 ## Current State
 
-Phase 2 complete. Phase 3 not started.
+Phase 3 complete. All tasks done. Ready to start Phase 4 (Structural Intelligence).
 
 ## Last Known Good
 
-[Update this when Phase 2 finishes — paste the last verified state here]
+Session 2026-04-29: All Phase 3 tasks complete (no new type errors).
+
+### Architecture decisions
+- BubbleMenu shows on any non-empty selection; `onMouseDown` prevents blur so selection is retained on click
+- Tone result echoes `{from, to}` through server so concurrent requests resolve correctly
+- Summarize inserts as a TipTap `blockquote` node (not raw markdown text) at the captured `insertPos`
+- `onToneApplied`/`onSummarizeApplied` callbacks let App.tsx null out the result state after the Editor applies it
+- Lint: `LintRunner` in `features/lint.ts` — in-flight guard (skip if previous run pending) + 8s timeout via `Promise.race` + `agent.interrupt()`
+- Lint triggered on every `file_save` server-side; result sent only to the saving client (not broadcast)
+- Lint positions resolved client-side: `doc.descendants` builds char→PM-position map; LLM returns verbatim `text` substring, client finds it
+- Lint decorations mapped through doc changes (`old.map(tr.mapping, tr.doc)`) so underlines survive edits; rebuilt only on explicit `lint-refresh` meta dispatch
+- Decoration colors: blue=clarity, amber=conciseness, red=fluff; browser `title` attribute provides hover tooltip
+- StyleGuidePlugin: `onInit` loads `.episteme/style-guide.md`; `save()` updates memory + disk atomically; exposed via `GET/PATCH /api/style-guide`
+- SettingsPanel: modal component, fetches current content on open, PATCH on save; triggered by ⚙ button in header; closes on Escape or overlay click
+- `fact_check` stub: FTS5 search across indexed factual memories; returns matching excerpts; full contradiction detection deferred to Phase 5
 
 ## To Resume
 

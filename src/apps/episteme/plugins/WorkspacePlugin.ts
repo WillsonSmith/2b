@@ -72,6 +72,18 @@ export class WorkspacePlugin implements AgentPlugin {
         description: "List all Markdown files in the workspace with their first line and approximate word count.",
         parameters: { type: "object", properties: {}, required: [] },
       },
+      {
+        name: "fact_check",
+        description:
+          "Search workspace memory for notes that confirm or contradict a given claim. Returns matching passages. Full contradiction detection is available in Phase 5.",
+        parameters: {
+          type: "object",
+          properties: {
+            claim: { type: "string", description: "The claim or statement to fact-check." },
+          },
+          required: ["claim"],
+        },
+      },
     ];
   }
 
@@ -80,6 +92,7 @@ export class WorkspacePlugin implements AgentPlugin {
     if (name === "search_workspace") return this.searchWorkspace(String(args.query ?? ""), Number(args.limit ?? 8));
     if (name === "get_workspace_file") return this.getFile(String(args.path ?? ""));
     if (name === "list_workspace_files") return this.listFiles();
+    if (name === "fact_check") return this.factCheck(String(args.claim ?? ""));
   }
 
   // ── Tool implementations ───────────────────────────────────────────────────
@@ -191,6 +204,29 @@ export class WorkspacePlugin implements AgentPlugin {
     } catch {
       return { error: `File not found: ${relativePath}` };
     }
+  }
+
+  private factCheck(claim: string): unknown {
+    if (!claim.trim()) return { matches: [], message: "Empty claim." };
+    if (!this.memory) {
+      return { matches: [], message: "Workspace not indexed. Run index_workspace first." };
+    }
+    const hits = this.memory.queryMemoriesRaw({
+      types: ["factual"],
+      contains: claim,
+      limit: 6,
+    });
+    const matches = hits
+      .filter((h) => h.tags?.includes("workspace-file"))
+      .map((h) => ({
+        path: h.tags?.find((t) => t !== "workspace-file") ?? "",
+        excerpt: h.text.slice(0, 300).replace(/\n+/g, " ").trim(),
+      }));
+    return {
+      matches,
+      claim,
+      note: "Full contradiction detection available in Phase 5.",
+    };
   }
 
   private listFiles(): unknown {

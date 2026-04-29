@@ -8,6 +8,7 @@ import { AutoApprovePermissionManager } from "../../core/PermissionManager.ts";
 import { EditorContextPlugin } from "./plugins/EditorContextPlugin.ts";
 import { WorkspacePlugin } from "./plugins/WorkspacePlugin.ts";
 import { ResearchPlugin } from "./plugins/ResearchPlugin.ts";
+import { StyleGuidePlugin } from "./plugins/StyleGuidePlugin.ts";
 import { workspaceDbPath } from "./paths.ts";
 import type { EpistemeConfig } from "./config.ts";
 
@@ -27,6 +28,7 @@ export interface EpistemAgentBundle {
   agent: CortexAgent;
   editorContext: EditorContextPlugin;
   workspace: WorkspacePlugin;
+  styleGuide: StyleGuidePlugin;
 }
 
 export function createEpistemAgent(
@@ -55,6 +57,7 @@ export function createEpistemAgent(
   const workspace = new WorkspacePlugin(workspaceRoot, agent.memoryPlugin);
 
   const research = new ResearchPlugin(workspaceRoot, config, agent.memoryPlugin);
+  const styleGuide = new StyleGuidePlugin(workspaceRoot);
 
   agent.registerPlugin(new MemoryPlugin(llm));
   agent.registerPlugin(new BehaviorPlugin(agent.memoryPlugin, llm));
@@ -62,6 +65,7 @@ export function createEpistemAgent(
   agent.registerPlugin(editorContext);
   agent.registerPlugin(workspace);
   agent.registerPlugin(research);
+  agent.registerPlugin(styleGuide);
   agent.registerPlugin(
     new DynamicAgentPlugin(llm, {
       permissionManager,
@@ -69,5 +73,5 @@ export function createEpistemAgent(
     }),
   );
 
-  return { agent, editorContext, workspace };
+  return { agent, editorContext, workspace, styleGuide };
 }
