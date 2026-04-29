@@ -1,5 +1,11 @@
 import { createRoot } from "react-dom/client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Editor } from "./components/Editor.tsx";
+import { FileTree } from "./components/FileTree.tsx";
+import { AISidecar, type SidecarMessage } from "./components/AISidecar.tsx";
+import "./styles.css";
+
+// ── WebSocket protocol ────────────────────────────────────────────────────────
 
 type ServerMsg =
   | { type: "speak"; text: string }
@@ -7,107 +13,239 @@ type ServerMsg =
   | { type: "tool_call"; name: string; args: Record<string, unknown> }
   | { type: "tool_result"; name: string }
   | { type: "file_content"; path: string; content: string }
+  | { type: "workspace_files"; files: string[] }
+  | { type: "file_saved" }
   | { type: "error"; message: string };
 
-type Message = { role: "user" | "assistant"; text: string };
+// ── Debounce ──────────────────────────────────────────────────────────────────
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
 
 function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [status, setStatus] = useState<"idle" | "thinking" | "disconnected">("disconnected");
+  const [agentState, setAgentState] = useState<"idle" | "thinking" | "disconnected">("disconnected");
+  const [messages, setMessages] = useState<SidecarMessage[]>([]);
+  const [sidecarCollapsed, setSidecarCollapsed] = useState(false);
+
+  // Editor state
+  const [activeFile, setActiveFile] = useState<string | null>(null);
+  const [editorContent, setEditorContent] = useState("");
+  const [savedContent, setSavedContent] = useState("");
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Workspace
+  const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
+  const [workspaceName, setWorkspaceName] = useState("workspace");
+
   const wsRef = useRef<WebSocket | null>(null);
+  const editorContentRef = useRef(editorContent);
+  editorContentRef.current = editorContent;
+
+  const debouncedContent = useDebounce(editorContent, 500);
+
+  // ── WebSocket setup ──────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const ws = new WebSocket(`ws://${location.host}`);
-    wsRef.current = ws;
+    function connect() {
+      const ws = new WebSocket(`ws://${location.host}`);
+      wsRef.current = ws;
 
-    ws.onopen = () => setStatus("idle");
-    ws.onclose = () => setStatus("disconnected");
+      ws.onopen = () => {
+        setAgentState("idle");
+        // Request workspace file list on connect
+        ws.send(JSON.stringify({ type: "list_workspace" }));
+        // Fetch config for workspace name
+        fetch("/api/health")
+          .then((r) => r.json())
+          .then((data: { workspace?: string }) => {
+            if (data.workspace) {
+              const parts = data.workspace.split("/");
+              setWorkspaceName(parts.at(-1) ?? data.workspace);
+            }
+          })
+          .catch(() => {});
+      };
 
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data) as ServerMsg;
-      switch (msg.type) {
-        case "state_change":
-          setStatus(msg.state);
-          break;
-        case "speak":
-          setMessages((prev) => [...prev, { role: "assistant", text: msg.text }]);
-          break;
-        case "error":
-          setMessages((prev) => [...prev, { role: "assistant", text: `[Error] ${msg.message}` }]);
-          break;
-      }
-    };
+      ws.onclose = () => {
+        setAgentState("disconnected");
+        wsRef.current = null;
+        setTimeout(connect, 2000); // reconnect
+      };
 
-    return () => ws.close();
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data) as ServerMsg;
+        switch (msg.type) {
+          case "state_change":
+            setAgentState(msg.state);
+            break;
+          case "speak":
+            setMessages((prev) => [...prev, { role: "assistant", text: msg.text }]);
+            break;
+          case "workspace_files":
+            setWorkspaceFiles(msg.files);
+            break;
+          case "file_content":
+            setEditorContent(msg.content);
+            setSavedContent(msg.content);
+            setIsDirty(false);
+            break;
+          case "file_saved":
+            setSavedContent(editorContentRef.current);
+            setIsDirty(false);
+            break;
+          case "error":
+            setMessages((prev) => [
+              ...prev,
+              { role: "assistant", text: `[Error] ${msg.message}` },
+            ]);
+            break;
+        }
+      };
+    }
+
+    connect();
+    return () => wsRef.current?.close();
   }, []);
 
-  function send() {
-    const text = input.trim();
-    if (!text || !wsRef.current) return;
+  // ── Sync editor content to agent context (debounced) ─────────────────────────
+
+  useEffect(() => {
+    if (!activeFile || !wsRef.current || agentState === "disconnected") return;
+    wsRef.current.send(
+      JSON.stringify({
+        type: "editor_context",
+        file: activeFile,
+        content: debouncedContent,
+        cursor: 0,
+      }),
+    );
+  }, [debouncedContent, activeFile]);
+
+  // ── Dirty tracking ────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    setIsDirty(editorContent !== savedContent);
+  }, [editorContent, savedContent]);
+
+  // ── File operations ───────────────────────────────────────────────────────────
+
+  const openFile = useCallback((path: string) => {
+    setActiveFile(path);
+    wsRef.current?.send(JSON.stringify({ type: "file_open", path }));
+  }, []);
+
+  const saveFile = useCallback(() => {
+    if (!activeFile || !wsRef.current || !isDirty) return;
+    wsRef.current.send(
+      JSON.stringify({ type: "file_save", path: activeFile, content: editorContentRef.current }),
+    );
+  }, [activeFile, isDirty]);
+
+  const refreshFiles = useCallback(() => {
+    wsRef.current?.send(JSON.stringify({ type: "list_workspace" }));
+  }, []);
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        saveFile();
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [saveFile]);
+
+  // ── AI sidecar ────────────────────────────────────────────────────────────────
+
+  function sendToAgent(text: string) {
+    if (!wsRef.current || agentState === "disconnected") return;
     wsRef.current.send(JSON.stringify({ type: "send", text }));
     setMessages((prev) => [...prev, { role: "user", text }]);
-    setInput("");
   }
 
+  function interrupt() {
+    wsRef.current?.send(JSON.stringify({ type: "interrupt" }));
+  }
+
+  // ── Status indicator ──────────────────────────────────────────────────────────
+
+  const statusLabel =
+    agentState === "disconnected"
+      ? "○ offline"
+      : agentState === "thinking"
+      ? "◉ thinking"
+      : "● ready";
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", padding: 20 }}>
-      <h1 style={{ marginBottom: 8, fontSize: 20, color: "#a0cfff" }}>
-        Episteme <span style={{ fontSize: 13, color: "#666" }}>— Phase 0 scaffold</span>
-      </h1>
-      <div style={{ flex: 1, overflow: "auto", marginBottom: 12, padding: 12, background: "#111", borderRadius: 8 }}>
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            style={{
-              marginBottom: 12,
-              padding: "8px 12px",
-              borderRadius: 6,
-              background: m.role === "user" ? "#2a2a3a" : "#1e2e1e",
-              borderLeft: `3px solid ${m.role === "user" ? "#6699ff" : "#66cc88"}`,
-            }}
-          >
-            <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>
-              {m.role === "user" ? "You" : "Episteme"}
-            </div>
-            <div style={{ whiteSpace: "pre-wrap", fontSize: 14 }}>{m.text}</div>
-          </div>
-        ))}
-        {status === "thinking" && (
-          <div style={{ color: "#888", fontStyle: "italic", fontSize: 13 }}>Thinking…</div>
-        )}
+    <div className="app">
+      {/* Header */}
+      <div className="app-header">
+        <span className="app-header-title">Episteme</span>
+        <span className="app-header-workspace">{workspaceName}</span>
+        <div className="app-header-spacer" />
+        <span className={`app-header-status${agentState === "thinking" ? " thinking" : ""}`}>
+          {statusLabel}
+        </span>
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <input
-          style={{
-            flex: 1, padding: "10px 14px", borderRadius: 6,
-            background: "#2a2a2a", border: "1px solid #444", color: "#e0e0e0", fontSize: 14,
-          }}
-          value={input}
-          placeholder={status === "disconnected" ? "Connecting…" : "Ask Episteme…"}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
-          disabled={status === "disconnected" || status === "thinking"}
+
+      {/* Body */}
+      <div className="app-body">
+        <FileTree
+          files={workspaceFiles}
+          activeFile={activeFile}
+          onFileSelect={openFile}
+          onRefresh={refreshFiles}
         />
-        <button
-          style={{
-            padding: "10px 20px", borderRadius: 6,
-            background: "#3366cc", color: "#fff", border: "none", cursor: "pointer", fontSize: 14,
-          }}
-          onClick={send}
-          disabled={status === "disconnected" || status === "thinking"}
-        >
-          Send
-        </button>
-        <div style={{
-          padding: "10px 14px", borderRadius: 6, fontSize: 12, color: "#888",
-          background: "#2a2a2a", border: "1px solid #333", display: "flex", alignItems: "center",
-        }}>
-          {status === "idle" ? "● ready" : status === "thinking" ? "◉ thinking" : "○ offline"}
+
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <Editor
+            content={editorContent}
+            onUpdate={(md) => setEditorContent(md)}
+          />
+
+          {/* Status bar */}
+          <div className="status-bar">
+            {activeFile ? (
+              <>
+                <span className="status-bar-file">{activeFile.split("/").at(-1)}</span>
+                {isDirty && (
+                  <span style={{ color: "var(--text-dim)", fontSize: 10 }}>●</span>
+                )}
+              </>
+            ) : (
+              <span style={{ color: "var(--text-dim)" }}>No file open</span>
+            )}
+            <div className="status-bar-spacer" />
+            {activeFile && isDirty && (
+              <button className="status-bar-save" onClick={saveFile} title="Save (⌘S)">
+                Save
+              </button>
+            )}
+            {activeFile && !isDirty && (
+              <span style={{ color: "var(--text-dim)", fontSize: 11 }}>Saved</span>
+            )}
+          </div>
         </div>
-      </div>
-      <div style={{ marginTop: 8, fontSize: 11, color: "#555", textAlign: "center" }}>
-        Phase 0 scaffold — editor UI builds in Phase 1
+
+        <AISidecar
+          messages={messages}
+          isThinking={agentState === "thinking"}
+          collapsed={sidecarCollapsed}
+          onToggle={() => setSidecarCollapsed((c) => !c)}
+          onSend={sendToAgent}
+          onInterrupt={interrupt}
+        />
       </div>
     </div>
   );

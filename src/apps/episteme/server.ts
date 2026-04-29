@@ -1,30 +1,31 @@
 /**
  * Episteme HTTP + WebSocket server.
  *
- * Serves the editor SPA (index.html) and provides a real-time WebSocket channel
- * between the browser editor and the CortexAgent.
- *
  * WebSocket protocol (client → server):
  *   { type: "send",           text }               — chat message to agent
  *   { type: "interrupt" }                           — abort in-flight LLM call
  *   { type: "editor_context", file, content, cursor } — editor state update
  *   { type: "file_open",      path }               — read file from workspace
  *   { type: "file_save",      path, content }      — write file to workspace
+ *   { type: "list_workspace" }                      — request workspace file list
  *
  * WebSocket protocol (server → client):
- *   { type: "speak",         text }                — agent response
- *   { type: "state_change",  state }               — "idle" | "thinking"
- *   { type: "tool_call",     name, args }
- *   { type: "tool_result",   name }
- *   { type: "file_content",  path, content }       — response to file_open
- *   { type: "error",         message }
+ *   { type: "speak",          text }
+ *   { type: "state_change",   state }              — "idle" | "thinking"
+ *   { type: "tool_call",      name, args }
+ *   { type: "tool_result",    name }
+ *   { type: "file_content",   path, content }      — response to file_open
+ *   { type: "workspace_files", files }             — list of relative .md paths
+ *   { type: "file_saved" }                         — save confirmed
+ *   { type: "error",          message }
  *
  * REST:
- *   GET /api/health
- *   GET /api/config
- *   PATCH /api/config          { models: EpistemModelConfig }
+ *   GET  /api/health
+ *   GET  /api/config
+ *   PATCH /api/config         { models }
  */
 import type { ServerWebSocket } from "bun";
+import { resolve, join, relative } from "node:path";
 import type { EpistemAgentBundle } from "./agent.ts";
 import type { EpistemeConfig } from "./config.ts";
 import { saveConfig } from "./config.ts";
@@ -35,7 +36,8 @@ type ClientMsg =
   | { type: "interrupt" }
   | { type: "editor_context"; file: string; content: string; cursor: number }
   | { type: "file_open"; path: string }
-  | { type: "file_save"; path: string; content: string };
+  | { type: "file_save"; path: string; content: string }
+  | { type: "list_workspace" };
 
 type ServerMsg =
   | { type: "speak"; text: string }
@@ -43,6 +45,8 @@ type ServerMsg =
   | { type: "tool_call"; name: string; args: Record<string, unknown> }
   | { type: "tool_result"; name: string }
   | { type: "file_content"; path: string; content: string }
+  | { type: "workspace_files"; files: string[] }
+  | { type: "file_saved" }
   | { type: "error"; message: string };
 
 function json(data: unknown, status = 200): Response {
@@ -52,6 +56,19 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
+/** Recursively collect all .md file paths within a directory. */
+async function collectMarkdownFiles(dir: string, root: string): Promise<string[]> {
+  const results: string[] = [];
+  const glob = new Bun.Glob("**/*.md");
+  for await (const match of glob.scan({ cwd: dir, dot: false })) {
+    // Skip .episteme directory
+    if (!match.startsWith(".episteme")) {
+      results.push(match);
+    }
+  }
+  return results.sort();
+}
+
 export async function startEpistemServer(
   bundle: EpistemAgentBundle,
   workspaceRoot: string,
@@ -59,6 +76,7 @@ export async function startEpistemServer(
   port: number,
 ): Promise<void> {
   const { agent, editorContext } = bundle;
+  const absRoot = resolve(workspaceRoot);
 
   await agent.start();
 
@@ -67,6 +85,10 @@ export async function startEpistemServer(
   function broadcast(msg: ServerMsg): void {
     const payload = JSON.stringify(msg);
     for (const ws of clients) ws.send(payload);
+  }
+
+  function send(ws: ServerWebSocket<unknown>, msg: ServerMsg): void {
+    ws.send(JSON.stringify(msg));
   }
 
   agent.on("speak", (text) => broadcast({ type: "speak", text }));
@@ -79,7 +101,8 @@ export async function startEpistemServer(
     routes: {
       "/": index,
       "/api/health": {
-        GET: () => json({ status: "ok", app: "episteme", workspace: workspaceRoot }),
+        GET: () =>
+          json({ status: "ok", app: "episteme", workspace: workspaceRoot }),
       },
       "/api/config": {
         GET: () => json(config),
@@ -100,7 +123,7 @@ export async function startEpistemServer(
     websocket: {
       open(ws) {
         clients.add(ws);
-        ws.send(JSON.stringify({ type: "state_change", state: "idle" }));
+        send(ws, { type: "state_change", state: "idle" });
       },
       close(ws) {
         clients.delete(ws);
@@ -126,26 +149,53 @@ export async function startEpistemServer(
             editorContext.setEditorState(msg.file, msg.content, msg.cursor);
             break;
 
+          case "list_workspace": {
+            const files = await collectMarkdownFiles(absRoot, absRoot);
+            send(ws, { type: "workspace_files", files });
+            break;
+          }
+
           case "file_open": {
+            // Resolve relative path from workspace root; absolute paths pass through
+            const absolute = msg.path.startsWith("/")
+              ? msg.path
+              : resolve(join(absRoot, msg.path));
+            if (!absolute.startsWith(absRoot)) {
+              send(ws, { type: "error", message: "Path escapes workspace boundary." });
+              return;
+            }
             try {
-              const content = await Bun.file(msg.path).text();
-              ws.send(JSON.stringify({ type: "file_content", path: msg.path, content } satisfies ServerMsg));
+              const content = await Bun.file(absolute).text();
+              // Send back the path as supplied by the client
+              send(ws, { type: "file_content", path: msg.path, content });
             } catch {
-              ws.send(JSON.stringify({ type: "error", message: `Cannot open: ${msg.path}` } satisfies ServerMsg));
+              send(ws, { type: "error", message: `Cannot open: ${msg.path}` });
             }
             break;
           }
 
           case "file_save": {
+            const absolute = msg.path.startsWith("/")
+              ? msg.path
+              : resolve(join(absRoot, msg.path));
+            if (!absolute.startsWith(absRoot)) {
+              send(ws, { type: "error", message: "Path escapes workspace boundary." });
+              return;
+            }
             try {
-              await Bun.write(msg.path, msg.content);
+              await Bun.write(absolute, msg.content);
+              send(ws, { type: "file_saved" });
             } catch {
-              ws.send(JSON.stringify({ type: "error", message: `Cannot save: ${msg.path}` } satisfies ServerMsg));
+              send(ws, { type: "error", message: `Cannot save: ${msg.path}` });
             }
             break;
           }
         }
       },
+    },
+    fetch(req, server) {
+      if (server.upgrade(req)) return;
+      return new Response("Not found", { status: 404 });
     },
     development: {
       hmr: true,
