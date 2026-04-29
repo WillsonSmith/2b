@@ -22,7 +22,7 @@ See [`/Users/willsonsmith/.claude/plans/mission-directive-project-episteme-piped
 | Phase | Name | Status |
 |---|---|---|
 | 0 | Foundation & Architecture | ✅ Complete — server boots, DB scoped to workspace |
-| 1 | Core Editor UI | ⬜ Not started |
+| 1 | Core Editor UI | ✅ Complete — TipTap editor, FileTree, AISidecar, WorkspacePlugin |
 | 2 | Drafting & Ideation | ⬜ Not started |
 | 3 | Editing & Refinement | ⬜ Not started |
 | 4 | Structural Intelligence | ⬜ Not started |

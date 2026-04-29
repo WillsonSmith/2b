@@ -50,7 +50,8 @@ export function createEpistemAgent(
   });
 
   const editorContext = new EditorContextPlugin();
-  const workspace = new WorkspacePlugin(workspaceRoot);
+  // Pass memoryPlugin so WorkspacePlugin can write indexed file content into FTS5 search
+  const workspace = new WorkspacePlugin(workspaceRoot, agent.memoryPlugin);
 
   agent.registerPlugin(new MemoryPlugin());
   agent.registerPlugin(new BehaviorPlugin(agent.memoryPlugin, llm));
