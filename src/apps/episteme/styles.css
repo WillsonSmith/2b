@@ -255,3 +255,11 @@ textarea { font: inherit; resize: none; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* ── Ghost text ──────────────────────────────────────────────────────── */
+.ghost-text {
+  color: var(--text-dim);
+  pointer-events: none;
+  user-select: none;
+  font-style: italic;
+}
