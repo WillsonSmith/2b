@@ -15,6 +15,9 @@ type ServerMsg =
   | { type: "file_content"; path: string; content: string }
   | { type: "workspace_files"; files: string[] }
   | { type: "file_saved" }
+  | { type: "autocomplete_suggestion"; text: string }
+  | { type: "insert_text"; text: string }
+  | { type: "ingest_result"; success: boolean; message: string }
   | { type: "error"; message: string };
 
 // ── Debounce ──────────────────────────────────────────────────────────────────
@@ -41,6 +44,13 @@ function App() {
   const [savedContent, setSavedContent] = useState("");
   const [isDirty, setIsDirty] = useState(false);
 
+  // Autocomplete / outline
+  const [ghostText, setGhostText] = useState("");
+  const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
+
+  // Drag-drop
+  const [isDragOver, setIsDragOver] = useState(false);
+
   // Workspace
   const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
   const [workspaceName, setWorkspaceName] = useState("workspace");
@@ -60,9 +70,7 @@ function App() {
 
       ws.onopen = () => {
         setAgentState("idle");
-        // Request workspace file list on connect
         ws.send(JSON.stringify({ type: "list_workspace" }));
-        // Fetch config for workspace name
         fetch("/api/health")
           .then((r) => r.json())
           .then((data: { workspace?: string }) => {
@@ -77,7 +85,7 @@ function App() {
       ws.onclose = () => {
         setAgentState("disconnected");
         wsRef.current = null;
-        setTimeout(connect, 2000); // reconnect
+        setTimeout(connect, 2000);
       };
 
       ws.onmessage = (event) => {
@@ -96,10 +104,34 @@ function App() {
             setEditorContent(msg.content);
             setSavedContent(msg.content);
             setIsDirty(false);
+            setGhostText(""); // clear ghost on file switch
             break;
           case "file_saved":
             setSavedContent(editorContentRef.current);
             setIsDirty(false);
+            break;
+          case "autocomplete_suggestion":
+            setGhostText(msg.text);
+            break;
+          case "insert_text": {
+            // Outline result: append to editor content
+            setEditorContent((prev) => {
+              const sep = prev.trim() ? "\n\n" : "";
+              return prev + sep + msg.text;
+            });
+            setIsGeneratingOutline(false);
+            break;
+          }
+          case "ingest_result":
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "assistant",
+                text: msg.success ? `Ingestion started: ${msg.message}` : `Ingest failed: ${msg.message}`,
+              },
+            ]);
+            // Refresh file list so new research .md appears in tree
+            wsRef.current?.send(JSON.stringify({ type: "list_workspace" }));
             break;
           case "error":
             setMessages((prev) => [
@@ -178,6 +210,65 @@ function App() {
     wsRef.current?.send(JSON.stringify({ type: "interrupt" }));
   }
 
+  // ── Autocomplete ──────────────────────────────────────────────────────────────
+
+  const handleAutocompleteRequest = useCallback((context: string) => {
+    if (!wsRef.current || agentState === "disconnected") return;
+    wsRef.current.send(JSON.stringify({ type: "autocomplete_request", context }));
+  }, [agentState]);
+
+  const handleGhostAccept = useCallback(() => setGhostText(""), []);
+  const handleGhostDismiss = useCallback(() => setGhostText(""), []);
+
+  // ── Generate Outline ──────────────────────────────────────────────────────────
+
+  const handleGenerateOutline = useCallback(() => {
+    if (!wsRef.current || agentState === "disconnected" || isGeneratingOutline) return;
+    // Use the active file name or prompt the user via the sidecar
+    const topic = activeFile
+      ? activeFile.replace(/\.md$/i, "").split("/").at(-1) ?? "the current document"
+      : "the current document";
+    setIsGeneratingOutline(true);
+    wsRef.current.send(JSON.stringify({ type: "outline_request", topic }));
+  }, [agentState, activeFile, isGeneratingOutline]);
+
+  // ── Drag-drop ─────────────────────────────────────────────────────────────────
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => setIsDragOver(false), []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      if (!wsRef.current || agentState === "disconnected") return;
+
+      // URL drop (links dragged from browser)
+      const uriList = e.dataTransfer.getData("text/uri-list");
+      if (uriList) {
+        const urls = uriList.split("\n").map((u) => u.trim()).filter((u) => u.startsWith("http"));
+        for (const url of urls) {
+          wsRef.current.send(JSON.stringify({ type: "ingest_url", url }));
+        }
+        return;
+      }
+
+      // File drop — only support PDFs that are workspace-relative paths
+      const files = Array.from(e.dataTransfer.files);
+      for (const file of files) {
+        if (file.name.endsWith(".pdf")) {
+          // The drag delivers a File object; we send the filename and expect it to be in the workspace
+          wsRef.current.send(JSON.stringify({ type: "ingest_pdf", path: file.name }));
+        }
+      }
+    },
+    [agentState],
+  );
+
   // ── Status indicator ──────────────────────────────────────────────────────────
 
   const statusLabel =
@@ -188,7 +279,12 @@ function App() {
       : "● ready";
 
   return (
-    <div className="app">
+    <div
+      className="app"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {/* Header */}
       <div className="app-header">
         <span className="app-header-title">Episteme</span>
@@ -198,6 +294,26 @@ function App() {
           {statusLabel}
         </span>
       </div>
+
+      {/* Drag-over overlay */}
+      {isDragOver && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+            pointerEvents: "none",
+            fontSize: 24,
+            color: "var(--text-main)",
+          }}
+        >
+          Drop URL or PDF to ingest
+        </div>
+      )}
 
       {/* Body */}
       <div className="app-body">
@@ -212,6 +328,12 @@ function App() {
           <Editor
             content={editorContent}
             onUpdate={(md) => setEditorContent(md)}
+            onAutocompleteRequest={handleAutocompleteRequest}
+            ghostText={ghostText}
+            onGhostAccept={handleGhostAccept}
+            onGhostDismiss={handleGhostDismiss}
+            onGenerateOutline={handleGenerateOutline}
+            isGeneratingOutline={isGeneratingOutline}
           />
 
           {/* Status bar */}

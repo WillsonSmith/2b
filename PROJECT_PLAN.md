@@ -23,7 +23,7 @@ See [`/Users/willsonsmith/.claude/plans/mission-directive-project-episteme-piped
 |---|---|---|
 | 0 | Foundation & Architecture | ✅ Complete — server boots, DB scoped to workspace |
 | 1 | Core Editor UI | ✅ Complete — TipTap editor, FileTree, AISidecar, WorkspacePlugin |
-| 2 | Drafting & Ideation | ⬜ Not started |
+| 2 | Drafting & Ideation | ✅ Complete — outline, ghost-text autocomplete, ResearchPlugin (URL+PDF ingestion), drag-drop |
 | 3 | Editing & Refinement | ⬜ Not started |
 | 4 | Structural Intelligence | ⬜ Not started |
 | 5 | Research Workstation | ⬜ Not started |
@@ -54,11 +54,27 @@ docs/tasks/
 
 ---
 
+## Checkpoint Files
+
+Each phase has a checkpoint file with full task state, last known good state, and resume instructions. **Always start a new session by reading the relevant checkpoint file.**
+
+| Phase | Checkpoint |
+|---|---|
+| 0 | `docs/tasks/phase-0-foundation.md` |
+| 1 | `docs/tasks/phase-1-editor.md` |
+| 2 | `docs/tasks/phase-2-drafting.md` |
+| 3 | `docs/tasks/phase-3-editing.md` |
+| 4 | `docs/tasks/phase-4-structural.md` |
+| 5 | `docs/tasks/phase-5-research.md` (split: 5a then 5b) |
+| 6 | `docs/tasks/phase-6-workflow.md` |
+
 ## To Start a New Session
 
-1. Read `docs/tasks/phase-N-*.md` for the current phase
-2. Run `bun episteme.ts ~/test-workspace` to verify current state
-3. Continue with the first unchecked task in the phase doc
+1. Find the current phase in the table above
+2. Read `PROJECT_PLAN.md` (this file) for architecture overview
+3. Read the phase checkpoint file — follow its "To Resume" section exactly
+4. Run `bun episteme.ts ~/test-workspace` to verify current state
+5. Continue with the first unchecked task in the checkpoint
 
 ---
 

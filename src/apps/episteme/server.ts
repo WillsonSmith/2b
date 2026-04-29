@@ -2,22 +2,29 @@
  * Episteme HTTP + WebSocket server.
  *
  * WebSocket protocol (client → server):
- *   { type: "send",           text }               — chat message to agent
- *   { type: "interrupt" }                           — abort in-flight LLM call
- *   { type: "editor_context", file, content, cursor } — editor state update
- *   { type: "file_open",      path }               — read file from workspace
- *   { type: "file_save",      path, content }      — write file to workspace
- *   { type: "list_workspace" }                      — request workspace file list
+ *   { type: "send",                text }               — chat message to agent
+ *   { type: "interrupt" }                               — abort in-flight LLM call
+ *   { type: "editor_context",      file, content, cursor } — editor state update
+ *   { type: "file_open",           path }               — read file from workspace
+ *   { type: "file_save",           path, content }      — write file to workspace
+ *   { type: "list_workspace" }                          — request workspace file list
+ *   { type: "autocomplete_request", context }           — request ghost-text suggestion
+ *   { type: "outline_request",     topic }              — generate outline for topic
+ *   { type: "ingest_url",          url }                — ingest URL via ResearchPlugin
+ *   { type: "ingest_pdf",          path }               — ingest workspace PDF path
  *
  * WebSocket protocol (server → client):
- *   { type: "speak",          text }
- *   { type: "state_change",   state }              — "idle" | "thinking"
- *   { type: "tool_call",      name, args }
- *   { type: "tool_result",    name }
- *   { type: "file_content",   path, content }      — response to file_open
- *   { type: "workspace_files", files }             — list of relative .md paths
- *   { type: "file_saved" }                         — save confirmed
- *   { type: "error",          message }
+ *   { type: "speak",                text }
+ *   { type: "state_change",         state }             — "idle" | "thinking"
+ *   { type: "tool_call",            name, args }
+ *   { type: "tool_result",          name }
+ *   { type: "file_content",         path, content }     — response to file_open
+ *   { type: "workspace_files",      files }             — list of relative .md paths
+ *   { type: "file_saved" }                              — save confirmed
+ *   { type: "autocomplete_suggestion", text }           — ghost-text response
+ *   { type: "insert_text",          text }              — insert at cursor (outline)
+ *   { type: "ingest_result",        success, message }  — ingest outcome
+ *   { type: "error",                message }
  *
  * REST:
  *   GET  /api/health
@@ -25,10 +32,12 @@
  *   PATCH /api/config         { models }
  */
 import type { ServerWebSocket } from "bun";
-import { resolve, join, relative } from "node:path";
+import { resolve, join } from "node:path";
 import type { EpistemAgentBundle } from "./agent.ts";
 import type { EpistemeConfig } from "./config.ts";
 import { saveConfig } from "./config.ts";
+import { AutocompleteRunner } from "./features/autocomplete.ts";
+import { generateOutline } from "./features/outline.ts";
 import index from "./index.html";
 
 type ClientMsg =
@@ -37,7 +46,11 @@ type ClientMsg =
   | { type: "editor_context"; file: string; content: string; cursor: number }
   | { type: "file_open"; path: string }
   | { type: "file_save"; path: string; content: string }
-  | { type: "list_workspace" };
+  | { type: "list_workspace" }
+  | { type: "autocomplete_request"; context: string }
+  | { type: "outline_request"; topic: string }
+  | { type: "ingest_url"; url: string }
+  | { type: "ingest_pdf"; path: string };
 
 type ServerMsg =
   | { type: "speak"; text: string }
@@ -47,6 +60,9 @@ type ServerMsg =
   | { type: "file_content"; path: string; content: string }
   | { type: "workspace_files"; files: string[] }
   | { type: "file_saved" }
+  | { type: "autocomplete_suggestion"; text: string }
+  | { type: "insert_text"; text: string }
+  | { type: "ingest_result"; success: boolean; message: string }
   | { type: "error"; message: string };
 
 function json(data: unknown, status = 200): Response {
@@ -57,14 +73,11 @@ function json(data: unknown, status = 200): Response {
 }
 
 /** Recursively collect all .md file paths within a directory. */
-async function collectMarkdownFiles(dir: string, root: string): Promise<string[]> {
+async function collectMarkdownFiles(dir: string): Promise<string[]> {
   const results: string[] = [];
   const glob = new Bun.Glob("**/*.md");
   for await (const match of glob.scan({ cwd: dir, dot: false })) {
-    // Skip .episteme directory
-    if (!match.startsWith(".episteme")) {
-      results.push(match);
-    }
+    if (!match.startsWith(".episteme")) results.push(match);
   }
   return results.sort();
 }
@@ -79,6 +92,8 @@ export async function startEpistemServer(
   const absRoot = resolve(workspaceRoot);
 
   await agent.start();
+
+  const autocomplete = new AutocompleteRunner(config);
 
   const clients = new Set<ServerWebSocket<unknown>>();
 
@@ -150,13 +165,12 @@ export async function startEpistemServer(
             break;
 
           case "list_workspace": {
-            const files = await collectMarkdownFiles(absRoot, absRoot);
+            const files = await collectMarkdownFiles(absRoot);
             send(ws, { type: "workspace_files", files });
             break;
           }
 
           case "file_open": {
-            // Resolve relative path from workspace root; absolute paths pass through
             const absolute = msg.path.startsWith("/")
               ? msg.path
               : resolve(join(absRoot, msg.path));
@@ -166,7 +180,6 @@ export async function startEpistemServer(
             }
             try {
               const content = await Bun.file(absolute).text();
-              // Send back the path as supplied by the client
               send(ws, { type: "file_content", path: msg.path, content });
             } catch {
               send(ws, { type: "error", message: `Cannot open: ${msg.path}` });
@@ -188,6 +201,40 @@ export async function startEpistemServer(
             } catch {
               send(ws, { type: "error", message: `Cannot save: ${msg.path}` });
             }
+            break;
+          }
+
+          case "autocomplete_request": {
+            if (!msg.context?.trim()) break;
+            // Fire-and-forget; only send to the requesting client
+            autocomplete.suggest(msg.context).then((text) => {
+              if (text.trim()) send(ws, { type: "autocomplete_suggestion", text: text.trim() });
+            }).catch(() => {});
+            break;
+          }
+
+          case "outline_request": {
+            const topic = msg.topic?.trim();
+            if (!topic) break;
+            generateOutline(topic, config).then((outline) => {
+              broadcast({ type: "insert_text", text: outline });
+            }).catch(() => {});
+            break;
+          }
+
+          case "ingest_url": {
+            const url = msg.url?.trim();
+            if (!url) break;
+            agent.addDirect(`ingest_url ${url}`);
+            send(ws, { type: "ingest_result", success: true, message: `Ingesting ${url}…` });
+            break;
+          }
+
+          case "ingest_pdf": {
+            const path = msg.path?.trim();
+            if (!path) break;
+            agent.addDirect(`ingest_pdf ${path}`);
+            send(ws, { type: "ingest_result", success: true, message: `Ingesting PDF ${path}…` });
             break;
           }
         }

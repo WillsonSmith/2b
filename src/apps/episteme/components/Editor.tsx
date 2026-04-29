@@ -1,24 +1,103 @@
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, Extension } from "@tiptap/react";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { Plugin as ProseMirrorPlugin, PluginKey } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
-import { useEffect } from "react";
+import { useEffect, useRef, useCallback } from "react";
 
 interface EditorProps {
   content: string;
   onUpdate: (markdown: string) => void;
+  /** Called when the editor wants an autocomplete suggestion for the current context. */
+  onAutocompleteRequest?: (context: string) => void;
+  /** Ghost-text suggestion to display. Clear by setting to "". */
+  ghostText?: string;
+  /** Called when the user accepts (Tab) or dismisses (Escape) the ghost suggestion. */
+  onGhostAccept?: (text: string) => void;
+  onGhostDismiss?: () => void;
+  /** Called when the Generate Outline button is clicked. */
+  onGenerateOutline?: () => void;
+  /** True while outline generation is in flight. */
+  isGeneratingOutline?: boolean;
 }
+
+// ── Ghost-text TipTap extension ───────────────────────────────────────────────
+
+const ghostKey = new PluginKey<DecorationSet>("ghost-text");
+
+function buildGhostPlugin(getGhost: () => string) {
+  return new ProseMirrorPlugin({
+    key: ghostKey,
+    state: {
+      init() {
+        return DecorationSet.empty;
+      },
+      apply(tr, _old) {
+        const ghost = getGhost();
+        if (!ghost) return DecorationSet.empty;
+        const sel = tr.selection;
+        const pos = sel.from;
+        const deco = Decoration.widget(pos, () => {
+          const span = document.createElement("span");
+          span.className = "ghost-text";
+          span.textContent = ghost;
+          return span;
+        });
+        return DecorationSet.create(tr.doc, [deco]);
+      },
+    },
+    props: {
+      decorations(state) {
+        return ghostKey.getState(state) ?? DecorationSet.empty;
+      },
+    },
+  });
+}
+
+function GhostTextExtension(
+  ghostRef: React.MutableRefObject<string>,
+  onAccept: (t: string) => void,
+  onDismiss: () => void,
+) {
+  return Extension.create({
+    name: "ghostText",
+    addProseMirrorPlugins() {
+      return [buildGhostPlugin(() => ghostRef.current)];
+    },
+    addKeyboardShortcuts() {
+      return {
+        Tab: () => {
+          const ghost = ghostRef.current;
+          if (!ghost) return false;
+          this.editor.commands.insertContent(ghost);
+          onAccept(ghost);
+          return true;
+        },
+        Escape: () => {
+          if (!ghostRef.current) return false;
+          onDismiss();
+          return true;
+        },
+      };
+    },
+  });
+}
+
+// ── Toolbar button ────────────────────────────────────────────────────────────
 
 function ToolbarButton({
   onClick,
   active,
   title,
+  disabled,
   children,
 }: {
   onClick: () => void;
   active?: boolean;
   title: string;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -27,19 +106,43 @@ function ToolbarButton({
       onClick={onClick}
       title={title}
       type="button"
+      disabled={disabled}
     >
       {children}
     </button>
   );
 }
 
-export function Editor({ content, onUpdate }: EditorProps) {
+// ── Editor component ──────────────────────────────────────────────────────────
+
+export function Editor({
+  content,
+  onUpdate,
+  onAutocompleteRequest,
+  ghostText = "",
+  onGhostAccept,
+  onGhostDismiss,
+  onGenerateOutline,
+  isGeneratingOutline,
+}: EditorProps) {
+  const ghostRef = useRef(ghostText);
+
+  // Stable callbacks for the extension — avoids recreating editor on every render
+  const acceptRef = useRef(onGhostAccept);
+  const dismissRef = useRef(onGhostDismiss);
+  acceptRef.current = onGhostAccept;
+  dismissRef.current = onGhostDismiss;
+
+  const handleAccept = useCallback((t: string) => acceptRef.current?.(t), []);
+  const handleDismiss = useCallback(() => dismissRef.current?.(), []);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
       Markdown.configure({ transformPastedText: true }),
       Placeholder.configure({ placeholder: "Start writing…" }),
       CharacterCount,
+      GhostTextExtension(ghostRef, handleAccept, handleDismiss),
     ],
     content,
     onUpdate({ editor }) {
@@ -50,6 +153,16 @@ export function Editor({ content, onUpdate }: EditorProps) {
     },
   });
 
+  // Sync ghost text to ref and force a decoration redraw
+  useEffect(() => {
+    ghostRef.current = ghostText;
+    if (editor) {
+      // Trigger a no-op transaction so ProseMirror re-evaluates decorations
+      const { tr } = editor.state;
+      editor.view.dispatch(tr.setMeta("ghost-refresh", true));
+    }
+  }, [ghostText, editor]);
+
   // Sync external content changes (file open) without losing cursor if content unchanged
   useEffect(() => {
     if (!editor) return;
@@ -58,6 +171,26 @@ export function Editor({ content, onUpdate }: EditorProps) {
       editor.commands.setContent(content);
     }
   }, [content]);
+
+  // Autocomplete: fire after 800ms idle after typing
+  const autocompleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleAutocomplete = useCallback(() => {
+    if (!onAutocompleteRequest || !editor) return;
+    if (autocompleteTimer.current) clearTimeout(autocompleteTimer.current);
+    autocompleteTimer.current = setTimeout(() => {
+      const md = editor.storage.markdown.getMarkdown();
+      if (md.trim().length > 10) onAutocompleteRequest(md);
+    }, 800);
+  }, [onAutocompleteRequest, editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.on("update", handleAutocomplete);
+    return () => {
+      editor.off("update", handleAutocomplete);
+      if (autocompleteTimer.current) clearTimeout(autocompleteTimer.current);
+    };
+  }, [editor, handleAutocomplete]);
 
   const wordCount = editor?.storage.characterCount?.words() ?? 0;
   const charCount = editor?.storage.characterCount?.characters() ?? 0;
@@ -171,6 +304,17 @@ export function Editor({ content, onUpdate }: EditorProps) {
           active={false}
         >
           ↪
+        </ToolbarButton>
+
+        <div className="toolbar-sep" />
+
+        <ToolbarButton
+          onClick={() => onGenerateOutline?.()}
+          title="Generate Outline (AI)"
+          disabled={isGeneratingOutline || !onGenerateOutline}
+          active={false}
+        >
+          {isGeneratingOutline ? "…" : "⊟ Outline"}
         </ToolbarButton>
 
         <div style={{ flex: 1 }} />
