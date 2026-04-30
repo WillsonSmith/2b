@@ -37,6 +37,11 @@ interface EditorProps {
   onMetadataApplied?: () => void;
   tableResult?: { text: string; insertPos: number } | null;
   onTableApplied?: () => void;
+  // Phase 6
+  onImagePaste?: (base64: string, mimeType: string, filename: string) => void;
+  onExplainCode?: (code: string, language: string) => void;
+  isRecording?: boolean;
+  onToggleRecording?: () => void;
 }
 
 // ── Ghost-text TipTap extension ───────────────────────────────────────────────
@@ -257,10 +262,22 @@ export function Editor({
   onMetadataApplied,
   tableResult,
   onTableApplied,
+  onImagePaste,
+  onExplainCode,
+  isRecording,
+  onToggleRecording,
 }: EditorProps) {
   const ghostRef = useRef(ghostText);
   const lintRef = useRef<ResolvedIssue[]>([]);
   const [previewMode, setPreviewMode] = useState(false);
+
+  // Code block hover overlay state
+  const [codeHover, setCodeHover] = useState<{
+    code: string;
+    language: string;
+    top: number;
+    right: number;
+  } | null>(null);
 
   // Stable callbacks for the extension — avoids recreating editor on every render
   const acceptRef = useRef(onGhostAccept);
@@ -343,7 +360,6 @@ export function Editor({
     if (hasFrontmatter) {
       const endOfFm = md.indexOf("\n---\n", 4);
       if (endOfFm !== -1) {
-        // Replace from position 0 to end of ---\n block
         const newMd = `---\n${metadataResult}\n---\n` + md.slice(endOfFm + 5);
         editor.commands.setContent(newMd);
         onUpdate(newMd);
@@ -351,7 +367,6 @@ export function Editor({
         return;
       }
     }
-    // Prepend new frontmatter
     const newMd = `---\n${metadataResult}\n---\n\n${md.trimStart()}`;
     editor.commands.setContent(newMd);
     onUpdate(newMd);
@@ -399,7 +414,6 @@ export function Editor({
     if (!editor || !onDiagramRequest) return false;
     const { from } = editor.state.selection;
 
-    // Find the line at cursor
     const textBefore = editor.state.doc.textBetween(0, from, "\n");
     const lines = textBefore.split("\n");
     const currentLine = lines.at(-1) ?? "";
@@ -409,7 +423,6 @@ export function Editor({
     const description = diagramMatch[1]?.trim() ?? "";
     if (!description) return false;
 
-    // Find the start of this line in the document
     const lineStart = from - currentLine.length;
     onDiagramRequest(description, lineStart, from);
     return true;
@@ -425,6 +438,71 @@ export function Editor({
     editor.view.dom.addEventListener("keydown", handleKeyDown);
     return () => editor.view.dom.removeEventListener("keydown", handleKeyDown);
   }, [editor, handleDiagramCommand]);
+
+  // Image paste handler — detect image blobs in clipboard data
+  useEffect(() => {
+    if (!editor || !onImagePaste) return;
+    const dom = editor.view.dom;
+
+    const handlePaste = (e: ClipboardEvent) => {
+      const files = Array.from(e.clipboardData?.files ?? []);
+      const imageFile = files.find((f) => f.type.startsWith("image/"));
+      if (!imageFile) return;
+      e.preventDefault();
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(",")[1] ?? "";
+        onImagePaste(base64, imageFile.type, imageFile.name || "pasted-image.png");
+      };
+      reader.readAsDataURL(imageFile);
+    };
+
+    dom.addEventListener("paste", handlePaste);
+    return () => dom.removeEventListener("paste", handlePaste);
+  }, [editor, onImagePaste]);
+
+  // Code block hover overlay — show "Explain" button when hovering over <pre>
+  const onExplainCodeRef = useRef(onExplainCode);
+  onExplainCodeRef.current = onExplainCode;
+
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+
+    const handleMouseOver = (e: MouseEvent) => {
+      const pre = (e.target as HTMLElement).closest("pre");
+      if (!pre) return;
+      const codeEl = pre.querySelector("code");
+      if (!codeEl) return;
+      const language = Array.from(codeEl.classList)
+        .find((c) => c.startsWith("language-"))
+        ?.replace("language-", "") ?? "text";
+      const rect = pre.getBoundingClientRect();
+      setCodeHover({
+        code: codeEl.textContent ?? "",
+        language,
+        top: rect.top,
+        right: window.innerWidth - rect.right,
+      });
+    };
+
+    const handleMouseOut = (e: MouseEvent) => {
+      const pre = (e.target as HTMLElement).closest("pre");
+      if (!pre) return;
+      const related = e.relatedTarget as HTMLElement | null;
+      if (!related || !pre.contains(related)) {
+        setCodeHover(null);
+      }
+    };
+
+    dom.addEventListener("mouseover", handleMouseOver);
+    dom.addEventListener("mouseout", handleMouseOut);
+    return () => {
+      dom.removeEventListener("mouseover", handleMouseOver);
+      dom.removeEventListener("mouseout", handleMouseOut);
+    };
+  }, [editor]);
 
   const wordCount = editor?.storage.characterCount?.words() ?? 0;
   const charCount = editor?.storage.characterCount?.characters() ?? 0;
@@ -591,6 +669,19 @@ export function Editor({
           {previewMode ? "Edit" : "Preview"}
         </ToolbarButton>
 
+        {onToggleRecording && (
+          <>
+            <div className="toolbar-sep" />
+            <ToolbarButton
+              onClick={onToggleRecording}
+              title={isRecording ? "Stop recording" : "Record voice (requires Whisper)"}
+              active={isRecording}
+            >
+              {isRecording ? "⏹ Stop" : "⏺ Voice"}
+            </ToolbarButton>
+          </>
+        )}
+
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
           {wordCount.toLocaleString()} words · {charCount.toLocaleString()} chars
@@ -654,6 +745,26 @@ export function Editor({
 
         {previewMode ? renderPreview() : <EditorContent editor={editor} />}
       </div>
+
+      {/* Code block hover "Explain" overlay */}
+      {codeHover && onExplainCode && (
+        <div
+          className="code-explain-overlay"
+          style={{ top: codeHover.top + 4, right: codeHover.right + 4 }}
+          onMouseEnter={() => { /* keep visible */ }}
+          onMouseLeave={() => setCodeHover(null)}
+        >
+          <button
+            className="code-explain-btn"
+            onClick={() => {
+              onExplainCode(codeHover.code, codeHover.language);
+              setCodeHover(null);
+            }}
+          >
+            Explain
+          </button>
+        </div>
+      )}
     </div>
   );
 }

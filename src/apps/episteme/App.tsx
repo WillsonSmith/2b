@@ -10,6 +10,8 @@ import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
 import type { ContradictionRecord } from "./components/ConflictsPanel.tsx";
 import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
 import type { GraphData } from "./components/KnowledgeGraph.tsx";
+import { ExportPanel } from "./components/ExportPanel.tsx";
+import type { ExportFormat } from "./features/export.ts";
 import type { Tone } from "./features/tone.ts";
 import type { LintIssue } from "./features/lint.ts";
 import type { TocEntry } from "./features/toc.ts";
@@ -43,6 +45,9 @@ type ServerMsg =
   | { type: "graph_data"; data: GraphData }
   | { type: "check_citations_result"; result: { valid: string[]; broken: string[] } }
   | { type: "format_citation_result"; bibtex: string }
+  | { type: "alt_text"; text: string; mimeType: string; base64: string }
+  | { type: "explain_code_result"; explanation: string }
+  | { type: "transcript"; text: string }
   | { type: "error"; message: string };
 
 // ── Debounce ──────────────────────────────────────────────────────────────────
@@ -81,6 +86,58 @@ function AutolinkBanner({ suggestions, onAccept, onDismiss, onDismissAll }: Auto
           Dismiss all ({suggestions.length})
         </button>
       )}
+    </div>
+  );
+}
+
+// ── Keyboard shortcut help panel ──────────────────────────────────────────────
+
+function HelpPanel({ onClose }: { onClose: () => void }) {
+  const shortcuts = [
+    { key: "⌘S", desc: "Save file" },
+    { key: "⌘Z / ⌘⇧Z", desc: "Undo / Redo" },
+    { key: "⌘B", desc: "Bold" },
+    { key: "⌘I", desc: "Italic" },
+    { key: "Tab", desc: "Accept ghost-text autocomplete" },
+    { key: "Esc", desc: "Dismiss autocomplete" },
+    { key: "Enter after /diagram: …", desc: "Generate Mermaid diagram" },
+    { key: "?", desc: "Show this help" },
+    { key: "Select text → bubble menu", desc: "Tone rewrite, TL;DR, Table" },
+    { key: "Paste/drop image", desc: "Insert image with AI alt text" },
+    { key: "Hover code block", desc: "Explain code with AI" },
+  ];
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-title">Keyboard Shortcuts</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <table className="help-table">
+          <tbody>
+            {shortcuts.map(({ key, desc }) => (
+              <tr key={key} className="help-row">
+                <td className="help-key"><kbd>{key}</kbd></td>
+                <td className="help-desc">{desc}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Large file warning ────────────────────────────────────────────────────────
+
+function LargeFileBanner({ charCount, onDismiss }: { charCount: number; onDismiss: () => void }) {
+  return (
+    <div className="large-file-banner">
+      <span>
+        This document is {(charCount / 1000).toFixed(0)}k characters — AI features may be slow or truncated.
+      </span>
+      <button className="autolink-btn dismiss" onClick={onDismiss}>Dismiss</button>
     </div>
   );
 }
@@ -151,7 +208,28 @@ function App() {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [isLoadingGraph, setIsLoadingGraph] = useState(false);
 
-  // Citations (result surfaced in AI sidecar messages)
+  // Phase 6: Export
+  const [showExport, setShowExport] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [pandocAvailable, setPandocAvailable] = useState(false);
+
+  // Phase 6: Explain code — result inserted into sidecar messages
+  // (no extra state needed, explanation goes to messages array)
+
+  // Phase 6: Voice recording
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  // Phase 6: Pending image alt-text insertion (stores base64 + mimeType until inserted)
+  const pendingAltTextRef = useRef<{ base64: string; mimeType: string } | null>(null);
+  const [altTextInsert, setAltTextInsert] = useState<string | null>(null);
+
+  // Polish: large file warning
+  const [dismissedLargeFile, setDismissedLargeFile] = useState(false);
+
+  // Help panel
+  const [showHelp, setShowHelp] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const editorContentRef = useRef(editorContent);
@@ -171,11 +249,12 @@ function App() {
         ws.send(JSON.stringify({ type: "list_workspace" }));
         fetch("/api/health")
           .then((r) => r.json())
-          .then((data: { workspace?: string }) => {
+          .then((data: { workspace?: string; pandocAvailable?: boolean }) => {
             if (data.workspace) {
               const parts = data.workspace.split("/");
               setWorkspaceName(parts.at(-1) ?? data.workspace);
             }
+            setPandocAvailable(data.pandocAvailable ?? false);
           })
           .catch(() => {});
       };
@@ -205,6 +284,7 @@ function App() {
             setGhostText("");
             setLintIssues([]);
             setAutolinkSuggestions([]);
+            setDismissedLargeFile(false);
             break;
           case "file_saved":
             setSavedContent(editorContentRef.current);
@@ -285,6 +365,28 @@ function App() {
           case "format_citation_result":
             setMessages((prev) => [...prev, { role: "assistant", text: `\`\`\`bibtex\n${msg.bibtex}\n\`\`\`` }]);
             break;
+          case "alt_text": {
+            // Store image data, trigger insertion via state
+            pendingAltTextRef.current = { base64: msg.base64, mimeType: msg.mimeType };
+            setAltTextInsert(`![${msg.text}](data:${msg.mimeType};base64,${msg.base64})`);
+            break;
+          }
+          case "explain_code_result":
+            setMessages((prev) => [
+              ...prev,
+              { role: "assistant", text: `**Code explanation:**\n\n${msg.explanation}` },
+            ]);
+            // Open sidecar if collapsed
+            setSidecarCollapsed(false);
+            break;
+          case "transcript": {
+            // Insert transcribed text into editor at current end
+            setEditorContent((prev) => {
+              const sep = prev.trim() ? "\n\n" : "";
+              return prev + sep + msg.text;
+            });
+            break;
+          }
           case "error":
             setMessages((prev) => [
               ...prev,
@@ -296,6 +398,7 @@ function App() {
             setIsDetectingGaps(false);
             setIsScanning(false);
             setIsLoadingGraph(false);
+            setIsExporting(false);
             break;
         }
       };
@@ -304,6 +407,16 @@ function App() {
     connect();
     return () => wsRef.current?.close();
   }, []);
+
+  // Insert alt text markdown when server responds
+  useEffect(() => {
+    if (!altTextInsert) return;
+    setEditorContent((prev) => {
+      const sep = prev.trim() ? "\n\n" : "";
+      return prev + sep + altTextInsert;
+    });
+    setAltTextInsert(null);
+  }, [altTextInsert]);
 
   // ── Sync editor content to agent context (debounced) ─────────────────────────
 
@@ -351,6 +464,10 @@ function App() {
         e.preventDefault();
         saveFile();
       }
+      // ? key opens help (only when not typing in an input/textarea)
+      if (e.key === "?" && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+        setShowHelp((v) => !v);
+      }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
@@ -372,6 +489,8 @@ function App() {
 
   const handleAutocompleteRequest = useCallback((context: string) => {
     if (!wsRef.current || agentState === "disconnected") return;
+    // Warn if large file before sending to autocomplete
+    if (context.length > 50_000) return;
     wsRef.current.send(JSON.stringify({ type: "autocomplete_request", context }));
   }, [agentState]);
 
@@ -430,9 +549,6 @@ function App() {
   }, [agentState, isTocGenerating]);
 
   const handleHeadingClick = useCallback((_id: string, text: string) => {
-    // Scroll the editor to the heading by searching for it in the content
-    const headingEl = document.querySelector(".tiptap")?.querySelector("h1, h2, h3, h4, h5, h6");
-    if (!headingEl) return;
     const allHeadings = document.querySelectorAll(".tiptap h1, .tiptap h2, .tiptap h3, .tiptap h4, .tiptap h5, .tiptap h6");
     for (const el of allHeadings) {
       if (el.textContent?.trim() === text) {
@@ -452,7 +568,6 @@ function App() {
       wikilink +
       content.slice(suggestion.offset + suggestion.text.length);
     setEditorContent(updated);
-    // Remove accepted suggestion and re-index offsets for remaining suggestions
     setAutolinkSuggestions((prev) =>
       prev
         .filter((s) => s !== suggestion)
@@ -576,10 +691,129 @@ function App() {
       for (const file of files) {
         if (file.name.endsWith(".pdf")) {
           wsRef.current.send(JSON.stringify({ type: "ingest_pdf", path: file.name }));
+        } else if (file.type.startsWith("image/")) {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result as string;
+            const base64 = dataUrl.split(",")[1] ?? "";
+            wsRef.current?.send(JSON.stringify({
+              type: "analyze_image",
+              base64,
+              mimeType: file.type,
+              filename: file.name,
+            }));
+          };
+          reader.readAsDataURL(file);
         }
       }
     },
     [agentState],
+  );
+
+  // ── Phase 6: Image paste ──────────────────────────────────────────────────────
+
+  const handleImagePaste = useCallback(
+    (base64: string, mimeType: string, filename: string) => {
+      if (!wsRef.current || agentState === "disconnected") return;
+      wsRef.current.send(JSON.stringify({ type: "analyze_image", base64, mimeType, filename }));
+    },
+    [agentState],
+  );
+
+  // ── Phase 6: Explain code ─────────────────────────────────────────────────────
+
+  const handleExplainCode = useCallback(
+    (code: string, language: string) => {
+      if (!wsRef.current || agentState === "disconnected") return;
+      wsRef.current.send(JSON.stringify({ type: "explain_code", code, language }));
+      setMessages((prev) => [...prev, { role: "user", text: `Explain ${language} code block` }]);
+      setSidecarCollapsed(false);
+    },
+    [agentState],
+  );
+
+  // ── Phase 6: Voice recording ──────────────────────────────────────────────────
+
+  const handleToggleRecording = useCallback(async () => {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const audioBase64 = dataUrl.split(",")[1] ?? "";
+          wsRef.current?.send(JSON.stringify({
+            type: "voice_data",
+            audioBase64,
+            mimeType: recorder.mimeType,
+          }));
+        };
+        reader.readAsDataURL(blob);
+      };
+
+      recorder.start();
+      setIsRecording(true);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", text: "[Error] Microphone access denied." },
+      ]);
+    }
+  }, [isRecording]);
+
+  // ── Phase 6: Export ───────────────────────────────────────────────────────────
+
+  const handleExport = useCallback(
+    async (format: ExportFormat, includeFrontmatter: boolean) => {
+      if (!activeFile || isExporting) return;
+      setIsExporting(true);
+      try {
+        const res = await fetch("/api/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filePath: activeFile, format, includeFrontmatter }),
+        });
+        const data = (await res.json()) as { url?: string; error?: string };
+        if (data.url) {
+          // Trigger download
+          const a = document.createElement("a");
+          a.href = data.url;
+          a.download = data.url.split("/").at(-1) ?? "export";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setShowExport(false);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", text: `[Export error] ${data.error ?? "Unknown error"}` },
+          ]);
+        }
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", text: "[Export error] Request failed." },
+        ]);
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [activeFile, isExporting],
   );
 
   // ── Status indicator ──────────────────────────────────────────────────────────
@@ -590,6 +824,9 @@ function App() {
       : agentState === "thinking"
       ? "◉ thinking"
       : "● ready";
+
+  const charCount = editorContent.length;
+  const showLargeFileWarning = charCount > 50_000 && !dismissedLargeFile;
 
   return (
     <div
@@ -625,18 +862,42 @@ function App() {
           ◈
         </button>
         <button
+          className="header-research-btn"
+          title="Export document"
+          onClick={() => setShowExport(true)}
+        >
+          ↓
+        </button>
+        <button
+          className="header-research-btn"
+          title="Keyboard shortcuts (?)"
+          onClick={() => setShowHelp(true)}
+        >
+          ?
+        </button>
+        <button
           className="header-settings-btn"
           title="Style Guide"
           onClick={() => setShowSettings(true)}
         >
           ⚙
         </button>
-        <span className={`app-header-status${agentState === "thinking" ? " thinking" : ""}`}>
+        <span className={`app-header-status${agentState === "thinking" ? " thinking" : agentState === "disconnected" ? " disconnected" : ""}`}>
           {statusLabel}
         </span>
       </div>
 
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
+      {showExport && (
+        <ExportPanel
+          onClose={() => setShowExport(false)}
+          onExport={handleExport}
+          isExporting={isExporting}
+          pandocAvailable={pandocAvailable}
+          activeFile={activeFile}
+        />
+      )}
 
       {/* Drag-over overlay */}
       {isDragOver && (
@@ -654,7 +915,7 @@ function App() {
             color: "var(--text-main)",
           }}
         >
-          Drop URL or PDF to ingest
+          Drop URL, PDF, or image
         </div>
       )}
 
@@ -668,18 +929,44 @@ function App() {
         />
       )}
 
+      {/* Large file warning */}
+      {showLargeFileWarning && (
+        <LargeFileBanner
+          charCount={charCount}
+          onDismiss={() => setDismissedLargeFile(true)}
+        />
+      )}
+
+      {/* Offline notice */}
+      {agentState === "disconnected" && (
+        <div className="offline-banner">
+          AI unavailable — reconnecting…
+        </div>
+      )}
+
       {/* Body */}
       <div className="app-body">
-        <FileTree
-          files={workspaceFiles}
-          activeFile={activeFile}
-          onFileSelect={openFile}
-          onRefresh={refreshFiles}
-          tocEntries={tocEntries}
-          isTocGenerating={isTocGenerating}
-          onGenerateToc={handleGenerateToc}
-          onHeadingClick={handleHeadingClick}
-        />
+        {workspaceFiles.length === 0 && agentState !== "disconnected" ? (
+          <div className="empty-workspace">
+            <div className="empty-workspace-icon">📂</div>
+            <div className="empty-workspace-title">No files yet</div>
+            <div className="empty-workspace-desc">
+              Create a <code>.md</code> file in your workspace to get started,
+              or drag and drop a URL or PDF to ingest.
+            </div>
+          </div>
+        ) : (
+          <FileTree
+            files={workspaceFiles}
+            activeFile={activeFile}
+            onFileSelect={openFile}
+            onRefresh={refreshFiles}
+            tocEntries={tocEntries}
+            isTocGenerating={isTocGenerating}
+            onGenerateToc={handleGenerateToc}
+            onHeadingClick={handleHeadingClick}
+          />
+        )}
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <Editor
@@ -708,6 +995,10 @@ function App() {
             onDiagramRequest={handleDiagramRequest}
             diagramResult={diagramResult}
             onDiagramApplied={() => setDiagramResult(null)}
+            onImagePaste={handleImagePaste}
+            onExplainCode={handleExplainCode}
+            isRecording={isRecording}
+            onToggleRecording={handleToggleRecording}
           />
 
           {/* Status bar */}

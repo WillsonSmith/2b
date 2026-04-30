@@ -27,7 +27,7 @@ See [`/Users/willsonsmith/.claude/plans/mission-directive-project-episteme-piped
 | 3 | Editing & Refinement | ✅ Complete — BubbleMenu tone/summarize, AI lint on save, StyleGuidePlugin, fact_check stub |
 | 4 | Structural Intelligence | ✅ Complete — frontmatter gen, narrative TOC, autolink, /diagram: slash command, Mermaid preview, table gen |
 | 5 | Research Workstation | ✅ Complete — all 5a + 5b tasks done |
-| 6 | Workflow & Ecosystem | ⬜ Not started |
+| 6 | Workflow & Ecosystem | ✅ Complete — export, voice, image alt-text, code explain, polish |
 
 ---
 
