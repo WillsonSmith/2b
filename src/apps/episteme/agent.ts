@@ -30,6 +30,7 @@ export interface EpistemAgentBundle {
   editorContext: EditorContextPlugin;
   workspace: WorkspacePlugin;
   styleGuide: StyleGuidePlugin;
+  research: ResearchPlugin;
 }
 
 export function createEpistemAgent(
@@ -75,5 +76,5 @@ export function createEpistemAgent(
     }),
   );
 
-  return { agent, editorContext, workspace, styleGuide };
+  return { agent, editorContext, workspace, styleGuide, research };
 }

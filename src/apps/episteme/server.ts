@@ -19,6 +19,8 @@
  *   { type: "autolink_request",    markdown, files }    — detect wikilink candidates
  *   { type: "diagram_request",     description, from, to } — generate Mermaid diagram
  *   { type: "table_request",       text, insertPos }    — generate Markdown table
+ *   { type: "search_request",      query }              — unified search (arXiv + Wikipedia + workspace)
+ *   { type: "detect_gaps_request", topic }              — detect knowledge gaps in workspace
  *
  * WebSocket protocol (server → client):
  *   { type: "speak",                text }
@@ -39,6 +41,8 @@
  *   { type: "autolink_result",      suggestions }       — wikilink candidates
  *   { type: "diagram_result",       code, from, to }    — Mermaid code + original range
  *   { type: "table_result",         text, insertPos }   — Markdown table + insertion pos
+ *   { type: "search_result",        results }           — unified search response
+ *   { type: "detect_gaps_result",   markdown }          — gap report as Markdown
  *   { type: "error",                message }
  *
  * REST:
@@ -63,6 +67,7 @@ import { generateNarrativeToc, extractSectionsFromMarkdown } from "./features/to
 import { detectAutolinkCandidates } from "./features/autolink.ts";
 import { generateTable } from "./features/table.ts";
 import { DiagramPlugin } from "./plugins/DiagramPlugin.ts";
+import type { UnifiedSearchResponse } from "./plugins/ResearchPlugin.ts";
 import type { Tone } from "./features/tone.ts";
 import type { LintIssue } from "./features/lint.ts";
 import type { TocEntry } from "./features/toc.ts";
@@ -86,7 +91,9 @@ type ClientMsg =
   | { type: "toc_request"; markdown: string }
   | { type: "autolink_request"; markdown: string; files: string[] }
   | { type: "diagram_request"; description: string; from: number; to: number }
-  | { type: "table_request"; text: string; insertPos: number };
+  | { type: "table_request"; text: string; insertPos: number }
+  | { type: "search_request"; query: string }
+  | { type: "detect_gaps_request"; topic: string };
 
 type ServerMsg =
   | { type: "speak"; text: string }
@@ -107,6 +114,8 @@ type ServerMsg =
   | { type: "autolink_result"; suggestions: WikilinkSuggestion[] }
   | { type: "diagram_result"; code: string; from: number; to: number }
   | { type: "table_result"; text: string; insertPos: number }
+  | { type: "search_result"; results: UnifiedSearchResponse }
+  | { type: "detect_gaps_result"; markdown: string }
   | { type: "error"; message: string };
 
 function json(data: unknown, status = 200): Response {
@@ -132,7 +141,7 @@ export async function startEpistemServer(
   config: EpistemeConfig,
   port: number,
 ): Promise<void> {
-  const { agent, editorContext, styleGuide } = bundle;
+  const { agent, editorContext, styleGuide, research } = bundle;
   const absRoot = resolve(workspaceRoot);
 
   await agent.start();
@@ -373,6 +382,28 @@ export async function startEpistemServer(
               send(ws, { type: "table_result", text: result.trim(), insertPos });
             }).catch(() => {
               send(ws, { type: "error", message: "Failed to generate table." });
+            });
+            break;
+          }
+
+          case "search_request": {
+            const query = msg.query?.trim();
+            if (!query) break;
+            research.unifiedSearch(query).then((results) => {
+              send(ws, { type: "search_result", results });
+            }).catch(() => {
+              send(ws, { type: "error", message: "Search failed." });
+            });
+            break;
+          }
+
+          case "detect_gaps_request": {
+            const topic = msg.topic?.trim();
+            if (!topic) break;
+            research.detectGaps(topic).then((markdown) => {
+              send(ws, { type: "detect_gaps_result", markdown });
+            }).catch(() => {
+              send(ws, { type: "error", message: "Gap detection failed." });
             });
             break;
           }
