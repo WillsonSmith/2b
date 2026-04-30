@@ -6,6 +6,8 @@ import { AISidecar, type SidecarMessage } from "./components/AISidecar.tsx";
 import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import type { Tone } from "./features/tone.ts";
 import type { LintIssue } from "./features/lint.ts";
+import type { TocEntry } from "./features/toc.ts";
+import type { WikilinkSuggestion } from "./features/autolink.ts";
 import "./styles.css";
 
 // ── WebSocket protocol ────────────────────────────────────────────────────────
@@ -24,6 +26,11 @@ type ServerMsg =
   | { type: "tone_result"; text: string; from: number; to: number }
   | { type: "summarize_result"; text: string; insertPos: number }
   | { type: "lint_result"; issues: LintIssue[] }
+  | { type: "metadata_result"; yaml: string }
+  | { type: "toc_result"; entries: TocEntry[] }
+  | { type: "autolink_result"; suggestions: WikilinkSuggestion[] }
+  | { type: "diagram_result"; code: string; from: number; to: number }
+  | { type: "table_result"; text: string; insertPos: number }
   | { type: "error"; message: string };
 
 // ── Debounce ──────────────────────────────────────────────────────────────────
@@ -35,6 +42,35 @@ function useDebounce<T>(value: T, delay: number): T {
     return () => clearTimeout(id);
   }, [value, delay]);
   return debounced;
+}
+
+// ── Autolink suggestion banner ─────────────────────────────────────────────────
+
+interface AutolinkBannerProps {
+  suggestions: WikilinkSuggestion[];
+  onAccept: (s: WikilinkSuggestion) => void;
+  onDismiss: (s: WikilinkSuggestion) => void;
+  onDismissAll: () => void;
+}
+
+function AutolinkBanner({ suggestions, onAccept, onDismiss, onDismissAll }: AutolinkBannerProps) {
+  const current = suggestions[0];
+  if (!current) return null;
+  const linkName = current.filename.split("/").at(-1)?.replace(/\.md$/i, "") ?? current.filename;
+  return (
+    <div className="autolink-banner">
+      <span className="autolink-text">
+        Link <strong>"{current.text}"</strong> → <code>[[{linkName}]]</code>?
+      </span>
+      <button className="autolink-btn accept" onClick={() => onAccept(current)}>Accept</button>
+      <button className="autolink-btn dismiss" onClick={() => onDismiss(current)}>Skip</button>
+      {suggestions.length > 1 && (
+        <button className="autolink-btn dismiss" onClick={onDismissAll}>
+          Dismiss all ({suggestions.length})
+        </button>
+      )}
+    </div>
+  );
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -68,6 +104,23 @@ function App() {
   // Workspace
   const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
   const [workspaceName, setWorkspaceName] = useState("workspace");
+
+  // Metadata (frontmatter)
+  const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false);
+  const [metadataResult, setMetadataResult] = useState<string | null>(null);
+
+  // TOC
+  const [tocEntries, setTocEntries] = useState<TocEntry[]>([]);
+  const [isTocGenerating, setIsTocGenerating] = useState(false);
+
+  // Autolink
+  const [autolinkSuggestions, setAutolinkSuggestions] = useState<WikilinkSuggestion[]>([]);
+
+  // Diagram
+  const [diagramResult, setDiagramResult] = useState<{ code: string; from: number; to: number } | null>(null);
+
+  // Table
+  const [tableResult, setTableResult] = useState<{ text: string; insertPos: number } | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const editorContentRef = useRef(editorContent);
@@ -119,7 +172,8 @@ function App() {
             setSavedContent(msg.content);
             setIsDirty(false);
             setGhostText("");
-            setLintIssues([]); // clear stale lint on file switch
+            setLintIssues([]);
+            setAutolinkSuggestions([]);
             break;
           case "file_saved":
             setSavedContent(editorContentRef.current);
@@ -129,7 +183,6 @@ function App() {
             setGhostText(msg.text);
             break;
           case "insert_text": {
-            // Outline result: append to editor content
             setEditorContent((prev) => {
               const sep = prev.trim() ? "\n\n" : "";
               return prev + sep + msg.text;
@@ -145,7 +198,6 @@ function App() {
                 text: msg.success ? `Ingestion started: ${msg.message}` : `Ingest failed: ${msg.message}`,
               },
             ]);
-            // Refresh file list so new research .md appears in tree
             wsRef.current?.send(JSON.stringify({ type: "list_workspace" }));
             break;
           case "lint_result":
@@ -157,11 +209,30 @@ function App() {
           case "summarize_result":
             setSummarizeResult({ text: msg.text, insertPos: msg.insertPos });
             break;
+          case "metadata_result":
+            setMetadataResult(msg.yaml);
+            setIsGeneratingMetadata(false);
+            break;
+          case "toc_result":
+            setTocEntries(msg.entries);
+            setIsTocGenerating(false);
+            break;
+          case "autolink_result":
+            setAutolinkSuggestions(msg.suggestions);
+            break;
+          case "diagram_result":
+            setDiagramResult({ code: msg.code, from: msg.from, to: msg.to });
+            break;
+          case "table_result":
+            setTableResult({ text: msg.text, insertPos: msg.insertPos });
+            break;
           case "error":
             setMessages((prev) => [
               ...prev,
               { role: "assistant", text: `[Error] ${msg.message}` },
             ]);
+            setIsGeneratingMetadata(false);
+            setIsTocGenerating(false);
             break;
         }
       };
@@ -248,7 +319,6 @@ function App() {
 
   const handleGenerateOutline = useCallback(() => {
     if (!wsRef.current || agentState === "disconnected" || isGeneratingOutline) return;
-    // Use the active file name or prompt the user via the sidecar
     const topic = activeFile
       ? activeFile.replace(/\.md$/i, "").split("/").at(-1) ?? "the current document"
       : "the current document";
@@ -274,6 +344,92 @@ function App() {
     [agentState],
   );
 
+  // ── Metadata (frontmatter) ────────────────────────────────────────────────────
+
+  const handleMetadataRequest = useCallback(() => {
+    if (!wsRef.current || agentState === "disconnected" || isGeneratingMetadata) return;
+    const title = activeFile
+      ? activeFile.replace(/\.md$/i, "").split("/").at(-1) ?? ""
+      : "";
+    const preview = editorContentRef.current;
+    setIsGeneratingMetadata(true);
+    wsRef.current.send(JSON.stringify({ type: "metadata_request", title, preview }));
+  }, [agentState, activeFile, isGeneratingMetadata]);
+
+  // ── TOC ───────────────────────────────────────────────────────────────────────
+
+  const handleGenerateToc = useCallback(() => {
+    if (!wsRef.current || agentState === "disconnected" || isTocGenerating) return;
+    const markdown = editorContentRef.current;
+    if (!markdown.trim()) return;
+    setIsTocGenerating(true);
+    wsRef.current.send(JSON.stringify({ type: "toc_request", markdown }));
+  }, [agentState, isTocGenerating]);
+
+  const handleHeadingClick = useCallback((_id: string, text: string) => {
+    // Scroll the editor to the heading by searching for it in the content
+    const headingEl = document.querySelector(".tiptap")?.querySelector("h1, h2, h3, h4, h5, h6");
+    if (!headingEl) return;
+    const allHeadings = document.querySelectorAll(".tiptap h1, .tiptap h2, .tiptap h3, .tiptap h4, .tiptap h5, .tiptap h6");
+    for (const el of allHeadings) {
+      if (el.textContent?.trim() === text) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        break;
+      }
+    }
+  }, []);
+
+  // ── Autolink ──────────────────────────────────────────────────────────────────
+
+  const handleAutolinkAccept = useCallback((suggestion: WikilinkSuggestion) => {
+    const linkName = suggestion.filename.split("/").at(-1)?.replace(/\.md$/i, "") ?? suggestion.filename;
+    const wikilink = `[[${linkName}]]`;
+    const content = editorContentRef.current;
+    const updated = content.slice(0, suggestion.offset) +
+      wikilink +
+      content.slice(suggestion.offset + suggestion.text.length);
+    setEditorContent(updated);
+    // Remove accepted suggestion and re-index offsets for remaining suggestions
+    setAutolinkSuggestions((prev) =>
+      prev
+        .filter((s) => s !== suggestion)
+        .map((s) => ({
+          ...s,
+          offset: s.offset > suggestion.offset
+            ? s.offset + (wikilink.length - suggestion.text.length)
+            : s.offset,
+        })),
+    );
+  }, []);
+
+  const handleAutolinkDismiss = useCallback((suggestion: WikilinkSuggestion) => {
+    setAutolinkSuggestions((prev) => prev.filter((s) => s !== suggestion));
+  }, []);
+
+  const handleAutolinkDismissAll = useCallback(() => {
+    setAutolinkSuggestions([]);
+  }, []);
+
+  // ── Diagram ───────────────────────────────────────────────────────────────────
+
+  const handleDiagramRequest = useCallback(
+    (description: string, from: number, to: number) => {
+      if (!wsRef.current || agentState === "disconnected") return;
+      wsRef.current.send(JSON.stringify({ type: "diagram_request", description, from, to }));
+    },
+    [agentState],
+  );
+
+  // ── Table ─────────────────────────────────────────────────────────────────────
+
+  const handleTableRequest = useCallback(
+    (text: string, insertPos: number) => {
+      if (!wsRef.current || agentState === "disconnected") return;
+      wsRef.current.send(JSON.stringify({ type: "table_request", text, insertPos }));
+    },
+    [agentState],
+  );
+
   // ── Drag-drop ─────────────────────────────────────────────────────────────────
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -289,7 +445,6 @@ function App() {
       setIsDragOver(false);
       if (!wsRef.current || agentState === "disconnected") return;
 
-      // URL drop (links dragged from browser)
       const uriList = e.dataTransfer.getData("text/uri-list");
       if (uriList) {
         const urls = uriList.split("\n").map((u) => u.trim()).filter((u) => u.startsWith("http"));
@@ -299,11 +454,9 @@ function App() {
         return;
       }
 
-      // File drop — only support PDFs that are workspace-relative paths
       const files = Array.from(e.dataTransfer.files);
       for (const file of files) {
         if (file.name.endsWith(".pdf")) {
-          // The drag delivers a File object; we send the filename and expect it to be in the workspace
           wsRef.current.send(JSON.stringify({ type: "ingest_pdf", path: file.name }));
         }
       }
@@ -366,6 +519,16 @@ function App() {
         </div>
       )}
 
+      {/* Autolink banner */}
+      {autolinkSuggestions.length > 0 && (
+        <AutolinkBanner
+          suggestions={autolinkSuggestions}
+          onAccept={handleAutolinkAccept}
+          onDismiss={handleAutolinkDismiss}
+          onDismissAll={handleAutolinkDismissAll}
+        />
+      )}
+
       {/* Body */}
       <div className="app-body">
         <FileTree
@@ -373,6 +536,10 @@ function App() {
           activeFile={activeFile}
           onFileSelect={openFile}
           onRefresh={refreshFiles}
+          tocEntries={tocEntries}
+          isTocGenerating={isTocGenerating}
+          onGenerateToc={handleGenerateToc}
+          onHeadingClick={handleHeadingClick}
         />
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -392,6 +559,16 @@ function App() {
             onToneApplied={() => setToneReplacement(null)}
             onSummarizeApplied={() => setSummarizeResult(null)}
             lintIssues={lintIssues}
+            onMetadataRequest={handleMetadataRequest}
+            isGeneratingMetadata={isGeneratingMetadata}
+            metadataResult={metadataResult}
+            onMetadataApplied={() => setMetadataResult(null)}
+            onTableRequest={handleTableRequest}
+            tableResult={tableResult}
+            onTableApplied={() => setTableResult(null)}
+            onDiagramRequest={handleDiagramRequest}
+            diagramResult={diagramResult}
+            onDiagramApplied={() => setDiagramResult(null)}
           />
 
           {/* Status bar */}

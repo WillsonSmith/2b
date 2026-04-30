@@ -9,6 +9,7 @@ import { EditorContextPlugin } from "./plugins/EditorContextPlugin.ts";
 import { WorkspacePlugin } from "./plugins/WorkspacePlugin.ts";
 import { ResearchPlugin } from "./plugins/ResearchPlugin.ts";
 import { StyleGuidePlugin } from "./plugins/StyleGuidePlugin.ts";
+import { DiagramPlugin } from "./plugins/DiagramPlugin.ts";
 import { workspaceDbPath } from "./paths.ts";
 import type { EpistemeConfig } from "./config.ts";
 
@@ -66,6 +67,7 @@ export function createEpistemAgent(
   agent.registerPlugin(workspace);
   agent.registerPlugin(research);
   agent.registerPlugin(styleGuide);
+  agent.registerPlugin(new DiagramPlugin(config));
   agent.registerPlugin(
     new DynamicAgentPlugin(llm, {
       permissionManager,
