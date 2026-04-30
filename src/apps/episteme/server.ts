@@ -26,6 +26,9 @@
  *   { type: "graph_request" }                           — fetch knowledge graph data
  *   { type: "check_citations_request" }                 — validate bibliography URLs
  *   { type: "format_citation_request", url }            — format a URL as BibTeX
+ *   { type: "analyze_image",       base64, mimeType, filename } — generate alt text for image
+ *   { type: "explain_code",        code, language }     — explain a code block
+ *   { type: "voice_data",          audioBase64, mimeType } — transcribe recorded audio
  *
  * WebSocket protocol (server → client):
  *   { type: "speak",                text }
@@ -52,6 +55,9 @@
  *   { type: "graph_data",           nodes, links }      — knowledge graph data
  *   { type: "check_citations_result", valid, broken }   — citation validation result
  *   { type: "format_citation_result", bibtex }          — formatted BibTeX entry
+ *   { type: "alt_text",             text, mimeType, base64 } — generated alt text + image data
+ *   { type: "explain_code_result",  explanation }       — code explanation
+ *   { type: "transcript",           text }              — voice transcription result
  *   { type: "error",                message }
  *
  * REST:
@@ -60,9 +66,12 @@
  *   PATCH /api/style-guide    body: raw Markdown text
  *   GET  /api/config
  *   PATCH /api/config         { models }
+ *   POST /api/export          { filePath, format, includeFrontmatter }
+ *   GET  /api/exports/:filename
  */
 import type { ServerWebSocket } from "bun";
-import { resolve, join } from "node:path";
+import { resolve, join, basename } from "node:path";
+import { tmpdir } from "node:os";
 import type { EpistemAgentBundle } from "./agent.ts";
 import type { EpistemeConfig } from "./config.ts";
 import { saveConfig } from "./config.ts";
@@ -84,6 +93,8 @@ import type { Tone } from "./features/tone.ts";
 import type { LintIssue } from "./features/lint.ts";
 import type { TocEntry } from "./features/toc.ts";
 import type { WikilinkSuggestion } from "./features/autolink.ts";
+import { checkPandoc, exportDocument, pandocAvailable } from "./features/export.ts";
+import { explainCode } from "./features/explain.ts";
 import index from "./index.html";
 
 type ClientMsg =
@@ -110,7 +121,10 @@ type ClientMsg =
   | { type: "contradiction_scan_request" }
   | { type: "graph_request" }
   | { type: "check_citations_request" }
-  | { type: "format_citation_request"; url: string };
+  | { type: "format_citation_request"; url: string }
+  | { type: "analyze_image"; base64: string; mimeType: string; filename: string }
+  | { type: "explain_code"; code: string; language: string }
+  | { type: "voice_data"; audioBase64: string; mimeType: string };
 
 type ServerMsg =
   | { type: "speak"; text: string }
@@ -137,6 +151,9 @@ type ServerMsg =
   | { type: "graph_data"; data: GraphData }
   | { type: "check_citations_result"; result: CitationCheckResult }
   | { type: "format_citation_result"; bibtex: string }
+  | { type: "alt_text"; text: string; mimeType: string; base64: string }
+  | { type: "explain_code_result"; explanation: string }
+  | { type: "transcript"; text: string }
   | { type: "error"; message: string };
 
 function json(data: unknown, status = 200): Response {
@@ -166,6 +183,12 @@ export async function startEpistemServer(
   const absRoot = resolve(workspaceRoot);
 
   await agent.start();
+  await checkPandoc();
+  if (pandocAvailable) {
+    console.log("Pandoc: available");
+  } else {
+    console.log("Pandoc: not found (export disabled — install with: brew install pandoc)");
+  }
 
   const autocomplete = new AutocompleteRunner(config);
   const linter = new LintRunner(config);
@@ -193,7 +216,7 @@ export async function startEpistemServer(
       "/": index,
       "/api/health": {
         GET: () =>
-          json({ status: "ok", app: "episteme", workspace: workspaceRoot }),
+          json({ status: "ok", app: "episteme", workspace: workspaceRoot, pandocAvailable }),
       },
       "/api/style-guide": {
         GET: () => json({ content: styleGuide.currentContent }),
@@ -219,6 +242,60 @@ export async function startEpistemServer(
             return json(config);
           } catch {
             return json({ error: "Invalid JSON body" }, 400);
+          }
+        },
+      },
+      "/api/export": {
+        POST: async (req: Request) => {
+          if (!pandocAvailable) {
+            return json({ error: "Pandoc not installed. Run: brew install pandoc" }, 503);
+          }
+          try {
+            const body = (await req.json()) as {
+              filePath: string;
+              format: "pdf" | "html";
+              includeFrontmatter: boolean;
+            };
+            const { filePath, format, includeFrontmatter } = body;
+            const absolute = filePath.startsWith("/")
+              ? filePath
+              : resolve(join(absRoot, filePath));
+            if (!absolute.startsWith(absRoot)) {
+              return json({ error: "Path escapes workspace boundary." }, 400);
+            }
+            const content = await Bun.file(absolute).text();
+            const filename = filePath.split("/").at(-1) ?? "export.md";
+            const result = await exportDocument(content, filename, { format, includeFrontmatter });
+            // Schedule cleanup after 60 seconds
+            setTimeout(() => Bun.$`rm -f ${result.path}`.quiet().catch(() => {}), 60_000);
+            return json({ url: `/api/exports/${result.filename}` });
+          } catch (err) {
+            return json({ error: err instanceof Error ? err.message : "Export failed" }, 500);
+          }
+        },
+      },
+      "/api/exports/:filename": {
+        GET: async (req: Request) => {
+          const url = new URL(req.url);
+          const filename = url.pathname.split("/").at(-1) ?? "";
+          // Basic sanitization — no path traversal
+          if (!filename || filename.includes("..") || filename.includes("/")) {
+            return new Response("Not found", { status: 404 });
+          }
+          const filePath = join(tmpdir(), "episteme-exports", filename);
+          try {
+            const file = Bun.file(filePath);
+            const ext = filename.split(".").at(-1) ?? "";
+            const contentType =
+              ext === "pdf" ? "application/pdf" : "text/html; charset=utf-8";
+            return new Response(file, {
+              headers: {
+                "Content-Type": contentType,
+                "Content-Disposition": `attachment; filename="${filename}"`,
+              },
+            });
+          } catch {
+            return new Response("Not found", { status: 404 });
           }
         },
       },
@@ -471,6 +548,103 @@ export async function startEpistemServer(
             }).catch(() => {
               send(ws, { type: "error", message: "Citation formatting failed." });
             });
+            break;
+          }
+
+          case "analyze_image": {
+            const { base64, mimeType, filename } = msg;
+            if (!base64) break;
+            // Write image to temp file for processing
+            const ext = mimeType.split("/")[1] ?? "png";
+            const imagePath = join(tmpdir(), `episteme-img-${Date.now()}.${ext}`);
+            try {
+              const imageBuffer = Buffer.from(base64, "base64");
+              await Bun.write(imagePath, imageBuffer);
+              // Generate alt text from filename hint via LLM
+              const hint = filename.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ").trim();
+              const { HeadlessAgent } = await import("../../core/HeadlessAgent.ts");
+              const { createProvider } = await import("../../providers/llm/createProvider.ts");
+              const { featureModel } = await import("./config.ts");
+              const llm = createProvider(featureModel(config, "default"));
+              const altAgent = new HeadlessAgent(
+                llm,
+                [],
+                "You generate concise descriptive alt text for images. Return ONLY the alt text — no quotes, no punctuation at the end, no explanation.",
+                { agentName: "AltTextGenerator" },
+              );
+              const altText = (await altAgent.ask(
+                `Generate short descriptive alt text for an image. The filename is: "${hint}". Alt text:`,
+              )).trim().replace(/^["']|["']$/g, "");
+              send(ws, { type: "alt_text", text: altText, mimeType, base64 });
+            } catch {
+              // Fallback: use filename as alt text
+              const fallback = filename.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ").trim();
+              send(ws, { type: "alt_text", text: fallback, mimeType, base64 });
+            } finally {
+              await Bun.$`rm -f ${imagePath}`.quiet().catch(() => {});
+            }
+            break;
+          }
+
+          case "explain_code": {
+            const { code, language } = msg;
+            if (!code?.trim()) break;
+            explainCode(code, language ?? "text", config).then((explanation) => {
+              send(ws, { type: "explain_code_result", explanation });
+            }).catch(() => {
+              send(ws, { type: "error", message: "Failed to explain code." });
+            });
+            break;
+          }
+
+          case "voice_data": {
+            const { audioBase64, mimeType } = msg;
+            if (!audioBase64) break;
+
+            // Check whisper availability
+            const whisperCheck = await Bun.$`which whisper`.quiet().catch(() => null);
+            if (!whisperCheck || whisperCheck.exitCode !== 0) {
+              send(ws, {
+                type: "error",
+                message: "Whisper not installed. Run: pip install openai-whisper",
+              });
+              break;
+            }
+
+            try {
+              const ext = mimeType.includes("mp4") ? "mp4" : mimeType.includes("ogg") ? "ogg" : "webm";
+              const stamp = Date.now();
+              const audioPath = join(tmpdir(), `episteme-voice-${stamp}.${ext}`);
+              const audioBuffer = Buffer.from(audioBase64, "base64");
+              await Bun.write(audioPath, audioBuffer);
+
+              // Convert to mp3 via ffmpeg if available
+              let transcribeInput = audioPath;
+              const ffmpegCheck = await Bun.$`which ffmpeg`.quiet().catch(() => null);
+              if (ffmpegCheck && ffmpegCheck.exitCode === 0 && ext !== "mp3") {
+                const mp3Path = join(tmpdir(), `episteme-voice-${stamp}.mp3`);
+                await Bun.$`ffmpeg -i ${audioPath} -q:a 0 -map a ${mp3Path} -y`.quiet();
+                transcribeInput = mp3Path;
+              }
+
+              const outputDir = join(tmpdir(), "episteme-whisper");
+              await Bun.$`mkdir -p ${outputDir}`.quiet();
+              await Bun.$`whisper ${transcribeInput} --model base --output_format txt --output_dir ${outputDir}`.quiet();
+
+              const txtFile = join(outputDir, basename(transcribeInput).replace(/\.[^.]+$/, ".txt"));
+              const transcript = (await Bun.file(txtFile).text().catch(() => "")).trim();
+
+              // Cleanup
+              await Bun.$`rm -f ${audioPath} ${transcribeInput} ${txtFile}`.quiet().catch(() => {});
+
+              if (transcript) {
+                send(ws, { type: "transcript", text: transcript });
+              } else {
+                send(ws, { type: "error", message: "Could not transcribe audio." });
+              }
+            } catch {
+              send(ws, { type: "error", message: "Voice transcription failed." });
+            }
             break;
           }
         }

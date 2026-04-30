@@ -838,7 +838,128 @@ textarea { font: inherit; resize: none; }
   color: var(--text-dim);
 }
 
-/* ── Knowledge graph panel ───────────────────────────────────────────── */
+/* ── Phase 6: Code explain overlay ──────────────────────────────────────── */
+.code-explain-overlay {
+  position: fixed;
+  z-index: 50;
+  pointer-events: auto;
+}
+.code-explain-btn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-light);
+  color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.code-explain-btn:hover { background: var(--accent-soft); color: #fff; }
+
+/* ── Phase 6: Export panel ───────────────────────────────────────────────── */
+.export-modal { max-width: 380px; gap: 14px; }
+.export-warning {
+  background: #3a2a1a;
+  border: 1px solid #664422;
+  border-radius: 5px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #cc8844;
+  line-height: 1.5;
+}
+.export-warning code { color: #eebb66; font-size: 11px; }
+.export-field { display: flex; flex-direction: column; gap: 6px; }
+.export-field-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; }
+.export-format-group { display: flex; gap: 6px; }
+.export-format-btn {
+  flex: 1;
+  padding: 6px 12px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--bg-highlight);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.export-format-btn:hover:not(:disabled) { background: var(--bg-active); color: var(--text); }
+.export-format-btn.active { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent); }
+.export-format-btn:disabled { opacity: 0.4; cursor: default; }
+.export-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.export-checkbox-row input { accent-color: var(--accent); cursor: pointer; }
+
+/* ── Phase 6: Offline / large-file banners ───────────────────────────────── */
+.offline-banner {
+  background: #2a1a1a;
+  border-bottom: 1px solid #664444;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--red);
+  text-align: center;
+  flex-shrink: 0;
+}
+.large-file-banner {
+  background: #2a2210;
+  border-bottom: 1px solid #554422;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: #cc9944;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* ── Phase 6: Empty workspace state ─────────────────────────────────────── */
+.empty-workspace {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  background: var(--bg-raised);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px 16px;
+  text-align: center;
+}
+.empty-workspace-icon { font-size: 28px; line-height: 1; }
+.empty-workspace-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.empty-workspace-desc { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.empty-workspace-desc code { color: var(--accent); font-size: 11px; }
+
+/* ── Phase 6: Keyboard shortcut help ────────────────────────────────────── */
+.help-table { width: 100%; border-collapse: collapse; }
+.help-row td { padding: 5px 6px; }
+.help-row:not(:last-child) td { border-bottom: 1px solid var(--border); }
+.help-key { width: 40%; white-space: nowrap; vertical-align: top; }
+.help-key kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-highlight);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 11px;
+  color: var(--text);
+}
+.help-desc { font-size: 12px; color: var(--text-muted); vertical-align: top; padding-left: 12px; }
+
+/* ── App header status disconnected state ────────────────────────────────── */
+.app-header-status.disconnected { color: var(--red); }
+
+/* ── Knowledge graph panel ───────────────────────────────────────────────── */
 .knowledge-graph-panel {
   width: 420px;
   min-width: 320px;
