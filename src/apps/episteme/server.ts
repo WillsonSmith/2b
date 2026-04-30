@@ -21,6 +21,11 @@
  *   { type: "table_request",       text, insertPos }    — generate Markdown table
  *   { type: "search_request",      query }              — unified search (arXiv + Wikipedia + workspace)
  *   { type: "detect_gaps_request", topic }              — detect knowledge gaps in workspace
+ *   { type: "contradictions_request" }                  — fetch stored contradictions
+ *   { type: "contradiction_scan_request" }              — run a new contradiction scan now
+ *   { type: "graph_request" }                           — fetch knowledge graph data
+ *   { type: "check_citations_request" }                 — validate bibliography URLs
+ *   { type: "format_citation_request", url }            — format a URL as BibTeX
  *
  * WebSocket protocol (server → client):
  *   { type: "speak",                text }
@@ -43,6 +48,10 @@
  *   { type: "table_result",         text, insertPos }   — Markdown table + insertion pos
  *   { type: "search_result",        results }           — unified search response
  *   { type: "detect_gaps_result",   markdown }          — gap report as Markdown
+ *   { type: "contradictions_data",  contradictions }    — stored contradiction records
+ *   { type: "graph_data",           nodes, links }      — knowledge graph data
+ *   { type: "check_citations_result", valid, broken }   — citation validation result
+ *   { type: "format_citation_result", bibtex }          — formatted BibTeX entry
  *   { type: "error",                message }
  *
  * REST:
@@ -68,6 +77,9 @@ import { detectAutolinkCandidates } from "./features/autolink.ts";
 import { generateTable } from "./features/table.ts";
 import { DiagramPlugin } from "./plugins/DiagramPlugin.ts";
 import type { UnifiedSearchResponse } from "./plugins/ResearchPlugin.ts";
+import { queryContradictions, runContradictionScan, buildKnowledgeGraph } from "./features/contradiction.ts";
+import type { ContradictionRecord, GraphData } from "./features/contradiction.ts";
+import type { CitationCheckResult } from "./plugins/CitationPlugin.ts";
 import type { Tone } from "./features/tone.ts";
 import type { LintIssue } from "./features/lint.ts";
 import type { TocEntry } from "./features/toc.ts";
@@ -93,7 +105,12 @@ type ClientMsg =
   | { type: "diagram_request"; description: string; from: number; to: number }
   | { type: "table_request"; text: string; insertPos: number }
   | { type: "search_request"; query: string }
-  | { type: "detect_gaps_request"; topic: string };
+  | { type: "detect_gaps_request"; topic: string }
+  | { type: "contradictions_request" }
+  | { type: "contradiction_scan_request" }
+  | { type: "graph_request" }
+  | { type: "check_citations_request" }
+  | { type: "format_citation_request"; url: string };
 
 type ServerMsg =
   | { type: "speak"; text: string }
@@ -116,6 +133,10 @@ type ServerMsg =
   | { type: "table_result"; text: string; insertPos: number }
   | { type: "search_result"; results: UnifiedSearchResponse }
   | { type: "detect_gaps_result"; markdown: string }
+  | { type: "contradictions_data"; contradictions: ContradictionRecord[] }
+  | { type: "graph_data"; data: GraphData }
+  | { type: "check_citations_result"; result: CitationCheckResult }
+  | { type: "format_citation_result"; bibtex: string }
   | { type: "error"; message: string };
 
 function json(data: unknown, status = 200): Response {
@@ -141,7 +162,7 @@ export async function startEpistemServer(
   config: EpistemeConfig,
   port: number,
 ): Promise<void> {
-  const { agent, editorContext, styleGuide, research } = bundle;
+  const { agent, editorContext, styleGuide, research, citation } = bundle;
   const absRoot = resolve(workspaceRoot);
 
   await agent.start();
@@ -404,6 +425,51 @@ export async function startEpistemServer(
               send(ws, { type: "detect_gaps_result", markdown });
             }).catch(() => {
               send(ws, { type: "error", message: "Gap detection failed." });
+            });
+            break;
+          }
+
+          case "contradictions_request": {
+            const contradictions = queryContradictions(agent.memoryPlugin);
+            send(ws, { type: "contradictions_data", contradictions });
+            break;
+          }
+
+          case "contradiction_scan_request": {
+            runContradictionScan(agent.memoryPlugin, config).then((found) => {
+              const all = queryContradictions(agent.memoryPlugin);
+              send(ws, { type: "contradictions_data", contradictions: all });
+              if (found.length > 0) {
+                send(ws, { type: "speak", text: `Contradiction scan complete — ${found.length} new conflict(s) found.` });
+              }
+            }).catch(() => {
+              send(ws, { type: "error", message: "Contradiction scan failed." });
+            });
+            break;
+          }
+
+          case "graph_request": {
+            const data = buildKnowledgeGraph(agent.memoryPlugin);
+            send(ws, { type: "graph_data", data });
+            break;
+          }
+
+          case "check_citations_request": {
+            citation.checkCitations().then((result) => {
+              send(ws, { type: "check_citations_result", result });
+            }).catch(() => {
+              send(ws, { type: "error", message: "Citation check failed." });
+            });
+            break;
+          }
+
+          case "format_citation_request": {
+            const url = msg.url?.trim();
+            if (!url) break;
+            citation.formatCitation(url).then((bibtex) => {
+              send(ws, { type: "format_citation_result", bibtex });
+            }).catch(() => {
+              send(ws, { type: "error", message: "Citation formatting failed." });
             });
             break;
           }

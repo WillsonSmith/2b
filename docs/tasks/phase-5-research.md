@@ -91,27 +91,36 @@ All 5a tasks complete:
 
 ### Status
 
-- [ ] Implement `features/contradiction.ts` — cross-library conflict detection
-- [ ] Schedule contradiction scan as a background task (runs every 30 minutes while workspace is open)
-- [ ] Store contradictions in workspace memory with type `"contradiction"` and linked memory IDs
-- [ ] Build `ConflictsPanel.tsx` — shows contradictions with source context (reuse pattern from `src/ui/web/components/ConflictsPanel.tsx`)
-- [ ] Install `react-force-graph` (`bun add react-force-graph`)
-- [ ] Build `KnowledgeGraph.tsx` — force-directed graph of memory nodes and links
-- [ ] Wire graph: nodes from `queryMemoriesRaw({ types: ["factual"] })`, edges from `get_linked_memories`
-- [ ] Clicking a node scrolls to or opens the related file
-- [ ] Implement `CitationPlugin.ts` — `check_citations()` and `format_citation(url)`
-- [ ] `check_citations()` scans frontmatter `bibliography` field; validates URLs with HEAD requests
-- [ ] `format_citation(url)` generates a BibTeX entry using HeadlessAgent
-- [ ] Export: writes/updates `references.bib` in workspace root
-- [ ] Update `docs/tasks/phase-5-research.md` (Session 5b section) before ending session
+- [x] Implement `features/contradiction.ts` — cross-library conflict detection
+- [x] Schedule contradiction scan as a background task (runs every 30 minutes while workspace is open)
+- [x] Store contradictions in workspace memory with type `"contradiction"` and linked memory IDs
+- [x] Build `ConflictsPanel.tsx` — shows contradictions with source context
+- [x] Install `react-force-graph` (`bun add react-force-graph`)
+- [x] Build `KnowledgeGraph.tsx` — force-directed graph of memory nodes and links
+- [x] Wire graph: nodes from `queryMemoriesRaw({ types: ["factual"] })`, edges from contradiction records
+- [x] Clicking a node scrolls to or opens the related file
+- [x] Implement `CitationPlugin.ts` — `check_citations()`, `format_citation(url)`, `export_citations()`
+- [x] `check_citations()` scans frontmatter `bibliography` field; validates URLs with HEAD requests
+- [x] `format_citation(url)` generates a BibTeX entry using HeadlessAgent
+- [x] Export: writes/updates `references.bib` in workspace root
+- [x] Update `docs/tasks/phase-5-research.md` (Session 5b section) before ending session
 
 ### Session 5b — Current State
 
-Session 5a complete. Session 5b not started.
+Session 5b complete. All Phase 5 tasks done. Phase 6 next.
 
 ### Session 5b — Last Known Good
 
-[Update this when Session 5a finishes]
+All 5b tasks complete:
+- `features/contradiction.ts` — `runContradictionScan()` (batched LLM evaluation, stores tagged memories + links), `queryContradictions()`, `buildKnowledgeGraph()` (nodes + contradiction edges)
+- `plugins/CitationPlugin.ts` — `check_citations` (HEAD validation of frontmatter bibliography), `format_citation` (Readability + HeadlessAgent BibTeX), `export_citations` (writes references.bib)
+- `components/ConflictsPanel.tsx` — contradiction list with source A/B excerpts, ↻ scan trigger
+- `components/KnowledgeGraph.tsx` — `ForceGraph2D` with label canvas overlay, node click → open file
+- `agent.ts` — CitationPlugin registered; contradiction scan scheduled every 30 min via `scheduleProactiveTick`; `citation` exposed in `EpistemAgentBundle`
+- `server.ts` — 5 new WS handlers: `contradictions_request`, `contradiction_scan_request`, `graph_request`, `check_citations_request`, `format_citation_request`
+- `App.tsx` — ConflictsPanel (⚡), KnowledgeGraph (◈) panels; handlers for all new message types
+- `styles.css` — Conflicts and Knowledge Graph panel styles
+- `react-force-graph@1.48.2` installed
 
 ### Session 5b — To Resume
 
