@@ -4,6 +4,8 @@ import { Editor } from "./components/Editor.tsx";
 import { FileTree } from "./components/FileTree.tsx";
 import { AISidecar, type SidecarMessage } from "./components/AISidecar.tsx";
 import { SettingsPanel } from "./components/SettingsPanel.tsx";
+import { ResearchPanel } from "./components/ResearchPanel.tsx";
+import type { UnifiedSearchResponse } from "./components/ResearchPanel.tsx";
 import type { Tone } from "./features/tone.ts";
 import type { LintIssue } from "./features/lint.ts";
 import type { TocEntry } from "./features/toc.ts";
@@ -31,6 +33,8 @@ type ServerMsg =
   | { type: "autolink_result"; suggestions: WikilinkSuggestion[] }
   | { type: "diagram_result"; code: string; from: number; to: number }
   | { type: "table_result"; text: string; insertPos: number }
+  | { type: "search_result"; results: UnifiedSearchResponse }
+  | { type: "detect_gaps_result"; markdown: string }
   | { type: "error"; message: string };
 
 // ── Debounce ──────────────────────────────────────────────────────────────────
@@ -121,6 +125,13 @@ function App() {
 
   // Table
   const [tableResult, setTableResult] = useState<{ text: string; insertPos: number } | null>(null);
+
+  // Research panel
+  const [showResearch, setShowResearch] = useState(false);
+  const [searchResults, setSearchResults] = useState<UnifiedSearchResponse | null>(null);
+  const [gapReport, setGapReport] = useState<string | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isDetectingGaps, setIsDetectingGaps] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const editorContentRef = useRef(editorContent);
@@ -226,6 +237,14 @@ function App() {
           case "table_result":
             setTableResult({ text: msg.text, insertPos: msg.insertPos });
             break;
+          case "search_result":
+            setSearchResults(msg.results);
+            setIsSearching(false);
+            break;
+          case "detect_gaps_result":
+            setGapReport(msg.markdown);
+            setIsDetectingGaps(false);
+            break;
           case "error":
             setMessages((prev) => [
               ...prev,
@@ -233,6 +252,8 @@ function App() {
             ]);
             setIsGeneratingMetadata(false);
             setIsTocGenerating(false);
+            setIsSearching(false);
+            setIsDetectingGaps(false);
             break;
         }
       };
@@ -430,6 +451,28 @@ function App() {
     [agentState],
   );
 
+  // ── Research ──────────────────────────────────────────────────────────────
+
+  const handleSearch = useCallback((query: string) => {
+    if (!wsRef.current || agentState === "disconnected") return;
+    setIsSearching(true);
+    setSearchResults(null);
+    wsRef.current.send(JSON.stringify({ type: "search_request", query }));
+  }, [agentState]);
+
+  const handleDetectGaps = useCallback((topic: string) => {
+    if (!wsRef.current || agentState === "disconnected") return;
+    setIsDetectingGaps(true);
+    setGapReport(null);
+    wsRef.current.send(JSON.stringify({ type: "detect_gaps_request", topic }));
+  }, [agentState]);
+
+  const handleIngestFromSearch = useCallback((url: string) => {
+    if (!wsRef.current || agentState === "disconnected") return;
+    wsRef.current.send(JSON.stringify({ type: "ingest_url", url }));
+    setMessages((prev) => [...prev, { role: "assistant", text: `Ingesting: ${url}` }]);
+  }, [agentState]);
+
   // ── Drag-drop ─────────────────────────────────────────────────────────────────
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -485,6 +528,13 @@ function App() {
         <span className="app-header-title">Episteme</span>
         <span className="app-header-workspace">{workspaceName}</span>
         <div className="app-header-spacer" />
+        <button
+          className={`header-research-btn${showResearch ? " active" : ""}`}
+          title="Research panel"
+          onClick={() => setShowResearch((v) => !v)}
+        >
+          ⌕
+        </button>
         <button
           className="header-settings-btn"
           title="Style Guide"
@@ -595,6 +645,18 @@ function App() {
           </div>
         </div>
 
+        {showResearch && (
+          <ResearchPanel
+            onClose={() => setShowResearch(false)}
+            onSearch={handleSearch}
+            onDetectGaps={handleDetectGaps}
+            onIngest={handleIngestFromSearch}
+            searchResults={searchResults}
+            gapReport={gapReport}
+            isSearching={isSearching}
+            isDetectingGaps={isDetectingGaps}
+          />
+        )}
         <AISidecar
           messages={messages}
           isThinking={agentState === "thinking"}

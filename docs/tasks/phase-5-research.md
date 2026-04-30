@@ -8,24 +8,31 @@ This phase is split into two sessions. Complete Session 5a fully before starting
 
 ### Status
 
-- [ ] Add `search_arxiv(query)` tool to `ResearchPlugin.ts` — arXiv API (no key required: `export.arxiv.org/api/query`)
-- [ ] Add `search_wikipedia(query)` tool to `ResearchPlugin.ts` — Wikipedia API (already have WikipediaPlugin as capability, reuse)
-- [ ] Add `unified_search(query)` tool — merges arXiv + Wikipedia + `search_workspace`, deduplicates, ranks by relevance
-- [ ] Build `ResearchPanel.tsx` — tabbed results panel (All | arXiv | Wikipedia | Workspace)
-- [ ] Add "Ingest" button per search result → calls `ingest_url` on the result URL
-- [ ] Implement `features/research.ts` — deep PDF ingestion (PDF → structured MD template)
-- [ ] Structured MD template sections: Abstract, Methodology, Findings, Limitations, Citation
-- [ ] Save ingested templates to `.episteme/ingested/` directory
-- [ ] Implement `detect_gaps(topic)` tool — HeadlessAgent analyzes workspace memory for underrepresented perspectives
-- [ ] Update `docs/tasks/phase-5-research.md` (Session 5a section) before ending session
+- [x] Add `search_arxiv(query)` tool to `ResearchPlugin.ts` — arXiv API (no key required: `export.arxiv.org/api/query`)
+- [x] Add `search_wikipedia(query)` tool to `ResearchPlugin.ts` — Wikipedia API (already have WikipediaPlugin as capability, reuse)
+- [x] Add `unified_search(query)` tool — merges arXiv + Wikipedia + `search_workspace`, deduplicates, ranks by relevance
+- [x] Build `ResearchPanel.tsx` — tabbed results panel (All | arXiv | Wikipedia | Workspace)
+- [x] Add "Ingest" button per search result → calls `ingest_url` on the result URL
+- [x] Implement `features/research.ts` — deep PDF ingestion (PDF → structured MD template)
+- [x] Structured MD template sections: Abstract, Methodology, Findings, Limitations, Citation
+- [x] Save ingested templates to `.episteme/ingested/` directory
+- [x] Implement `detect_gaps(topic)` tool — HeadlessAgent analyzes workspace memory for underrepresented perspectives
+- [x] Update `docs/tasks/phase-5-research.md` (Session 5a section) before ending session
 
 ### Session 5a — Current State
 
-Phase 4 complete. Phase 5 not started.
+Session 5a complete. All tasks checked off. Session 5b not started.
 
 ### Session 5a — Last Known Good
 
-[Update this when Phase 4 finishes]
+All 5a tasks complete:
+- `ResearchPlugin.ts` — 6 tools: ingest_url, ingest_pdf (deep), search_arxiv, search_wikipedia, unified_search, detect_gaps
+- `features/research.ts` — deep PDF ingestion with structured frontmatter + section template, saves to `.episteme/ingested/`
+- `components/ResearchPanel.tsx` — tabbed panel (All/arXiv/Wikipedia/Workspace + Gaps view), Ingest buttons, gap report display
+- `agent.ts` — research plugin exposed in `EpistemAgentBundle`
+- `server.ts` — `search_request` and `detect_gaps_request` WS message handlers
+- `App.tsx` — ResearchPanel integrated, toggled by ⌕ button in header
+- `styles.css` — ResearchPanel styles added
 
 ### Session 5a — To Resume
 

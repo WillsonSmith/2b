@@ -533,3 +533,207 @@ textarea { font: inherit; resize: none; }
   margin: 0;
   padding: 0;
 }
+
+/* ── Research panel ──────────────────────────────────────────────────── */
+.header-research-btn {
+  font-size: 18px;
+  color: var(--text-muted);
+  padding: 0 4px;
+  line-height: 1;
+  border-radius: 3px;
+}
+.header-research-btn:hover { color: var(--text); }
+.header-research-btn.active { color: var(--accent); }
+
+.research-panel {
+  width: 320px;
+  min-width: 280px;
+  background: var(--bg-raised);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.research-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.research-panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.research-panel-close {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+.research-panel-close:hover { color: var(--text); }
+
+.research-form-row {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.research-search-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+}
+.research-search-input:focus { border-color: var(--accent); }
+.research-search-btn,
+.research-gaps-btn {
+  background: var(--bg-highlight);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.research-search-btn:hover:not(:disabled),
+.research-gaps-btn:hover:not(:disabled) { background: var(--bg-active); }
+.research-search-btn:disabled,
+.research-gaps-btn:disabled { opacity: 0.4; cursor: default; }
+
+.research-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+.research-tab {
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.research-tab:hover { color: var(--text); }
+.research-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.research-tab-count {
+  background: var(--bg-highlight);
+  color: var(--text-muted);
+  border-radius: 9px;
+  font-size: 9px;
+  padding: 1px 5px;
+}
+
+.research-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.research-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 20px 12px;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.research-results {
+  list-style: none;
+  padding: 4px 0;
+}
+.research-result {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.research-result:hover { background: var(--bg-highlight); }
+
+.research-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.research-result-source {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.research-result-date {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.research-result-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 3px;
+}
+.research-result-authors {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+.research-result-excerpt {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin-bottom: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.research-result-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.research-ingest-btn {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent-soft);
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.research-ingest-btn:hover { background: var(--accent); color: #fff; }
+.research-open-link {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.research-open-link:hover { color: var(--accent); }
+
+.research-gap-report {
+  padding: 12px;
+}
+.research-gap-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+}
