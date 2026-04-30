@@ -6,6 +6,10 @@ import { AISidecar, type SidecarMessage } from "./components/AISidecar.tsx";
 import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { ResearchPanel } from "./components/ResearchPanel.tsx";
 import type { UnifiedSearchResponse } from "./components/ResearchPanel.tsx";
+import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
+import type { ContradictionRecord } from "./components/ConflictsPanel.tsx";
+import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
+import type { GraphData } from "./components/KnowledgeGraph.tsx";
 import type { Tone } from "./features/tone.ts";
 import type { LintIssue } from "./features/lint.ts";
 import type { TocEntry } from "./features/toc.ts";
@@ -35,6 +39,10 @@ type ServerMsg =
   | { type: "table_result"; text: string; insertPos: number }
   | { type: "search_result"; results: UnifiedSearchResponse }
   | { type: "detect_gaps_result"; markdown: string }
+  | { type: "contradictions_data"; contradictions: ContradictionRecord[] }
+  | { type: "graph_data"; data: GraphData }
+  | { type: "check_citations_result"; result: { valid: string[]; broken: string[] } }
+  | { type: "format_citation_result"; bibtex: string }
   | { type: "error"; message: string };
 
 // ── Debounce ──────────────────────────────────────────────────────────────────
@@ -132,6 +140,18 @@ function App() {
   const [gapReport, setGapReport] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [isDetectingGaps, setIsDetectingGaps] = useState(false);
+
+  // Conflicts panel
+  const [showConflicts, setShowConflicts] = useState(false);
+  const [contradictions, setContradictions] = useState<ContradictionRecord[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
+
+  // Knowledge graph
+  const [showGraph, setShowGraph] = useState(false);
+  const [graphData, setGraphData] = useState<GraphData | null>(null);
+  const [isLoadingGraph, setIsLoadingGraph] = useState(false);
+
+  // Citations (result surfaced in AI sidecar messages)
 
   const wsRef = useRef<WebSocket | null>(null);
   const editorContentRef = useRef(editorContent);
@@ -245,6 +265,26 @@ function App() {
             setGapReport(msg.markdown);
             setIsDetectingGaps(false);
             break;
+          case "contradictions_data":
+            setContradictions(msg.contradictions);
+            setIsScanning(false);
+            break;
+          case "graph_data":
+            setGraphData(msg.data);
+            setIsLoadingGraph(false);
+            break;
+          case "check_citations_result":
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "assistant",
+                text: `Citations: ${msg.result.valid.length} valid, ${msg.result.broken.length} broken.${msg.result.broken.length > 0 ? "\n\nBroken:\n" + msg.result.broken.join("\n") : ""}`,
+              },
+            ]);
+            break;
+          case "format_citation_result":
+            setMessages((prev) => [...prev, { role: "assistant", text: `\`\`\`bibtex\n${msg.bibtex}\n\`\`\`` }]);
+            break;
           case "error":
             setMessages((prev) => [
               ...prev,
@@ -254,6 +294,8 @@ function App() {
             setIsTocGenerating(false);
             setIsSearching(false);
             setIsDetectingGaps(false);
+            setIsScanning(false);
+            setIsLoadingGraph(false);
             break;
         }
       };
@@ -473,6 +515,39 @@ function App() {
     setMessages((prev) => [...prev, { role: "assistant", text: `Ingesting: ${url}` }]);
   }, [agentState]);
 
+  // ── Conflicts ─────────────────────────────────────────────────────────────
+
+  const handleOpenConflicts = useCallback(() => {
+    setShowConflicts(true);
+    if (!wsRef.current || agentState === "disconnected") return;
+    wsRef.current.send(JSON.stringify({ type: "contradictions_request" }));
+  }, [agentState]);
+
+  const handleContradictionScan = useCallback(() => {
+    if (!wsRef.current || agentState === "disconnected" || isScanning) return;
+    setIsScanning(true);
+    wsRef.current.send(JSON.stringify({ type: "contradiction_scan_request" }));
+  }, [agentState, isScanning]);
+
+  // ── Knowledge Graph ───────────────────────────────────────────────────────
+
+  const handleOpenGraph = useCallback(() => {
+    setShowGraph(true);
+    setIsLoadingGraph(true);
+    if (!wsRef.current || agentState === "disconnected") return;
+    wsRef.current.send(JSON.stringify({ type: "graph_request" }));
+  }, [agentState]);
+
+  const handleRefreshGraph = useCallback(() => {
+    if (!wsRef.current || agentState === "disconnected") return;
+    setIsLoadingGraph(true);
+    wsRef.current.send(JSON.stringify({ type: "graph_request" }));
+  }, [agentState]);
+
+  const handleGraphNodeClick = useCallback((file: string) => {
+    openFile(file);
+  }, [openFile]);
+
   // ── Drag-drop ─────────────────────────────────────────────────────────────────
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -534,6 +609,20 @@ function App() {
           onClick={() => setShowResearch((v) => !v)}
         >
           ⌕
+        </button>
+        <button
+          className={`header-research-btn${showConflicts ? " active" : ""}`}
+          title="Conflicts panel"
+          onClick={() => (showConflicts ? setShowConflicts(false) : handleOpenConflicts())}
+        >
+          ⚡
+        </button>
+        <button
+          className={`header-research-btn${showGraph ? " active" : ""}`}
+          title="Knowledge graph"
+          onClick={() => (showGraph ? setShowGraph(false) : handleOpenGraph())}
+        >
+          ◈
         </button>
         <button
           className="header-settings-btn"
@@ -655,6 +744,23 @@ function App() {
             gapReport={gapReport}
             isSearching={isSearching}
             isDetectingGaps={isDetectingGaps}
+          />
+        )}
+        {showConflicts && (
+          <ConflictsPanel
+            onClose={() => setShowConflicts(false)}
+            onRefresh={handleContradictionScan}
+            contradictions={contradictions}
+            isLoading={isScanning}
+          />
+        )}
+        {showGraph && (
+          <KnowledgeGraph
+            onClose={() => setShowGraph(false)}
+            onRefresh={handleRefreshGraph}
+            onNodeClick={handleGraphNodeClick}
+            graphData={graphData}
+            isLoading={isLoadingGraph}
           />
         )}
         <AISidecar

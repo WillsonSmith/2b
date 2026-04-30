@@ -17,6 +17,9 @@ export class EditorContextPlugin implements AgentPlugin {
     this.currentCursor = cursor;
   }
 
+  get activeFile(): string | null { return this.currentFile; }
+  get activeContent(): string { return this.currentContent; }
+
   clearEditorState(): void {
     this.currentFile = null;
     this.currentContent = "";
