@@ -25,7 +25,7 @@ See [`/Users/willsonsmith/.claude/plans/mission-directive-project-episteme-piped
 | 1 | Core Editor UI | ✅ Complete — TipTap editor, FileTree, AISidecar, WorkspacePlugin |
 | 2 | Drafting & Ideation | ✅ Complete — outline, ghost-text autocomplete, ResearchPlugin (URL+PDF ingestion), drag-drop |
 | 3 | Editing & Refinement | ✅ Complete — BubbleMenu tone/summarize, AI lint on save, StyleGuidePlugin, fact_check stub |
-| 4 | Structural Intelligence | ⬜ Not started |
+| 4 | Structural Intelligence | ✅ Complete — frontmatter gen, narrative TOC, autolink, /diagram: slash command, Mermaid preview, table gen |
 | 5 | Research Workstation | ⬜ Not started |
 | 6 | Workflow & Ecosystem | ⬜ Not started |
 

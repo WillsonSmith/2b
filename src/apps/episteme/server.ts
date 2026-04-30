@@ -14,6 +14,11 @@
  *   { type: "ingest_pdf",          path }               — ingest workspace PDF path
  *   { type: "tone_transform",      text, tone, from, to } — transform selection tone
  *   { type: "summarize_request",   text, insertPos }    — summarize text, insert at pos
+ *   { type: "metadata_request",    title, preview }     — generate YAML frontmatter
+ *   { type: "toc_request",         markdown }           — generate narrative TOC
+ *   { type: "autolink_request",    markdown, files }    — detect wikilink candidates
+ *   { type: "diagram_request",     description, from, to } — generate Mermaid diagram
+ *   { type: "table_request",       text, insertPos }    — generate Markdown table
  *
  * WebSocket protocol (server → client):
  *   { type: "speak",                text }
@@ -29,6 +34,11 @@
  *   { type: "tone_result",          text, from, to }    — transformed text + original range
  *   { type: "summarize_result",     text, insertPos }   — summary text + insertion position
  *   { type: "lint_result",          issues }            — array of LintIssue after file_save
+ *   { type: "metadata_result",      yaml }              — generated YAML frontmatter
+ *   { type: "toc_result",           entries }           — narrative TOC entries
+ *   { type: "autolink_result",      suggestions }       — wikilink candidates
+ *   { type: "diagram_result",       code, from, to }    — Mermaid code + original range
+ *   { type: "table_result",         text, insertPos }   — Markdown table + insertion pos
  *   { type: "error",                message }
  *
  * REST:
@@ -48,8 +58,15 @@ import { generateOutline } from "./features/outline.ts";
 import { transformTone } from "./features/tone.ts";
 import { summarizeSection } from "./features/summarize.ts";
 import { LintRunner } from "./features/lint.ts";
+import { generateFrontmatter } from "./features/metadata.ts";
+import { generateNarrativeToc, extractSectionsFromMarkdown } from "./features/toc.ts";
+import { detectAutolinkCandidates } from "./features/autolink.ts";
+import { generateTable } from "./features/table.ts";
+import { DiagramPlugin } from "./plugins/DiagramPlugin.ts";
 import type { Tone } from "./features/tone.ts";
 import type { LintIssue } from "./features/lint.ts";
+import type { TocEntry } from "./features/toc.ts";
+import type { WikilinkSuggestion } from "./features/autolink.ts";
 import index from "./index.html";
 
 type ClientMsg =
@@ -64,7 +81,12 @@ type ClientMsg =
   | { type: "ingest_url"; url: string }
   | { type: "ingest_pdf"; path: string }
   | { type: "tone_transform"; text: string; tone: Tone; from: number; to: number }
-  | { type: "summarize_request"; text: string; insertPos: number };
+  | { type: "summarize_request"; text: string; insertPos: number }
+  | { type: "metadata_request"; title: string; preview: string }
+  | { type: "toc_request"; markdown: string }
+  | { type: "autolink_request"; markdown: string; files: string[] }
+  | { type: "diagram_request"; description: string; from: number; to: number }
+  | { type: "table_request"; text: string; insertPos: number };
 
 type ServerMsg =
   | { type: "speak"; text: string }
@@ -80,6 +102,11 @@ type ServerMsg =
   | { type: "tone_result"; text: string; from: number; to: number }
   | { type: "summarize_result"; text: string; insertPos: number }
   | { type: "lint_result"; issues: LintIssue[] }
+  | { type: "metadata_result"; yaml: string }
+  | { type: "toc_result"; entries: TocEntry[] }
+  | { type: "autolink_result"; suggestions: WikilinkSuggestion[] }
+  | { type: "diagram_result"; code: string; from: number; to: number }
+  | { type: "table_result"; text: string; insertPos: number }
   | { type: "error"; message: string };
 
 function json(data: unknown, status = 200): Response {
@@ -112,6 +139,7 @@ export async function startEpistemServer(
 
   const autocomplete = new AutocompleteRunner(config);
   const linter = new LintRunner(config);
+  const diagramPlugin = new DiagramPlugin(config);
 
   const clients = new Set<ServerWebSocket<unknown>>();
 
@@ -232,6 +260,13 @@ export async function startEpistemServer(
               linter.run(msg.content).then((issues) => {
                 send(ws, { type: "lint_result", issues });
               }).catch(() => {});
+              // Async autolink detection after save
+              collectMarkdownFiles(absRoot).then((files) => {
+                const suggestions = detectAutolinkCandidates(msg.content, files);
+                if (suggestions.length > 0) {
+                  send(ws, { type: "autolink_result", suggestions });
+                }
+              }).catch(() => {});
             } catch {
               send(ws, { type: "error", message: `Cannot save: ${msg.path}` });
             }
@@ -240,7 +275,6 @@ export async function startEpistemServer(
 
           case "autocomplete_request": {
             if (!msg.context?.trim()) break;
-            // Fire-and-forget; only send to the requesting client
             autocomplete.suggest(msg.context).then((text) => {
               if (text.trim()) send(ws, { type: "autocomplete_suggestion", text: text.trim() });
             }).catch(() => {});
@@ -287,6 +321,59 @@ export async function startEpistemServer(
             summarizeSection(text, config).then((result) => {
               send(ws, { type: "summarize_result", text: result.trim(), insertPos });
             }).catch(() => {});
+            break;
+          }
+
+          case "metadata_request": {
+            const { title, preview } = msg;
+            if (!preview?.trim() && !title?.trim()) break;
+            generateFrontmatter(title ?? "", preview ?? "", config).then((yaml) => {
+              send(ws, { type: "metadata_result", yaml });
+            }).catch(() => {
+              send(ws, { type: "error", message: "Failed to generate frontmatter." });
+            });
+            break;
+          }
+
+          case "toc_request": {
+            const { markdown } = msg;
+            if (!markdown?.trim()) break;
+            const sections = extractSectionsFromMarkdown(markdown);
+            generateNarrativeToc(sections, config).then((entries) => {
+              send(ws, { type: "toc_result", entries });
+            }).catch(() => {
+              send(ws, { type: "error", message: "Failed to generate TOC." });
+            });
+            break;
+          }
+
+          case "autolink_request": {
+            const { markdown, files } = msg;
+            if (!markdown?.trim()) break;
+            const suggestions = detectAutolinkCandidates(markdown, files ?? []);
+            send(ws, { type: "autolink_result", suggestions });
+            break;
+          }
+
+          case "diagram_request": {
+            const { description, from, to } = msg;
+            if (!description?.trim()) break;
+            diagramPlugin.generate(description).then((code) => {
+              send(ws, { type: "diagram_result", code, from, to });
+            }).catch(() => {
+              send(ws, { type: "error", message: "Failed to generate diagram." });
+            });
+            break;
+          }
+
+          case "table_request": {
+            const { text, insertPos } = msg;
+            if (!text?.trim()) break;
+            generateTable(text, config).then((result) => {
+              send(ws, { type: "table_result", text: result.trim(), insertPos });
+            }).catch(() => {
+              send(ws, { type: "error", message: "Failed to generate table." });
+            });
             break;
           }
         }

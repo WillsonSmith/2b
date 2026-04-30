@@ -6,7 +6,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { Tone } from "../features/tone.ts";
 import type { LintIssue } from "../features/lint.ts";
@@ -27,6 +27,16 @@ interface EditorProps {
   onToneApplied?: () => void;
   onSummarizeApplied?: () => void;
   lintIssues?: LintIssue[];
+  onMetadataRequest?: () => void;
+  isGeneratingMetadata?: boolean;
+  onTableRequest?: (text: string, insertPos: number) => void;
+  onDiagramRequest?: (description: string, from: number, to: number) => void;
+  diagramResult?: { code: string; from: number; to: number } | null;
+  onDiagramApplied?: () => void;
+  metadataResult?: string | null;
+  onMetadataApplied?: () => void;
+  tableResult?: { text: string; insertPos: number } | null;
+  onTableApplied?: () => void;
 }
 
 // ── Ghost-text TipTap extension ───────────────────────────────────────────────
@@ -191,6 +201,34 @@ function ToolbarButton({
   );
 }
 
+// ── Mermaid renderer (client-side only) ───────────────────────────────────────
+
+function MermaidBlock({ code }: { code: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const mermaid = (await import("mermaid")).default;
+        mermaid.initialize({ startOnLoad: false, theme: "dark" });
+        const id = `mermaid-${Math.random().toString(36).slice(2)}`;
+        const { svg } = await mermaid.render(id, code);
+        if (!cancelled && ref.current) {
+          ref.current.innerHTML = svg;
+        }
+      } catch {
+        if (!cancelled && ref.current) {
+          ref.current.textContent = code;
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [code]);
+
+  return <div className="mermaid-block" ref={ref} />;
+}
+
 // ── Editor component ──────────────────────────────────────────────────────────
 
 export function Editor({
@@ -209,9 +247,20 @@ export function Editor({
   onToneApplied,
   onSummarizeApplied,
   lintIssues = [],
+  onMetadataRequest,
+  isGeneratingMetadata,
+  onTableRequest,
+  onDiagramRequest,
+  diagramResult,
+  onDiagramApplied,
+  metadataResult,
+  onMetadataApplied,
+  tableResult,
+  onTableApplied,
 }: EditorProps) {
   const ghostRef = useRef(ghostText);
   const lintRef = useRef<ResolvedIssue[]>([]);
+  const [previewMode, setPreviewMode] = useState(false);
 
   // Stable callbacks for the extension — avoids recreating editor on every render
   const acceptRef = useRef(onGhostAccept);
@@ -226,7 +275,7 @@ export function Editor({
     extensions: [
       StarterKit,
       Markdown.configure({ transformPastedText: true }),
-      Placeholder.configure({ placeholder: "Start writing…" }),
+      Placeholder.configure({ placeholder: "Start writing… (type /diagram: <description> to insert a diagram)" }),
       CharacterCount,
       GhostTextExtension(ghostRef, handleAccept, handleDismiss),
       LintExtension(lintRef),
@@ -244,7 +293,6 @@ export function Editor({
   useEffect(() => {
     ghostRef.current = ghostText;
     if (editor) {
-      // Trigger a no-op transaction so ProseMirror re-evaluates decorations
       const { tr } = editor.state;
       editor.view.dispatch(tr.setMeta("ghost-refresh", true));
     }
@@ -278,6 +326,46 @@ export function Editor({
     onSummarizeApplied?.();
   }, [summarizeResult]);
 
+  // Apply diagram result — replace /diagram: line with mermaid code block
+  useEffect(() => {
+    if (!editor || !diagramResult) return;
+    const { from, to, code } = diagramResult;
+    const replacement = "```mermaid\n" + code + "\n```";
+    editor.chain().focus().insertContentAt({ from, to }, replacement).run();
+    onDiagramApplied?.();
+  }, [diagramResult]);
+
+  // Apply metadata result — insert/replace frontmatter at document start
+  useEffect(() => {
+    if (!editor || !metadataResult) return;
+    const md = editor.storage.markdown.getMarkdown();
+    const hasFrontmatter = md.startsWith("---\n");
+    if (hasFrontmatter) {
+      const endOfFm = md.indexOf("\n---\n", 4);
+      if (endOfFm !== -1) {
+        // Replace from position 0 to end of ---\n block
+        const newMd = `---\n${metadataResult}\n---\n` + md.slice(endOfFm + 5);
+        editor.commands.setContent(newMd);
+        onUpdate(newMd);
+        onMetadataApplied?.();
+        return;
+      }
+    }
+    // Prepend new frontmatter
+    const newMd = `---\n${metadataResult}\n---\n\n${md.trimStart()}`;
+    editor.commands.setContent(newMd);
+    onUpdate(newMd);
+    onMetadataApplied?.();
+  }, [metadataResult]);
+
+  // Apply table result — insert at cursor position
+  useEffect(() => {
+    if (!editor || !tableResult) return;
+    const { insertPos, text } = tableResult;
+    editor.chain().focus().insertContentAt(insertPos, "\n\n" + text + "\n\n").run();
+    onTableApplied?.();
+  }, [tableResult]);
+
   // Resolve lint issue positions and redraw decorations when issues change
   useEffect(() => {
     if (!editor) return;
@@ -306,8 +394,63 @@ export function Editor({
     };
   }, [editor, handleAutocomplete]);
 
+  // /diagram: slash command — detect on Enter key
+  const handleDiagramCommand = useCallback(() => {
+    if (!editor || !onDiagramRequest) return false;
+    const { from } = editor.state.selection;
+
+    // Find the line at cursor
+    const textBefore = editor.state.doc.textBetween(0, from, "\n");
+    const lines = textBefore.split("\n");
+    const currentLine = lines.at(-1) ?? "";
+    const diagramMatch = currentLine.match(/^\/diagram:\s*(.+)/i);
+    if (!diagramMatch) return false;
+
+    const description = diagramMatch[1]?.trim() ?? "";
+    if (!description) return false;
+
+    // Find the start of this line in the document
+    const lineStart = from - currentLine.length;
+    onDiagramRequest(description, lineStart, from);
+    return true;
+  }, [editor, onDiagramRequest]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        if (handleDiagramCommand()) e.preventDefault();
+      }
+    };
+    editor.view.dom.addEventListener("keydown", handleKeyDown);
+    return () => editor.view.dom.removeEventListener("keydown", handleKeyDown);
+  }, [editor, handleDiagramCommand]);
+
   const wordCount = editor?.storage.characterCount?.words() ?? 0;
   const charCount = editor?.storage.characterCount?.characters() ?? 0;
+
+  // Render preview with Mermaid blocks rendered as SVG
+  const renderPreview = () => {
+    if (!editor) return null;
+    const md = editor.storage.markdown.getMarkdown();
+    const parts = md.split(/(```mermaid\n[\s\S]*?\n```)/g);
+
+    return (
+      <div className="editor-preview">
+        {parts.map((part: string, i: number) => {
+          const mermaidMatch = part.match(/^```mermaid\n([\s\S]*?)\n```$/);
+          if (mermaidMatch) {
+            return <MermaidBlock key={i} code={mermaidMatch[1] ?? ""} />;
+          }
+          return (
+            <pre key={i} className="editor-preview-text">
+              {part}
+            </pre>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
     <div className="editor-pane">
@@ -431,6 +574,23 @@ export function Editor({
           {isGeneratingOutline ? "…" : "⊟ Outline"}
         </ToolbarButton>
 
+        <ToolbarButton
+          onClick={() => onMetadataRequest?.()}
+          title="Generate Frontmatter (AI)"
+          disabled={isGeneratingMetadata || !onMetadataRequest}
+          active={false}
+        >
+          {isGeneratingMetadata ? "…" : "⊞ Frontmatter"}
+        </ToolbarButton>
+
+        <ToolbarButton
+          onClick={() => setPreviewMode((p) => !p)}
+          title="Toggle preview (renders Mermaid diagrams)"
+          active={previewMode}
+        >
+          {previewMode ? "Edit" : "Preview"}
+        </ToolbarButton>
+
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
           {wordCount.toLocaleString()} words · {charCount.toLocaleString()} chars
@@ -475,10 +635,24 @@ export function Editor({
               >
                 TL;DR
               </button>
+              <div className="bubble-sep" />
+              <button
+                className="bubble-btn"
+                title="Convert to table"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  const { from, to } = editor.state.selection;
+                  const text = editor.state.doc.textBetween(from, to, "\n");
+                  if (text) onTableRequest?.(text, to);
+                }}
+              >
+                Table
+              </button>
             </div>
           </BubbleMenu>
         )}
-        <EditorContent editor={editor} />
+
+        {previewMode ? renderPreview() : <EditorContent editor={editor} />}
       </div>
     </div>
   );
