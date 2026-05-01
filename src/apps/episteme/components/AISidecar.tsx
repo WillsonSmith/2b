@@ -15,6 +15,7 @@ interface AISidecarProps {
   onToggle: () => void;
   onSend: (text: string) => void;
   onInterrupt: () => void;
+  onNavigate?: (path: string) => void;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -78,9 +79,10 @@ interface MessageListProps {
   isThinking: boolean;
   onSend: (text: string) => void;
   endRef: React.MutableRefObject<HTMLDivElement | null>;
+  onNavigate?: (path: string) => void;
 }
 
-function MessageList({ messages, isThinking, onSend, endRef }: MessageListProps) {
+function MessageList({ messages, isThinking, onSend, endRef, onNavigate }: MessageListProps) {
   return (
     <div className="sidecar-messages">
       {messages.length === 0 && (
@@ -109,7 +111,7 @@ function MessageList({ messages, isThinking, onSend, endRef }: MessageListProps)
                 <span className="sidecar-msg-role">Episteme</span>
                 <CopyButton text={m.text} />
               </div>
-              <MarkdownView content={m.text} className="sidecar-msg-markdown" />
+              <MarkdownView content={m.text} className="sidecar-msg-markdown" onNavigate={onNavigate} />
               <div className="sidecar-msg-actions">
                 <button
                   className="sidecar-action-btn primary"
@@ -238,9 +240,10 @@ interface ChatModalProps {
   onSend: (text: string) => void;
   onInterrupt: () => void;
   onClose: () => void;
+  onNavigate?: (path: string) => void;
 }
 
-function ChatModal({ messages, isThinking, onSend, onInterrupt, onClose }: ChatModalProps) {
+function ChatModal({ messages, isThinking, onSend, onInterrupt, onClose, onNavigate }: ChatModalProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -260,6 +263,7 @@ function ChatModal({ messages, isThinking, onSend, onInterrupt, onClose }: ChatM
             isThinking={isThinking}
             onSend={onSend}
             endRef={endRef}
+            onNavigate={onNavigate}
           />
         </div>
         <ChatInput isThinking={isThinking} onSend={onSend} onInterrupt={onInterrupt} />
@@ -277,6 +281,7 @@ export function AISidecar({
   onToggle,
   onSend,
   onInterrupt,
+  onNavigate,
 }: AISidecarProps) {
   const [expanded, setExpanded] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -315,6 +320,7 @@ export function AISidecar({
               isThinking={isThinking}
               onSend={onSend}
               endRef={endRef}
+              onNavigate={onNavigate}
             />
             <ChatInput isThinking={isThinking} onSend={onSend} onInterrupt={onInterrupt} />
           </>
@@ -328,6 +334,7 @@ export function AISidecar({
           onSend={onSend}
           onInterrupt={onInterrupt}
           onClose={() => setExpanded(false)}
+          onNavigate={onNavigate}
         />
       )}
     </>

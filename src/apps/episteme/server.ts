@@ -213,7 +213,15 @@ export async function startEpistemServer(
   agent.on("speak", (text) => broadcast({ type: "speak", text }));
   agent.on("state_change", (state) => broadcast({ type: "state_change", state }));
   agent.on("tool_call", (name, args) => broadcast({ type: "tool_call", name, args }));
-  agent.on("tool_result", (name) => broadcast({ type: "tool_result", name }));
+  const FILE_MUTATING_TOOLS = new Set([
+    "write_file", "append_file", "patch_file", "move_file", "delete_file", "create_file",
+  ]);
+  agent.on("tool_result", (name) => {
+    broadcast({ type: "tool_result", name });
+    if (FILE_MUTATING_TOOLS.has(name)) {
+      collectMarkdownFiles(absRoot).then((files) => broadcast({ type: "workspace_files", files }));
+    }
+  });
 
   Bun.serve({
     port,
