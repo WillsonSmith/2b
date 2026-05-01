@@ -66,7 +66,7 @@ export function createEpistemAgent(
 
   agent.registerPlugin(new MemoryPlugin(llm));
   agent.registerPlugin(new BehaviorPlugin(agent.memoryPlugin, llm));
-  agent.registerPlugin(new FileSystemPlugin());
+  agent.registerPlugin(new FileSystemPlugin({ allowedRoots: [workspaceRoot] }));
   agent.registerPlugin(editorContext);
   agent.registerPlugin(workspace);
   agent.registerPlugin(research);
