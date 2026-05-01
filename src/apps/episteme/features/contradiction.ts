@@ -168,6 +168,21 @@ const NODE_COLORS: Record<string, string> = {
   factual: "#666680",
 };
 
+function extractDocumentLinks(content: string): string[] {
+  const refs = new Set<string>();
+  for (const m of content.matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)) {
+    const name = (m[1] ?? "").trim().toLowerCase();
+    if (name) refs.add(name);
+  }
+  for (const m of content.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
+    const href = (m[1] ?? "").trim();
+    if (href.startsWith("http") || href.startsWith("mailto:") || href.startsWith("#")) continue;
+    const filename = href.split("/").at(-1)?.replace(/\.md$/i, "").toLowerCase() ?? "";
+    if (filename) refs.add(filename);
+  }
+  return [...refs];
+}
+
 export function buildKnowledgeGraph(memory: CortexMemoryPlugin): GraphData {
   const allFactual = memory.queryMemoriesRaw({ types: ["factual"], limit: 150 });
 
@@ -191,6 +206,28 @@ export function buildKnowledgeGraph(memory: CortexMemoryPlugin): GraphData {
       color: NODE_COLORS[isFile ? "workspace-file" : "factual"] ?? NODE_COLORS["factual"]!,
     });
     nodeIds.add(m.id);
+  }
+
+  // Build edges from document cross-references (wikilinks and markdown links)
+  const fileNodeByBasename = new Map<string, string>();
+  for (const n of nodes) {
+    if (n.type !== "workspace-file") continue;
+    const basename = (n.file ?? n.label).split("/").at(-1)?.replace(/\.md$/i, "").toLowerCase() ?? "";
+    if (basename) fileNodeByBasename.set(basename, n.id);
+  }
+
+  const seenDocLinks = new Set<string>();
+  for (const m of allFactual) {
+    if (!m.tags.includes("workspace-file")) continue;
+    if (!nodeIds.has(m.id)) continue;
+    for (const ref of extractDocumentLinks(m.text)) {
+      const targetId = fileNodeByBasename.get(ref);
+      if (!targetId || targetId === m.id) continue;
+      const edgeKey = `${m.id}→${targetId}`;
+      if (seenDocLinks.has(edgeKey)) continue;
+      seenDocLinks.add(edgeKey);
+      links.push({ source: m.id, target: targetId, linkType: "document-link", color: "#55cc88" });
+    }
   }
 
   // Build edges from contradiction records

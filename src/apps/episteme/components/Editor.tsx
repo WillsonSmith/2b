@@ -43,6 +43,7 @@ interface EditorProps {
   isRecording?: boolean;
   onToggleRecording?: () => void;
   onAskAboutSelection?: (text: string) => void;
+  onNavigate?: (path: string) => void;
 }
 
 // ── Ghost-text TipTap extension ───────────────────────────────────────────────
@@ -268,6 +269,7 @@ export function Editor({
   isRecording,
   onToggleRecording,
   onAskAboutSelection,
+  onNavigate,
 }: EditorProps) {
   const ghostRef = useRef(ghostText);
   const lintRef = useRef<ResolvedIssue[]>([]);
@@ -292,7 +294,7 @@ export function Editor({
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({ link: { openOnClick: false } }),
       Markdown.configure({ transformPastedText: true }),
       Placeholder.configure({ placeholder: "Start writing… (type /diagram: <description> to insert a diagram)" }),
       CharacterCount,
@@ -477,6 +479,26 @@ export function Editor({
     dom.addEventListener("paste", handlePaste);
     return () => dom.removeEventListener("paste", handlePaste);
   }, [editor, onImagePaste]);
+
+  // Link click — intercept local file links and route in-app
+  const onNavigateRef = useRef(onNavigate);
+  onNavigateRef.current = onNavigate;
+
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+    const handleClick = (e: MouseEvent) => {
+      if (!onNavigateRef.current) return;
+      const anchor = (e.target as HTMLElement).closest("a");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href") ?? "";
+      if (!href || href.startsWith("http") || href.startsWith("mailto:") || href.startsWith("#")) return;
+      e.preventDefault();
+      onNavigateRef.current(href);
+    };
+    dom.addEventListener("click", handleClick);
+    return () => dom.removeEventListener("click", handleClick);
+  }, [editor]);
 
   // Code block hover overlay — show "Explain" button when hovering over <pre>
   const onExplainCodeRef = useRef(onExplainCode);

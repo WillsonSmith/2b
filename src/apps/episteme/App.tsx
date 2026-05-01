@@ -1049,6 +1049,7 @@ function App() {
             isRecording={isRecording}
             onToggleRecording={handleToggleRecording}
             onAskAboutSelection={handleAskAboutSelection}
+            onNavigate={openFile}
           />
 
           {/* Status bar */}
@@ -1113,6 +1114,7 @@ function App() {
           onToggle={() => setSidecarCollapsed((c) => !c)}
           onSend={sendToAgent}
           onInterrupt={interrupt}
+          onNavigate={openFile}
         />
       </div>
     </div>
