@@ -1,7 +1,6 @@
 import { join, resolve, basename } from "node:path";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
-import { GlobalWorkerOptions } from "pdfjs-dist";
 import type { AgentPlugin } from "../../../core/Plugin.ts";
 import type { CortexMemoryPlugin } from "../../../plugins/CortexMemoryPlugin.ts";
 import { HeadlessAgent } from "../../../core/HeadlessAgent.ts";
@@ -10,12 +9,6 @@ import type { EpistemeConfig } from "../config.ts";
 import { featureModel } from "../config.ts";
 import { logger } from "../../../logger.ts";
 import { deepIngestPdf } from "../features/research.ts";
-
-// Point at the bundled worker so pdfjs can offload CPU work
-GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.mjs",
-  import.meta.url,
-).href;
 
 const SUMMARIZE_SYSTEM = `You are a research assistant. Summarize the given content into structured Markdown. Use the following template:
 

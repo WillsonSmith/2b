@@ -1,13 +1,9 @@
-import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { HeadlessAgent } from "../../../core/HeadlessAgent.ts";
 import { createProvider } from "../../../providers/llm/createProvider.ts";
 import type { EpistemeConfig } from "../config.ts";
 import { featureModel } from "../config.ts";
-
-GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.mjs",
-  import.meta.url,
-).href;
 
 const DEEP_INGEST_SYSTEM = `You are a research assistant performing structured extraction from academic or technical content.
 Extract and organize the content into the following Markdown template exactly. Fill every section with relevant content.
@@ -57,16 +53,16 @@ export async function deepIngestPdf(
 }
 
 async function extractPdfText(data: ArrayBuffer): Promise<string> {
-  const pdf = await getDocument({ data }).promise;
-  const pages: string[] = [];
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const pageText = content.items
-      .filter((item) => "str" in item)
-      .map((item) => (item as { str: string }).str)
-      .join(" ");
-    pages.push(pageText);
+  const check = await Bun.$`which pdftotext`.quiet().catch(() => null);
+  if (!check || check.exitCode !== 0) {
+    throw new Error("pdftotext not found. Install with: brew install poppler");
   }
-  return pages.join("\n\n");
+  const tmpPath = join(tmpdir(), `episteme-pdf-${Date.now()}.pdf`);
+  try {
+    await Bun.write(tmpPath, data);
+    const result = await Bun.$`pdftotext ${tmpPath} -`.quiet();
+    return result.stdout.toString();
+  } finally {
+    await Bun.$`rm -f ${tmpPath}`.quiet().catch(() => {});
+  }
 }
