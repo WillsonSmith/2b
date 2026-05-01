@@ -80,6 +80,9 @@ export function createEpistemAgent(
     }),
   );
 
+  // Index workspace on startup so gap detection and workspace search work immediately
+  agent.addDirect("Call the index_workspace tool now to index all workspace files.");
+
   // Background contradiction scan — runs every 30 minutes
   agent.scheduleProactiveTick(CONTRADICTION_SCAN_INTERVAL, () => {
     runContradictionScan(agent.memoryPlugin, config).then((found) => {

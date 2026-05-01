@@ -42,6 +42,7 @@ interface EditorProps {
   onExplainCode?: (code: string, language: string) => void;
   isRecording?: boolean;
   onToggleRecording?: () => void;
+  onAskAboutSelection?: (text: string) => void;
 }
 
 // ── Ghost-text TipTap extension ───────────────────────────────────────────────
@@ -266,6 +267,7 @@ export function Editor({
   onExplainCode,
   isRecording,
   onToggleRecording,
+  onAskAboutSelection,
 }: EditorProps) {
   const ghostRef = useRef(ghostText);
   const lintRef = useRef<ResolvedIssue[]>([]);
@@ -389,25 +391,39 @@ export function Editor({
     editor.view.dispatch(tr.setMeta("lint-refresh", true));
   }, [lintIssues, editor]);
 
-  // Autocomplete: fire after 800ms idle after typing
+  // Autocomplete: fire after 800ms idle after typing, but not when text is selected
   const autocompleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleAutocomplete = useCallback(() => {
     if (!onAutocompleteRequest || !editor) return;
     if (autocompleteTimer.current) clearTimeout(autocompleteTimer.current);
     autocompleteTimer.current = setTimeout(() => {
+      const { from, to } = editor.state.selection;
+      if (from !== to) return; // skip when text is selected
       const md = editor.storage.markdown.getMarkdown();
       if (md.trim().length > 10) onAutocompleteRequest(md);
     }, 800);
   }, [onAutocompleteRequest, editor]);
 
+  const handleSelectionUpdate = useCallback(() => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    if (from !== to) {
+      // Cancel pending autocomplete and clear ghost text when a selection is made
+      if (autocompleteTimer.current) clearTimeout(autocompleteTimer.current);
+      onGhostDismiss?.();
+    }
+  }, [editor, onGhostDismiss]);
+
   useEffect(() => {
     if (!editor) return;
     editor.on("update", handleAutocomplete);
+    editor.on("selectionUpdate", handleSelectionUpdate);
     return () => {
       editor.off("update", handleAutocomplete);
+      editor.off("selectionUpdate", handleSelectionUpdate);
       if (autocompleteTimer.current) clearTimeout(autocompleteTimer.current);
     };
-  }, [editor, handleAutocomplete]);
+  }, [editor, handleAutocomplete, handleSelectionUpdate]);
 
   // /diagram: slash command — detect on Enter key
   const handleDiagramCommand = useCallback(() => {
@@ -739,6 +755,23 @@ export function Editor({
               >
                 Table
               </button>
+              {onAskAboutSelection && (
+                <>
+                  <div className="bubble-sep" />
+                  <button
+                    className="bubble-btn"
+                    title="Ask AI about this selection"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      const { from, to } = editor.state.selection;
+                      const text = editor.state.doc.textBetween(from, to, "\n");
+                      if (text) onAskAboutSelection(text);
+                    }}
+                  >
+                    Ask AI
+                  </button>
+                </>
+              )}
             </div>
           </BubbleMenu>
         )}
