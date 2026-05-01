@@ -28,6 +28,8 @@ type ServerMsg =
   | { type: "file_content"; path: string; content: string }
   | { type: "workspace_files"; files: string[] }
   | { type: "file_saved" }
+  | { type: "file_created"; path: string }
+  | { type: "file_renamed"; oldPath: string; newPath: string }
   | { type: "autocomplete_suggestion"; text: string }
   | { type: "insert_text"; text: string }
   | { type: "ingest_result"; success: boolean; message: string }
@@ -234,6 +236,8 @@ function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const editorContentRef = useRef(editorContent);
   editorContentRef.current = editorContent;
+  const activeFileRef = useRef(activeFile);
+  activeFileRef.current = activeFile;
 
   const debouncedContent = useDebounce(editorContent, 500);
 
@@ -285,6 +289,18 @@ function App() {
             setLintIssues([]);
             setAutolinkSuggestions([]);
             setDismissedLargeFile(false);
+            break;
+          case "file_created":
+            setActiveFile(msg.path);
+            setEditorContent("");
+            setSavedContent("");
+            setIsDirty(false);
+            setGhostText("");
+            setLintIssues([]);
+            setAutolinkSuggestions([]);
+            break;
+          case "file_renamed":
+            if (activeFileRef.current === msg.oldPath) setActiveFile(msg.newPath);
             break;
           case "file_saved":
             setSavedContent(editorContentRef.current);
@@ -454,6 +470,14 @@ function App() {
 
   const refreshFiles = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: "list_workspace" }));
+  }, []);
+
+  const createFile = useCallback((path: string) => {
+    wsRef.current?.send(JSON.stringify({ type: "file_create", path }));
+  }, []);
+
+  const renameFile = useCallback((oldPath: string, newPath: string) => {
+    wsRef.current?.send(JSON.stringify({ type: "file_rename", oldPath, newPath }));
   }, []);
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────────
@@ -630,6 +654,11 @@ function App() {
     setMessages((prev) => [...prev, { role: "assistant", text: `Ingesting: ${url}` }]);
   }, [agentState]);
 
+  const handleReindex = useCallback(() => {
+    if (!wsRef.current || agentState === "disconnected") return;
+    wsRef.current.send(JSON.stringify({ type: "send", text: "Please run the index_workspace tool to re-index all workspace files." }));
+  }, [agentState]);
+
   // ── Conflicts ─────────────────────────────────────────────────────────────
 
   const handleOpenConflicts = useCallback(() => {
@@ -709,6 +738,16 @@ function App() {
     },
     [agentState],
   );
+
+  // ── Ask AI about selection ────────────────────────────────────────────────────
+
+  const handleAskAboutSelection = useCallback((text: string) => {
+    if (!wsRef.current) return;
+    const msg = `[Selected text]\n\n${text}\n\n---\nWhat can you tell me about this?`;
+    wsRef.current.send(JSON.stringify({ type: "send", text: msg }));
+    setMessages((prev) => [...prev, { role: "user", text: msg }]);
+    setSidecarCollapsed(false);
+  }, []);
 
   // ── Phase 6: Image paste ──────────────────────────────────────────────────────
 
@@ -946,27 +985,18 @@ function App() {
 
       {/* Body */}
       <div className="app-body">
-        {workspaceFiles.length === 0 && agentState !== "disconnected" ? (
-          <div className="empty-workspace">
-            <div className="empty-workspace-icon">📂</div>
-            <div className="empty-workspace-title">No files yet</div>
-            <div className="empty-workspace-desc">
-              Create a <code>.md</code> file in your workspace to get started,
-              or drag and drop a URL or PDF to ingest.
-            </div>
-          </div>
-        ) : (
-          <FileTree
-            files={workspaceFiles}
-            activeFile={activeFile}
-            onFileSelect={openFile}
-            onRefresh={refreshFiles}
-            tocEntries={tocEntries}
-            isTocGenerating={isTocGenerating}
-            onGenerateToc={handleGenerateToc}
-            onHeadingClick={handleHeadingClick}
-          />
-        )}
+        <FileTree
+          files={workspaceFiles}
+          activeFile={activeFile}
+          onFileSelect={openFile}
+          onRefresh={refreshFiles}
+          onCreateFile={createFile}
+          onRenameFile={renameFile}
+          tocEntries={tocEntries}
+          isTocGenerating={isTocGenerating}
+          onGenerateToc={handleGenerateToc}
+          onHeadingClick={handleHeadingClick}
+        />
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <Editor
@@ -999,6 +1029,7 @@ function App() {
             onExplainCode={handleExplainCode}
             isRecording={isRecording}
             onToggleRecording={handleToggleRecording}
+            onAskAboutSelection={handleAskAboutSelection}
           />
 
           {/* Status bar */}
@@ -1031,6 +1062,8 @@ function App() {
             onSearch={handleSearch}
             onDetectGaps={handleDetectGaps}
             onIngest={handleIngestFromSearch}
+            onReindex={handleReindex}
+            onSendToAgent={(text) => { sendToAgent(text); setSidecarCollapsed(false); }}
             searchResults={searchResults}
             gapReport={gapReport}
             isSearching={isSearching}

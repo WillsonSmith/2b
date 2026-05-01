@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { MarkdownView } from "./MarkdownView.tsx";
 
 export interface SidecarMessage {
   role: "user" | "assistant";
@@ -12,6 +13,30 @@ interface AISidecarProps {
   onToggle: () => void;
   onSend: (text: string) => void;
   onInterrupt: () => void;
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard API unavailable — silently ignore
+    }
+  }, [text]);
+
+  return (
+    <button
+      className="sidecar-copy-btn"
+      onClick={handleCopy}
+      title="Copy to clipboard"
+    >
+      {copied ? "✓" : "⎘"}
+    </button>
+  );
 }
 
 export function AISidecar({
@@ -55,8 +80,15 @@ export function AISidecar({
             )}
             {messages.map((m, i) => (
               <div key={i} className={`sidecar-msg ${m.role}`}>
-                <div className="sidecar-msg-role">{m.role === "user" ? "You" : "Episteme"}</div>
-                <div style={{ whiteSpace: "pre-wrap" }}>{m.text}</div>
+                <div className="sidecar-msg-header">
+                  <span className="sidecar-msg-role">{m.role === "user" ? "You" : "Episteme"}</span>
+                  {m.role === "assistant" && <CopyButton text={m.text} />}
+                </div>
+                {m.role === "assistant" ? (
+                  <MarkdownView content={m.text} className="sidecar-msg-markdown" />
+                ) : (
+                  <div className="sidecar-msg-user-text">{m.text}</div>
+                )}
               </div>
             ))}
             {isThinking && (

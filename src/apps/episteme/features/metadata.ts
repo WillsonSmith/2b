@@ -28,12 +28,17 @@ export async function generateFrontmatter(
   const raw = await agent.ask(
     `Title: ${title}\nToday's date: ${today}\n\nDocument preview:\n${preview.slice(0, 500)}`,
   );
-  return raw.trim();
+  // Strip stray markdown fences or --- delimiters the model sometimes adds despite instructions
+  return raw
+    .split("\n")
+    .filter((line) => !/^```/.test(line) && line.trim() !== "---")
+    .join("\n")
+    .trim();
 }
 
 /** Parse existing YAML frontmatter block. Returns yaml content and the body after it. */
 export function parseFrontmatter(markdown: string): { yaml: string | null; body: string } {
-  const match = markdown.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (match) {
     return { yaml: match[1] ?? null, body: match[2] ?? "" };
   }

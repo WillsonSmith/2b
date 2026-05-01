@@ -70,8 +70,9 @@
  *   GET  /api/exports/:filename
  */
 import type { ServerWebSocket } from "bun";
-import { resolve, join, basename } from "node:path";
+import { resolve, join, basename, dirname } from "node:path";
 import { tmpdir } from "node:os";
+import { rename as fsRename, mkdir } from "node:fs/promises";
 import type { EpistemAgentBundle } from "./agent.ts";
 import type { EpistemeConfig } from "./config.ts";
 import { saveConfig } from "./config.ts";
@@ -103,6 +104,8 @@ type ClientMsg =
   | { type: "editor_context"; file: string; content: string; cursor: number }
   | { type: "file_open"; path: string }
   | { type: "file_save"; path: string; content: string }
+  | { type: "file_create"; path: string }
+  | { type: "file_rename"; oldPath: string; newPath: string }
   | { type: "list_workspace" }
   | { type: "autocomplete_request"; context: string }
   | { type: "outline_request"; topic: string }
@@ -134,6 +137,8 @@ type ServerMsg =
   | { type: "file_content"; path: string; content: string }
   | { type: "workspace_files"; files: string[] }
   | { type: "file_saved" }
+  | { type: "file_created"; path: string }
+  | { type: "file_renamed"; oldPath: string; newPath: string }
   | { type: "autocomplete_suggestion"; text: string }
   | { type: "insert_text"; text: string }
   | { type: "ingest_result"; success: boolean; message: string }
@@ -227,6 +232,19 @@ export async function startEpistemServer(
             return json({ success: true });
           } catch {
             return json({ error: "Failed to save style guide" }, 500);
+          }
+        },
+      },
+      "/api/models": {
+        GET: async () => {
+          try {
+            const res = await fetch("http://127.0.0.1:11434/api/tags");
+            if (!res.ok) return json({ models: [] });
+            const data = (await res.json()) as { models?: Array<{ name: string }> };
+            const names = (data.models ?? []).map((m) => m.name).sort();
+            return json({ models: names });
+          } catch {
+            return json({ models: [] });
           }
         },
       },
@@ -376,6 +394,57 @@ export async function startEpistemServer(
               }).catch(() => {});
             } catch {
               send(ws, { type: "error", message: `Cannot save: ${msg.path}` });
+            }
+            break;
+          }
+
+          case "file_create": {
+            const absolute = msg.path.startsWith("/")
+              ? msg.path
+              : resolve(join(absRoot, msg.path));
+            if (!absolute.startsWith(absRoot)) {
+              send(ws, { type: "error", message: "Path escapes workspace boundary." });
+              return;
+            }
+            try {
+              const file = Bun.file(absolute);
+              if (await file.exists()) {
+                send(ws, { type: "error", message: `File already exists: ${msg.path}` });
+                break;
+              }
+              await mkdir(dirname(absolute), { recursive: true });
+              await Bun.write(absolute, "");
+              const relPath = absolute.slice(absRoot.length + 1);
+              send(ws, { type: "file_created", path: relPath });
+              const files = await collectMarkdownFiles(absRoot);
+              send(ws, { type: "workspace_files", files });
+            } catch {
+              send(ws, { type: "error", message: `Cannot create: ${msg.path}` });
+            }
+            break;
+          }
+
+          case "file_rename": {
+            const absOld = msg.oldPath.startsWith("/")
+              ? msg.oldPath
+              : resolve(join(absRoot, msg.oldPath));
+            const absNew = msg.newPath.startsWith("/")
+              ? msg.newPath
+              : resolve(join(absRoot, msg.newPath));
+            if (!absOld.startsWith(absRoot) || !absNew.startsWith(absRoot)) {
+              send(ws, { type: "error", message: "Path escapes workspace boundary." });
+              return;
+            }
+            try {
+              await mkdir(dirname(absNew), { recursive: true });
+              await fsRename(absOld, absNew);
+              const relOld = absOld.slice(absRoot.length + 1);
+              const relNew = absNew.slice(absRoot.length + 1);
+              send(ws, { type: "file_renamed", oldPath: relOld, newPath: relNew });
+              const files = await collectMarkdownFiles(absRoot);
+              send(ws, { type: "workspace_files", files });
+            } catch {
+              send(ws, { type: "error", message: `Cannot rename: ${msg.oldPath}` });
             }
             break;
           }
