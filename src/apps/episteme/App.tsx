@@ -278,6 +278,25 @@ function App() {
           case "speak":
             setMessages((prev) => [...prev, { role: "assistant", text: msg.text }]);
             break;
+          case "tool_call":
+            setMessages((prev) => [
+              ...prev,
+              { role: "tool", name: msg.name, status: "calling" },
+            ]);
+            break;
+          case "tool_result":
+            setMessages((prev) => {
+              for (let i = prev.length - 1; i >= 0; i--) {
+                const m = prev[i];
+                if (m && m.role === "tool" && m.name === msg.name && m.status === "calling") {
+                  const next = [...prev];
+                  next[i] = { role: "tool", name: msg.name, status: "done" };
+                  return next;
+                }
+              }
+              return prev;
+            });
+            break;
           case "workspace_files":
             setWorkspaceFiles(msg.files);
             break;
