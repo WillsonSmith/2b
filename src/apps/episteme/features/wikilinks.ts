@@ -58,3 +58,49 @@ export function resolveWikilinkTarget(
 export function wikilinkCreatePath(name: string): string {
   return name.replace(/\.md$/i, "").trim() + ".md";
 }
+
+export interface WikilinkSuggestionItem {
+  path: string;
+  basename: string;
+}
+
+/**
+ * Rank workspace files for a `[[query` autocomplete popup.
+ * Order: exact basename > basename prefix > basename substring > path substring.
+ * Within a tier, shortest path wins (fewest segments, then shortest length).
+ */
+export function rankFilesForWikilink(
+  files: string[],
+  query: string,
+  limit = 10,
+): WikilinkSuggestionItem[] {
+  const q = query.trim().toLowerCase();
+  const scored: { path: string; basename: string; score: number }[] = [];
+
+  for (const f of files) {
+    if (!f.toLowerCase().endsWith(".md")) continue;
+    const basename = (f.split("/").at(-1) ?? f).replace(/\.md$/i, "");
+    const lb = basename.toLowerCase();
+    const lf = f.toLowerCase();
+
+    let score: number;
+    if (q === "") score = 4;
+    else if (lb === q) score = 0;
+    else if (lb.startsWith(q)) score = 1;
+    else if (lb.includes(q)) score = 2;
+    else if (lf.includes(q)) score = 3;
+    else continue;
+
+    scored.push({ path: f, basename, score });
+  }
+
+  scored.sort((a, b) => {
+    if (a.score !== b.score) return a.score - b.score;
+    const segA = a.path.split("/").length;
+    const segB = b.path.split("/").length;
+    if (segA !== segB) return segA - segB;
+    return a.basename.length - b.basename.length;
+  });
+
+  return scored.slice(0, limit).map(({ path, basename }) => ({ path, basename }));
+}
