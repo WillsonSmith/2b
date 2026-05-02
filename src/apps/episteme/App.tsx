@@ -705,7 +705,6 @@ function App() {
   const handleIngestFromSearch = useCallback((url: string) => {
     if (!wsRef.current || agentState === "disconnected") return;
     wsRef.current.send(JSON.stringify({ type: "ingest_url", url }));
-    setMessages((prev) => [...prev, { role: "assistant", text: `Ingesting: ${url}` }]);
   }, [agentState]);
 
   const handleReindex = useCallback(() => {
