@@ -107,7 +107,7 @@ textarea { font: inherit; resize: none; }
 .file-tree-empty { padding: 16px 12px; color: var(--text-dim); font-size: 12px; text-align: center; }
 
 /* ── Editor pane ─────────────────────────────────────────────────────── */
-.editor-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.editor-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
 
 .editor-toolbar {
   background: var(--bg-raised);
@@ -629,6 +629,65 @@ textarea { font: inherit; resize: none; }
 .autolink-btn:hover { background: var(--bg-highlight); color: var(--text); }
 .autolink-btn.accept { border-color: var(--accent-soft); color: var(--accent-soft); }
 .autolink-btn.accept:hover { background: var(--accent-soft); color: var(--bg); }
+
+/* ── Find bar ────────────────────────────────────────────────────────── */
+.find-bar {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  z-index: 12;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+.find-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 4px 8px;
+  outline: none;
+  width: 220px;
+}
+.find-input:focus { border-color: var(--accent-soft); }
+.find-count {
+  color: var(--text-dim);
+  font-size: 11px;
+  min-width: 64px;
+  text-align: center;
+  white-space: nowrap;
+}
+.find-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  border-radius: 4px;
+  padding: 3px 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, color 0.1s;
+}
+.find-btn:hover:not(:disabled) { background: var(--bg-highlight); color: var(--text); }
+.find-btn.active { background: var(--accent-soft); color: var(--accent); }
+.find-btn:disabled { opacity: 0.4; cursor: default; }
+
+.find-match {
+  background: rgba(255, 200, 70, 0.25);
+  border-radius: 2px;
+}
+.find-match-active {
+  background: rgba(255, 200, 70, 0.65);
+  outline: 1px solid rgba(255, 200, 70, 0.95);
+}
 
 /* ── Mermaid diagram blocks ──────────────────────────────────────────── */
 .mermaid-block {
