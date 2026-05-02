@@ -15,8 +15,16 @@ export interface EpistemModelConfig {
   export?: string;
 }
 
+export interface EpistemeFeatures {
+  /** Whether inline ghost-text autocomplete is active. Default: false. */
+  autocomplete?: boolean;
+  /** Whether the editor autosaves after a pause in typing. Default: true. */
+  autosave?: boolean;
+}
+
 export interface EpistemeConfig {
   models: EpistemModelConfig;
+  features?: EpistemeFeatures;
 }
 
 function defaultConfig(): EpistemeConfig {
