@@ -215,21 +215,14 @@ function App() {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [isLoadingGraph, setIsLoadingGraph] = useState(false);
 
-  // Phase 6: Export
   const [showExport, setShowExport] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [pandocAvailable, setPandocAvailable] = useState(false);
 
-  // Phase 6: Explain code — result inserted into sidecar messages
-  // (no extra state needed, explanation goes to messages array)
-
-  // Phase 6: Voice recording
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
-  // Phase 6: Pending image alt-text insertion (stores base64 + mimeType until inserted)
-  const pendingAltTextRef = useRef<{ base64: string; mimeType: string } | null>(null);
   const [altTextInsert, setAltTextInsert] = useState<string | null>(null);
 
   // Polish: large file warning
@@ -429,8 +422,6 @@ function App() {
             setMessages((prev) => [...prev, { role: "assistant", text: `\`\`\`bibtex\n${msg.bibtex}\n\`\`\`` }]);
             break;
           case "alt_text": {
-            // Store image data, trigger insertion via state
-            pendingAltTextRef.current = { base64: msg.base64, mimeType: msg.mimeType };
             setAltTextInsert(`![${msg.text}](data:${msg.mimeType};base64,${msg.base64})`);
             break;
           }
@@ -493,7 +484,7 @@ function App() {
         cursor: 0,
       }),
     );
-  }, [debouncedContent, activeFile]);
+  }, [debouncedContent, activeFile, agentState]);
 
   // ── Dirty tracking ────────────────────────────────────────────────────────────
 
@@ -690,7 +681,7 @@ function App() {
 
   const handleSearch = useCallback((query: string) => {
     if (!wsRef.current || agentState === "disconnected") return;
-    setIsSearching(true);
+    setIsSearching(true);  // only set after guard — avoids stuck spinner when offline
     setSearchResults(null);
     wsRef.current.send(JSON.stringify({ type: "search_request", query }));
   }, [agentState]);
@@ -722,7 +713,7 @@ function App() {
 
   const handleContradictionScan = useCallback(() => {
     if (!wsRef.current || agentState === "disconnected" || isScanning) return;
-    setIsScanning(true);
+    setIsScanning(true);  // only set after guard — avoids stuck spinner when offline
     wsRef.current.send(JSON.stringify({ type: "contradiction_scan_request" }));
   }, [agentState, isScanning]);
 
@@ -730,8 +721,8 @@ function App() {
 
   const handleOpenGraph = useCallback(() => {
     setShowGraph(true);
-    setIsLoadingGraph(true);
     if (!wsRef.current || agentState === "disconnected") return;
+    setIsLoadingGraph(true);  // only set after guard — avoids stuck spinner when offline
     wsRef.current.send(JSON.stringify({ type: "graph_request" }));
   }, [agentState]);
 
@@ -802,8 +793,6 @@ function App() {
     setSidecarCollapsed(false);
   }, []);
 
-  // ── Phase 6: Image paste ──────────────────────────────────────────────────────
-
   const handleImagePaste = useCallback(
     (base64: string, mimeType: string, filename: string) => {
       if (!wsRef.current || agentState === "disconnected") return;
@@ -811,8 +800,6 @@ function App() {
     },
     [agentState],
   );
-
-  // ── Phase 6: Explain code ─────────────────────────────────────────────────────
 
   const handleExplainCode = useCallback(
     (code: string, language: string) => {
@@ -823,8 +810,6 @@ function App() {
     },
     [agentState],
   );
-
-  // ── Phase 6: Voice recording ──────────────────────────────────────────────────
 
   const handleToggleRecording = useCallback(async () => {
     if (isRecording) {
@@ -867,8 +852,6 @@ function App() {
       ]);
     }
   }, [isRecording]);
-
-  // ── Phase 6: Export ───────────────────────────────────────────────────────────
 
   const handleExport = useCallback(
     async (format: ExportFormat, includeFrontmatter: boolean) => {

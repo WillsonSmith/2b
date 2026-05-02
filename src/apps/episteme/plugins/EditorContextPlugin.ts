@@ -20,12 +20,6 @@ export class EditorContextPlugin implements AgentPlugin {
   get activeFile(): string | null { return this.currentFile; }
   get activeContent(): string { return this.currentContent; }
 
-  clearEditorState(): void {
-    this.currentFile = null;
-    this.currentContent = "";
-    this.currentCursor = 0;
-  }
-
   getSystemPromptFragment(): string {
     if (!this.currentFile) return "";
     return "The user is currently editing a Markdown document. Its content is injected into your context each turn. When answering, take the current document into account.";

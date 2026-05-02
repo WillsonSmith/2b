@@ -75,7 +75,7 @@ export class WorkspacePlugin implements AgentPlugin {
       {
         name: "fact_check",
         description:
-          "Search workspace memory for notes that confirm or contradict a given claim. Returns matching passages. Full contradiction detection is available in Phase 5.",
+          "Search workspace memory for notes that confirm or contradict a given claim. Returns matching passages.",
         parameters: {
           type: "object",
           properties: {
@@ -88,7 +88,7 @@ export class WorkspacePlugin implements AgentPlugin {
   }
 
   async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    if (name === "index_workspace") return this.indexWorkspace();
+    if (name === "index_workspace") return this.index();
     if (name === "search_workspace") return this.searchWorkspace(String(args.query ?? ""), Number(args.limit ?? 8));
     if (name === "get_workspace_file") return this.getFile(String(args.path ?? ""));
     if (name === "list_workspace_files") return this.listFiles();
@@ -97,7 +97,8 @@ export class WorkspacePlugin implements AgentPlugin {
 
   // ── Tool implementations ───────────────────────────────────────────────────
 
-  private async indexWorkspace(): Promise<unknown> {
+  /** Public entry point — called directly on startup and by the agent via executeTool. */
+  async index(): Promise<unknown> {
     const glob = new Bun.Glob("**/*.md");
     const files: string[] = [];
 
@@ -114,10 +115,12 @@ export class WorkspacePlugin implements AgentPlugin {
         const firstLine = lines.find((l) => l.trim().length > 0)?.trim().slice(0, 120) ?? relPath;
         const wordCount = content.split(/\s+/).filter(Boolean).length;
 
+        const alreadyIndexed = this.fileIndex.has(relPath);
         this.fileIndex.set(relPath, { relativePath: relPath, firstLine, wordCount });
 
-        // Write a memory so FTS5 search can find this file's content
-        if (this.memory) {
+        // Only write to memory on first index — prevents accumulation of duplicate entries
+        // across re-index calls (memory has no upsert/delete API).
+        if (this.memory && !alreadyIndexed) {
           const summary = content.slice(0, 800).trim();
           await this.memory.writeMemory(
             `[File: ${relPath}]\n${summary}`,
@@ -197,7 +200,7 @@ export class WorkspacePlugin implements AgentPlugin {
   private async getFile(relativePath: string): Promise<unknown> {
     if (!relativePath) return { error: "No path provided." };
     const absolute = resolve(join(this.root, relativePath));
-    if (!absolute.startsWith(this.root)) return { error: "Path escapes workspace boundary." };
+    if (absolute !== this.root && !absolute.startsWith(this.root + "/")) return { error: "Path escapes workspace boundary." };
     try {
       const content = await Bun.file(absolute).text();
       return { path: relativePath, content };

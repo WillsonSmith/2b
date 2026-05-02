@@ -30,19 +30,20 @@ When editing or generating text, preserve the user's voice and style.`;
 
 const CONTRADICTION_SCAN_INTERVAL = 30 * 60 * 1000; // 30 minutes
 
-export interface EpistemAgentBundle {
+export interface EpistemeAgentBundle {
   agent: CortexAgent;
   editorContext: EditorContextPlugin;
   workspace: WorkspacePlugin;
   styleGuide: StyleGuidePlugin;
   research: ResearchPlugin;
   citation: CitationPlugin;
+  diagram: DiagramPlugin;
 }
 
 export function createEpistemAgent(
   workspaceRoot: string,
   config: EpistemeConfig,
-): EpistemAgentBundle {
+): EpistemeAgentBundle {
   const llm = createProvider(config.models.default);
   const dbPath = workspaceDbPath(workspaceRoot);
 
@@ -63,6 +64,7 @@ export function createEpistemAgent(
   const research = new ResearchPlugin(workspaceRoot, config, agent.memoryPlugin);
   const styleGuide = new StyleGuidePlugin(workspaceRoot);
   const citation = new CitationPlugin(workspaceRoot, config, editorContext);
+  const diagram = new DiagramPlugin(config);
 
   agent.registerPlugin(new MemoryPlugin(llm));
   agent.registerPlugin(new BehaviorPlugin(agent.memoryPlugin, llm));
@@ -72,16 +74,13 @@ export function createEpistemAgent(
   agent.registerPlugin(research);
   agent.registerPlugin(styleGuide);
   agent.registerPlugin(citation);
-  agent.registerPlugin(new DiagramPlugin(config));
+  agent.registerPlugin(diagram);
   agent.registerPlugin(
     new DynamicAgentPlugin(llm, {
       permissionManager,
       parentMemory: agent.memoryPlugin,
     }),
   );
-
-  // Index workspace on startup so gap detection and workspace search work immediately
-  agent.addDirect("Call the index_workspace tool now to index all workspace files.");
 
   // Background contradiction scan — runs every 30 minutes
   agent.scheduleProactiveTick(CONTRADICTION_SCAN_INTERVAL, () => {
@@ -95,5 +94,5 @@ export function createEpistemAgent(
     return null; // don't queue ambient input to the agent
   });
 
-  return { agent, editorContext, workspace, styleGuide, research, citation };
+  return { agent, editorContext, workspace, styleGuide, research, citation, diagram };
 }
