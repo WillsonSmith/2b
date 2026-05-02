@@ -792,6 +792,46 @@ textarea {
   border-bottom-color: var(--text-muted);
 }
 
+.wikilink-popup {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 4px;
+  min-width: 200px;
+  max-width: 360px;
+  max-height: 280px;
+  overflow-y: auto;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+}
+.wikilink-popup-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text);
+}
+.wikilink-popup-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.wikilink-popup-name {
+  flex: 0 0 auto;
+}
+.wikilink-popup-path {
+  flex: 1 1 auto;
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
 /* ── Bubble menu ─────────────────────────────────────────────────────── */
 .bubble-menu {
   display: flex;

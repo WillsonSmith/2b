@@ -14,7 +14,12 @@ import {
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { Tone } from "../features/tone.ts";
 import type { LintIssue } from "../features/lint.ts";
-import { WIKILINK_RE, resolveWikilinkTarget, wikilinkCreatePath } from "../features/wikilinks.ts";
+import {
+  WIKILINK_RE,
+  resolveWikilinkTarget,
+  wikilinkCreatePath,
+  rankFilesForWikilink,
+} from "../features/wikilinks.ts";
 
 interface EditorProps {
   content: string;
@@ -342,6 +347,48 @@ function resolveWikilinks(doc: ProseMirrorNode, files: string[]): ResolvedWikili
   return out;
 }
 
+// ── Wikilink autocomplete popup keymap ───────────────────────────────────────
+
+interface WikilinkPopupKeyHandlers {
+  open: boolean;
+  onArrowUp: () => void;
+  onArrowDown: () => void;
+  onEnter: () => boolean;
+  onEscape: () => boolean;
+}
+
+function WikilinkPopupExtension(ref: React.MutableRefObject<WikilinkPopupKeyHandlers>) {
+  return Extension.create({
+    name: "wikilinkPopup",
+    addKeyboardShortcuts() {
+      return {
+        ArrowDown: () => {
+          if (!ref.current.open) return false;
+          ref.current.onArrowDown();
+          return true;
+        },
+        ArrowUp: () => {
+          if (!ref.current.open) return false;
+          ref.current.onArrowUp();
+          return true;
+        },
+        Enter: () => {
+          if (!ref.current.open) return false;
+          return ref.current.onEnter();
+        },
+        Tab: () => {
+          if (!ref.current.open) return false;
+          return ref.current.onEnter();
+        },
+        Escape: () => {
+          if (!ref.current.open) return false;
+          return ref.current.onEscape();
+        },
+      };
+    },
+  });
+}
+
 // ── Find bar ──────────────────────────────────────────────────────────────────
 
 interface FindBarProps {
@@ -516,6 +563,13 @@ export function Editor({
   const wikilinkRef = useRef<ResolvedWikilink[]>([]);
   const filesRef = useRef<string[]>(workspaceFiles);
   filesRef.current = workspaceFiles;
+  const popupKeysRef = useRef<WikilinkPopupKeyHandlers>({
+    open: false,
+    onArrowUp: () => {},
+    onArrowDown: () => {},
+    onEnter: () => false,
+    onEscape: () => false,
+  });
   const findStateRef = useRef<FindState>({ matches: [], activeIndex: 0 });
   const [previewMode, setPreviewMode] = useState(false);
 
@@ -526,6 +580,19 @@ export function Editor({
   const [findIndex, setFindIndex] = useState(0);
   const [findCaseSensitive, setFindCaseSensitive] = useState(false);
   const findInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Wikilink autocomplete popup state
+  const [wikiPopup, setWikiPopup] = useState<{
+    query: string;
+    from: number;
+    top: number;
+    left: number;
+  } | null>(null);
+  const [wikiSelectedIndex, setWikiSelectedIndex] = useState(0);
+
+  const wikiMatches = wikiPopup
+    ? rankFilesForWikilink(workspaceFiles, wikiPopup.query)
+    : [];
 
   // Code block hover overlay state
   const [codeHover, setCodeHover] = useState<{
@@ -553,6 +620,7 @@ export function Editor({
       GhostTextExtension(ghostRef, handleAccept, handleDismiss),
       LintExtension(lintRef),
       WikilinkExtension(wikilinkRef),
+      WikilinkPopupExtension(popupKeysRef),
       FindExtension(findStateRef),
     ],
     content,
@@ -743,16 +811,88 @@ export function Editor({
     }
   }, [editor, onGhostDismiss]);
 
+  // Detect `[[query` before cursor and open the wikilink popup
+  const handleWikiPopupUpdate = useCallback(() => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    if (from !== to) { setWikiPopup(null); return; }
+
+    const $pos = editor.state.doc.resolve(from);
+    for (let d = $pos.depth; d >= 0; d--) {
+      if ($pos.node(d).type.name === "codeBlock") { setWikiPopup(null); return; }
+    }
+    if ($pos.marks().some((m) => m.type.name === "code")) { setWikiPopup(null); return; }
+
+    const before = editor.state.doc.textBetween(Math.max(0, from - 500), from, "\n");
+    const m = before.match(/\[\[([^\]\n]*)$/);
+    if (!m) { setWikiPopup(null); return; }
+
+    const query = m[1] ?? "";
+    const startPos = from - m[0].length;
+    const coords = editor.view.coordsAtPos(from);
+    setWikiPopup((prev) =>
+      prev && prev.query === query && prev.from === startPos
+        ? prev
+        : { query, from: startPos, top: coords.bottom + 4, left: coords.left },
+    );
+    onGhostDismiss?.();
+  }, [editor, onGhostDismiss]);
+
   useEffect(() => {
     if (!editor) return;
     editor.on("update", handleAutocomplete);
+    editor.on("update", handleWikiPopupUpdate);
     editor.on("selectionUpdate", handleSelectionUpdate);
+    editor.on("selectionUpdate", handleWikiPopupUpdate);
     return () => {
       editor.off("update", handleAutocomplete);
+      editor.off("update", handleWikiPopupUpdate);
       editor.off("selectionUpdate", handleSelectionUpdate);
+      editor.off("selectionUpdate", handleWikiPopupUpdate);
       if (autocompleteTimer.current) clearTimeout(autocompleteTimer.current);
     };
-  }, [editor, handleAutocomplete, handleSelectionUpdate]);
+  }, [editor, handleAutocomplete, handleSelectionUpdate, handleWikiPopupUpdate]);
+
+  // Reset selected index whenever query changes
+  useEffect(() => {
+    setWikiSelectedIndex(0);
+  }, [wikiPopup?.query]);
+
+  // Accept a suggestion: replace `[[query` with `[[basename]]` and close
+  const acceptWikiSuggestion = useCallback((basename: string) => {
+    if (!editor || !wikiPopup) return;
+    const replacement = `[[${basename}]]`;
+    const cursor = editor.state.selection.from;
+    editor
+      .chain()
+      .focus()
+      .insertContentAt({ from: wikiPopup.from, to: cursor }, replacement)
+      .run();
+    setWikiPopup(null);
+  }, [editor, wikiPopup]);
+
+  // Keep the keyboard-shortcut ref in sync with current state
+  useEffect(() => {
+    popupKeysRef.current = {
+      open: wikiPopup !== null && wikiMatches.length > 0,
+      onArrowDown: () =>
+        setWikiSelectedIndex((i) => (wikiMatches.length === 0 ? 0 : (i + 1) % wikiMatches.length)),
+      onArrowUp: () =>
+        setWikiSelectedIndex((i) =>
+          wikiMatches.length === 0 ? 0 : (i - 1 + wikiMatches.length) % wikiMatches.length,
+        ),
+      onEnter: () => {
+        const item = wikiMatches[wikiSelectedIndex];
+        if (!item) return false;
+        acceptWikiSuggestion(item.basename);
+        return true;
+      },
+      onEscape: () => {
+        setWikiPopup(null);
+        return true;
+      },
+    };
+  }, [wikiPopup, wikiMatches, wikiSelectedIndex, acceptWikiSuggestion]);
 
   // /diagram: slash command — detect on Enter key
   const handleDiagramCommand = useCallback(() => {
@@ -1174,6 +1314,29 @@ export function Editor({
 
         {previewMode ? renderPreview() : <EditorContent editor={editor} />}
       </div>
+
+      {/* Wikilink autocomplete popup */}
+      {wikiPopup && wikiMatches.length > 0 && (
+        <div
+          className="wikilink-popup"
+          style={{ top: wikiPopup.top, left: wikiPopup.left }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {wikiMatches.map((item, i) => (
+            <div
+              key={item.path}
+              className={`wikilink-popup-item${i === wikiSelectedIndex ? " active" : ""}`}
+              onMouseEnter={() => setWikiSelectedIndex(i)}
+              onClick={() => acceptWikiSuggestion(item.basename)}
+            >
+              <span className="wikilink-popup-name">{item.basename}</span>
+              {item.path !== `${item.basename}.md` && (
+                <span className="wikilink-popup-path">{item.path}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Code block hover "Explain" overlay */}
       {codeHover && onExplainCode && (
