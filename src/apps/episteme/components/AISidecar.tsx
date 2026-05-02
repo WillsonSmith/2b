@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { Copy, Check, CornerDownRight, Loader2, ArrowRight, Zap, Maximize2, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -67,7 +68,7 @@ function CopyButton({ text }: { text: string }) {
 
   return (
     <button className="sidecar-copy-btn" onClick={handleCopy} title="Copy to clipboard">
-      {copied ? "✓" : "⎘"}
+      {copied ? <Check size={12} /> : <Copy size={12} />}
     </button>
   );
 }
@@ -95,10 +96,10 @@ function MessageList({ messages, isThinking, onSend, endRef, onNavigate }: Messa
         if (m.role === "tool") {
           return (
             <div key={i} className={`sidecar-tool-row ${m.status}`}>
-              <span className="sidecar-tool-arrow">↳</span>
+              <span className="sidecar-tool-arrow"><CornerDownRight size={10} /></span>
               <span className="sidecar-tool-name">{toolDisplayName(m.name)}</span>
               <span className="sidecar-tool-status">
-                {m.status === "calling" ? "…" : "✓"}
+                {m.status === "calling" ? <Loader2 size={11} className="icon-spin" /> : <Check size={11} />}
               </span>
             </div>
           );
@@ -114,11 +115,11 @@ function MessageList({ messages, isThinking, onSend, endRef, onNavigate }: Messa
               <MarkdownView content={m.text} className="sidecar-msg-markdown" onNavigate={onNavigate} />
               <div className="sidecar-msg-actions">
                 <button
-                  className="sidecar-action-btn primary"
+                  className="sidecar-action-btn primary icon-inline"
                   title="Execute the plan above using available tools"
                   onClick={() => onSend(EXECUTE_PROMPT)}
                 >
-                  Execute →
+                  Execute <ArrowRight size={12} />
                 </button>
                 <button
                   className="sidecar-action-btn"
@@ -196,7 +197,7 @@ function ChatInput({ isThinking, onSend, onInterrupt }: ChatInputProps) {
           onClick={() => setShowQuickActions((v) => !v)}
           title="Quick action commands"
         >
-          ⚡
+          <Zap size={14} />
         </button>
         <textarea
           className="sidecar-input"
@@ -255,7 +256,7 @@ function ChatModal({ messages, isThinking, onSend, onInterrupt, onClose, onNavig
       <div className="modal modal-chat-expanded" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">Episteme AI</span>
-          <button className="modal-close" onClick={onClose} title="Close">✕</button>
+          <button className="modal-close" onClick={onClose} title="Close"><X size={14} /></button>
         </div>
         <div className="chat-modal-body">
           <MessageList
@@ -301,7 +302,7 @@ export function AISidecar({
               onClick={() => setExpanded(true)}
               title="Open full-screen chat"
             >
-              ⤢
+              <Maximize2 size={13} />
             </button>
           )}
           <button
@@ -309,7 +310,7 @@ export function AISidecar({
             onClick={onToggle}
             title={collapsed ? "Expand" : "Collapse"}
           >
-            {collapsed ? "◀" : "▶"}
+            {collapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
           </button>
         </div>
 

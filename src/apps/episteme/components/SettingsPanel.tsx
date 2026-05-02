@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { X } from "lucide-react";
 
 interface ModelConfig {
   default: string;
@@ -109,7 +110,7 @@ export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosave
       <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">Settings</span>
-          <button className="modal-close" onClick={onClose} title="Close">✕</button>
+          <button className="modal-close" onClick={onClose} title="Close"><X size={14} /></button>
         </div>
 
         <div className="settings-tabs">

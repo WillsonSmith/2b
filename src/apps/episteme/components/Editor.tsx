@@ -7,6 +7,10 @@ import { Markdown } from "tiptap-markdown";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
 import { useEffect, useRef, useCallback, useState } from "react";
+import {
+  Undo2, Redo2, Mic, Square, Quote, Code2, Minus, List, ListOrdered,
+  ListTree, FileCode, Loader2,
+} from "lucide-react";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { Tone } from "../features/tone.ts";
 import type { LintIssue } from "../features/lint.ts";
@@ -631,35 +635,35 @@ export function Editor({
           active={editor?.isActive("bulletList")}
           title="Bullet list"
         >
-          •≡
+          <List size={14} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor?.chain().focus().toggleOrderedList().run()}
           active={editor?.isActive("orderedList")}
           title="Ordered list"
         >
-          1≡
+          <ListOrdered size={14} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor?.chain().focus().toggleBlockquote().run()}
           active={editor?.isActive("blockquote")}
           title="Blockquote"
         >
-          ❝
+          <Quote size={14} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
           active={editor?.isActive("codeBlock")}
           title="Code block"
         >
-          ⊞
+          <Code2 size={14} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor?.chain().focus().setHorizontalRule().run()}
           title="Horizontal rule"
           active={false}
         >
-          —
+          <Minus size={14} />
         </ToolbarButton>
 
         <div className="toolbar-sep" />
@@ -669,14 +673,14 @@ export function Editor({
           title="Undo (⌘Z)"
           active={false}
         >
-          ↩
+          <Undo2 size={14} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor?.chain().focus().redo().run()}
           title="Redo (⌘⇧Z)"
           active={false}
         >
-          ↪
+          <Redo2 size={14} />
         </ToolbarButton>
 
         <div className="toolbar-sep" />
@@ -687,7 +691,10 @@ export function Editor({
           disabled={isGeneratingOutline || !onGenerateOutline}
           active={false}
         >
-          {isGeneratingOutline ? "…" : "⊟ Outline"}
+          <span className="icon-inline">
+            {isGeneratingOutline ? <Loader2 size={14} className="icon-spin" /> : <ListTree size={14} />}
+            Outline
+          </span>
         </ToolbarButton>
 
         <ToolbarButton
@@ -696,7 +703,10 @@ export function Editor({
           disabled={isGeneratingMetadata || !onMetadataRequest}
           active={false}
         >
-          {isGeneratingMetadata ? "…" : "⊞ Frontmatter"}
+          <span className="icon-inline">
+            {isGeneratingMetadata ? <Loader2 size={14} className="icon-spin" /> : <FileCode size={14} />}
+            Frontmatter
+          </span>
         </ToolbarButton>
 
         <ToolbarButton
@@ -715,7 +725,9 @@ export function Editor({
               title={isRecording ? "Stop recording" : "Record voice (requires Whisper)"}
               active={isRecording}
             >
-              {isRecording ? "⏹ Stop" : "⏺ Voice"}
+              <span className="icon-inline">
+                {isRecording ? <><Square size={14} /> Stop</> : <><Mic size={14} /> Voice</>}
+              </span>
             </ToolbarButton>
           </>
         )}

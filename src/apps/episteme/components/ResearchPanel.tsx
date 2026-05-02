@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { X, ArrowRight, ExternalLink, Maximize2 } from "lucide-react";
 import type { SearchResult, UnifiedSearchResponse } from "../plugins/ResearchPlugin.ts";
 import { MarkdownView } from "./MarkdownView.tsx";
 
@@ -59,10 +60,10 @@ function GapReportModal({ gapReport, onClose, onSearch, onSendToAgent }: GapRepo
       <div className="modal modal-gap-expanded" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">Knowledge Gaps</span>
-          <button className="gap-plan-btn" onClick={planWithAI} title="Send to AI for research planning">
-            Plan with AI →
+          <button className="gap-plan-btn icon-inline" onClick={planWithAI} title="Send to AI for research planning">
+            Plan with AI <ArrowRight size={12} />
           </button>
-          <button className="modal-close" onClick={onClose} title="Close">✕</button>
+          <button className="modal-close" onClick={onClose} title="Close"><X size={14} /></button>
         </div>
 
         <div className="gap-expanded-body">
@@ -78,11 +79,11 @@ function GapReportModal({ gapReport, onClose, onSearch, onSendToAgent }: GapRepo
                   <div key={i} className="gap-action-card">
                     <span className="gap-action-text">{item}</span>
                     <button
-                      className="gap-action-search-btn"
+                      className="gap-action-search-btn icon-inline"
                       onClick={() => { onSearch(item); onClose(); }}
                       title={`Search: ${item}`}
                     >
-                      Search →
+                      Search <ArrowRight size={12} />
                     </button>
                   </div>
                 ))}
@@ -145,7 +146,7 @@ export function ResearchPanel({
     <div className="research-panel">
       <div className="research-panel-header">
         <span className="research-panel-title">Research</span>
-        <button className="research-panel-close" onClick={onClose} title="Close">✕</button>
+        <button className="research-panel-close" onClick={onClose} title="Close"><X size={13} /></button>
       </div>
 
       {/* Search form */}
@@ -224,14 +225,14 @@ export function ResearchPanel({
             <div className="research-gap-report">
               <div className="research-gap-actions">
                 <button
-                  className="gap-expand-btn"
+                  className="gap-expand-btn icon-inline"
                   onClick={() => setGapExpanded(true)}
                   title="Open full-screen view"
                 >
-                  ⤢ Expand
+                  <Maximize2 size={12} /> Expand
                 </button>
                 <button
-                  className="gap-plan-btn"
+                  className="gap-plan-btn icon-inline"
                   onClick={() => {
                     onSendToAgent(
                       `Based on the following identified knowledge gaps, help me plan a focused research agenda — suggest what to search for, what questions to answer first, and which gaps are highest priority:\n\n${gapReport}`,
@@ -239,7 +240,7 @@ export function ResearchPanel({
                   }}
                   title="Send gap report to AI for research planning"
                 >
-                  Plan with AI →
+                  Plan with AI <ArrowRight size={12} />
                 </button>
               </div>
               <MarkdownView content={gapReport} className="gap-markdown gap-markdown-narrow" />
@@ -296,12 +297,12 @@ export function ResearchPanel({
                         )}
                         {r.source !== "workspace" && r.url && (
                           <a
-                            className="research-open-link"
+                            className="research-open-link icon-inline"
                             href={r.url}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
-                            Open ↗
+                            Open <ExternalLink size={11} />
                           </a>
                         )}
                       </div>

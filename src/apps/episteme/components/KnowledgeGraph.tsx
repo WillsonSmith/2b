@@ -1,4 +1,5 @@
 import { useRef, useEffect, useCallback } from "react";
+import { RotateCw, X } from "lucide-react";
 import type { GraphData, GraphNode, GraphLink } from "../features/contradiction.ts";
 
 export type { GraphData, GraphNode, GraphLink };
@@ -96,8 +97,8 @@ export function KnowledgeGraph({
           <span className="kg-legend-dot" style={{ background: "#cc5555", marginLeft: 8 }} /> Conflicts
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <button className="knowledge-graph-btn" onClick={handleRefresh} title="Refresh graph">↻</button>
-          <button className="knowledge-graph-btn" onClick={onClose} title="Close">✕</button>
+          <button className="knowledge-graph-btn" onClick={handleRefresh} title="Refresh graph"><RotateCw size={13} /></button>
+          <button className="knowledge-graph-btn" onClick={onClose} title="Close"><X size={13} /></button>
         </div>
       </div>
 

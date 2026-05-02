@@ -1451,3 +1451,9 @@ textarea { font: inherit; resize: none; }
   overflow-y: auto;
   min-height: 0;
 }
+
+/* ── Icons (lucide-react) ────────────────────────────────────────────── */
+button svg, a svg { vertical-align: -0.15em; }
+.icon-spin { animation: icon-spin 1s linear infinite; }
+@keyframes icon-spin { to { transform: rotate(360deg); } }
+.icon-inline { display: inline-flex; align-items: center; gap: 4px; }

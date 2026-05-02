@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { FileText, Plus, RotateCw } from "lucide-react";
 import { OutlinePanel } from "./OutlinePanel.tsx";
 import type { TocEntry } from "../features/toc.ts";
 
@@ -155,14 +156,14 @@ export function FileTree({
               onClick={() => setIsCreating(true)}
               title="New file"
             >
-              +
+              <Plus size={14} />
             </button>
             <button
               className="file-tree-refresh"
               onClick={onRefresh}
               title="Refresh file list"
             >
-              ↺
+              <RotateCw size={13} />
             </button>
           </>
         )}
@@ -233,7 +234,7 @@ export function FileTree({
                   }}
                   title={item.path}
                 >
-                  <span className="file-tree-item-icon">📄</span>
+                  <span className="file-tree-item-icon"><FileText size={12} /></span>
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{item.label}</span>
                 </div>
               ),

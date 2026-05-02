@@ -1,3 +1,4 @@
+import { RotateCw, X } from "lucide-react";
 import type { ContradictionRecord } from "../features/contradiction.ts";
 
 export type { ContradictionRecord };
@@ -21,10 +22,10 @@ export function ConflictsPanel({
         <span className="conflicts-panel-title">Conflicts</span>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <button className="conflicts-refresh-btn" onClick={onRefresh} title="Re-scan for contradictions">
-            ↻
+            <RotateCw size={13} />
           </button>
           <button className="conflicts-panel-close" onClick={onClose} title="Close">
-            ✕
+            <X size={13} />
           </button>
         </div>
       </div>
@@ -37,7 +38,7 @@ export function ConflictsPanel({
             No contradictions found.
             <br />
             <span style={{ fontSize: 11 }}>
-              Click ↻ to run a scan across your workspace notes.
+              Click the refresh icon to run a scan across your workspace notes.
             </span>
           </div>
         ) : (

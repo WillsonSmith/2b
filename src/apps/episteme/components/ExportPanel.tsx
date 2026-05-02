@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { X } from "lucide-react";
 import type { ExportFormat } from "../features/export.ts";
 
 interface ExportPanelProps {
@@ -26,7 +27,7 @@ export function ExportPanel({
       <div className="modal export-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">Export Document</span>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose}><X size={14} /></button>
         </div>
 
         {!pandocAvailable && (

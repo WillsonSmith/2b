@@ -1,3 +1,4 @@
+import { RotateCw, Loader2 } from "lucide-react";
 import type { TocEntry } from "../features/toc.ts";
 
 interface OutlinePanelProps {
@@ -23,14 +24,14 @@ export function OutlinePanel({
           disabled={isGenerating}
           title="Generate narrative outline"
         >
-          {isGenerating ? "…" : "↺"}
+          {isGenerating ? <Loader2 size={13} className="icon-spin" /> : <RotateCw size={13} />}
         </button>
       </div>
 
       <div className="outline-panel-list">
         {entries.length === 0 ? (
           <div className="outline-empty">
-            {isGenerating ? "Generating outline…" : "No headings found. Click ↺ to generate."}
+            {isGenerating ? "Generating outline…" : "No headings found. Click the refresh icon to generate."}
           </div>
         ) : (
           entries.map((entry, i) => (
