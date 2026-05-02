@@ -9,7 +9,7 @@ import CharacterCount from "@tiptap/extension-character-count";
 import { useEffect, useRef, useCallback, useState } from "react";
 import {
   Undo2, Redo2, Mic, Square, Quote, Code2, Minus, List, ListOrdered,
-  ListTree, FileCode, Loader2,
+  ListTree, FileCode, Loader2, ChevronUp, ChevronDown, X,
 } from "lucide-react";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { Tone } from "../features/tone.ts";
@@ -184,6 +184,148 @@ function resolveIssuePositions(doc: ProseMirrorNode, issues: LintIssue[]): Resol
   return resolved;
 }
 
+// ── Find decoration plugin ────────────────────────────────────────────────────
+
+interface FindMatch { from: number; to: number; }
+interface FindState { matches: FindMatch[]; activeIndex: number; }
+
+const findKey = new PluginKey<DecorationSet>("find-decos");
+
+function buildFindPlugin(getState: () => FindState) {
+  return new ProseMirrorPlugin({
+    key: findKey,
+    state: {
+      init: () => DecorationSet.empty,
+      apply(tr, old) {
+        if (tr.getMeta("find-refresh")) {
+          const { matches, activeIndex } = getState();
+          if (!matches.length) return DecorationSet.empty;
+          const decos = matches.map((m, i) =>
+            Decoration.inline(m.from, m.to, {
+              class: i === activeIndex ? "find-match find-match-active" : "find-match",
+            }),
+          );
+          return DecorationSet.create(tr.doc, decos);
+        }
+        if (tr.docChanged) return old.map(tr.mapping, tr.doc);
+        return old;
+      },
+    },
+    props: {
+      decorations: (state) => findKey.getState(state) ?? DecorationSet.empty,
+    },
+  });
+}
+
+function FindExtension(stateRef: React.MutableRefObject<FindState>) {
+  return Extension.create({
+    name: "find",
+    addProseMirrorPlugins() {
+      return [buildFindPlugin(() => stateRef.current)];
+    },
+  });
+}
+
+function resolveFindMatches(doc: ProseMirrorNode, query: string, caseSensitive: boolean): FindMatch[] {
+  if (!query) return [];
+  const chars: string[] = [];
+  const positions: number[] = [];
+  doc.descendants((node, pos) => {
+    if (node.isText && node.text) {
+      for (let i = 0; i < node.text.length; i++) {
+        chars.push(node.text[i] ?? "");
+        positions.push(pos + i);
+      }
+    }
+  });
+  const haystack = caseSensitive ? chars.join("") : chars.join("").toLowerCase();
+  const needle = caseSensitive ? query : query.toLowerCase();
+  const matches: FindMatch[] = [];
+  let idx = 0;
+  while ((idx = haystack.indexOf(needle, idx)) !== -1) {
+    const from = positions[idx] ?? 0;
+    const to = (positions[idx + needle.length - 1] ?? 0) + 1;
+    matches.push({ from, to });
+    idx += Math.max(needle.length, 1);
+  }
+  return matches;
+}
+
+// ── Find bar ──────────────────────────────────────────────────────────────────
+
+interface FindBarProps {
+  query: string;
+  onQueryChange: (q: string) => void;
+  matchCount: number;
+  currentIndex: number;
+  caseSensitive: boolean;
+  onToggleCase: () => void;
+  onNext: () => void;
+  onPrev: () => void;
+  onClose: () => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+}
+
+function FindBar({
+  query, onQueryChange, matchCount, currentIndex,
+  caseSensitive, onToggleCase, onNext, onPrev, onClose, inputRef,
+}: FindBarProps) {
+  return (
+    <div className="find-bar" role="search">
+      <input
+        ref={inputRef}
+        className="find-input"
+        type="text"
+        placeholder="Find in document"
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            if (e.shiftKey) onPrev(); else onNext();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onClose();
+          }
+        }}
+        autoFocus
+      />
+      <span className="find-count">
+        {query === "" ? "" : matchCount === 0 ? "No matches" : `${currentIndex + 1} of ${matchCount}`}
+      </span>
+      <button
+        className={`find-btn${caseSensitive ? " active" : ""}`}
+        title="Match case"
+        onClick={onToggleCase}
+        type="button"
+      >
+        Aa
+      </button>
+      <button
+        className="find-btn"
+        title="Previous match (⇧↵)"
+        onClick={onPrev}
+        disabled={matchCount === 0}
+        type="button"
+      >
+        <ChevronUp size={14} />
+      </button>
+      <button
+        className="find-btn"
+        title="Next match (↵)"
+        onClick={onNext}
+        disabled={matchCount === 0}
+        type="button"
+      >
+        <ChevronDown size={14} />
+      </button>
+      <button className="find-btn" title="Close (Esc)" onClick={onClose} type="button">
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
 // ── Toolbar button ────────────────────────────────────────────────────────────
 
 function ToolbarButton({
@@ -277,7 +419,16 @@ export function Editor({
 }: EditorProps) {
   const ghostRef = useRef(ghostText);
   const lintRef = useRef<ResolvedIssue[]>([]);
+  const findStateRef = useRef<FindState>({ matches: [], activeIndex: 0 });
   const [previewMode, setPreviewMode] = useState(false);
+
+  // ── Find state ──────────────────────────────────────────────────────────────
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findMatches, setFindMatches] = useState<FindMatch[]>([]);
+  const [findIndex, setFindIndex] = useState(0);
+  const [findCaseSensitive, setFindCaseSensitive] = useState(false);
+  const findInputRef = useRef<HTMLInputElement | null>(null);
 
   // Code block hover overlay state
   const [codeHover, setCodeHover] = useState<{
@@ -304,6 +455,7 @@ export function Editor({
       CharacterCount,
       GhostTextExtension(ghostRef, handleAccept, handleDismiss),
       LintExtension(lintRef),
+      FindExtension(findStateRef),
     ],
     content,
     onUpdate({ editor }) {
@@ -396,6 +548,67 @@ export function Editor({
     const { tr } = editor.state;
     editor.view.dispatch(tr.setMeta("lint-refresh", true));
   }, [lintIssues, editor]);
+
+  // ── Find: Cmd/Ctrl+F to open ───────────────────────────────────────────────
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "f" || e.key === "F")) {
+        e.preventDefault();
+        setFindOpen(true);
+        requestAnimationFrame(() => findInputRef.current?.select());
+      }
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  // ── Find: re-resolve matches when query/case/open changes or doc updates ───
+  useEffect(() => {
+    if (!editor) return;
+    if (!findOpen || !findQuery) {
+      setFindMatches([]);
+      setFindIndex(0);
+      return;
+    }
+    const recompute = () => {
+      const ms = resolveFindMatches(editor.state.doc, findQuery, findCaseSensitive);
+      setFindMatches(ms);
+      setFindIndex((prev) => (ms.length === 0 ? 0 : Math.min(prev, ms.length - 1)));
+    };
+    recompute();
+    editor.on("update", recompute);
+    return () => { editor.off("update", recompute); };
+  }, [editor, findOpen, findQuery, findCaseSensitive]);
+
+  // ── Find: push state into PM plugin and scroll active match into view ──────
+  useEffect(() => {
+    if (!editor) return;
+    findStateRef.current = { matches: findMatches, activeIndex: findIndex };
+    editor.view.dispatch(editor.state.tr.setMeta("find-refresh", true));
+    if (findMatches.length === 0) return;
+    requestAnimationFrame(() => {
+      const el = editor.view.dom.querySelector(".find-match-active");
+      if (el && el instanceof HTMLElement) {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+    });
+  }, [findMatches, findIndex, editor]);
+
+  const onFindNext = useCallback(() => {
+    setFindIndex((i) => (findMatches.length === 0 ? 0 : (i + 1) % findMatches.length));
+  }, [findMatches.length]);
+
+  const onFindPrev = useCallback(() => {
+    setFindIndex((i) =>
+      findMatches.length === 0 ? 0 : (i - 1 + findMatches.length) % findMatches.length,
+    );
+  }, [findMatches.length]);
+
+  const onFindClose = useCallback(() => {
+    setFindOpen(false);
+    setFindQuery("");
+    editor?.commands.focus();
+  }, [editor]);
 
   // Autocomplete: fire after 800ms idle after typing, but not when text is selected
   const autocompleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -574,6 +787,20 @@ export function Editor({
 
   return (
     <div className="editor-pane">
+      {findOpen && (
+        <FindBar
+          query={findQuery}
+          onQueryChange={setFindQuery}
+          matchCount={findMatches.length}
+          currentIndex={findIndex}
+          caseSensitive={findCaseSensitive}
+          onToggleCase={() => setFindCaseSensitive((v) => !v)}
+          onNext={onFindNext}
+          onPrev={onFindPrev}
+          onClose={onFindClose}
+          inputRef={findInputRef}
+        />
+      )}
       <div className="editor-toolbar">
         <ToolbarButton
           onClick={() => editor?.chain().focus().toggleBold().run()}

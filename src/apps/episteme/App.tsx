@@ -54,6 +54,7 @@ function AutolinkBanner({ suggestions, onAccept, onDismiss, onDismissAll }: Auto
 function HelpPanel({ onClose }: { onClose: () => void }) {
   const shortcuts = [
     { key: "⌘S", desc: "Save file" },
+    { key: "⌘F", desc: "Find in document" },
     { key: "⌘Z / ⌘⇧Z", desc: "Undo / Redo" },
     { key: "⌘B", desc: "Bold" },
     { key: "⌘I", desc: "Italic" },
