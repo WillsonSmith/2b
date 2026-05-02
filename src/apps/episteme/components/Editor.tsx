@@ -48,6 +48,7 @@ interface EditorProps {
   onToggleRecording?: () => void;
   onAskAboutSelection?: (text: string) => void;
   onNavigate?: (path: string) => void;
+  onCountsChange?: (words: number, chars: number) => void;
 }
 
 // ── Ghost-text TipTap extension ───────────────────────────────────────────────
@@ -416,6 +417,7 @@ export function Editor({
   onToggleRecording,
   onAskAboutSelection,
   onNavigate,
+  onCountsChange,
 }: EditorProps) {
   const ghostRef = useRef(ghostText);
   const lintRef = useRef<ResolvedIssue[]>([]);
@@ -759,8 +761,22 @@ export function Editor({
     };
   }, [editor]);
 
-  const wordCount = editor?.storage.characterCount?.words() ?? 0;
-  const charCount = editor?.storage.characterCount?.characters() ?? 0;
+  // Emit word/char counts to the parent (rendered in the app status bar)
+  const onCountsChangeRef = useRef(onCountsChange);
+  onCountsChangeRef.current = onCountsChange;
+
+  useEffect(() => {
+    if (!editor) return;
+    const emit = () => {
+      onCountsChangeRef.current?.(
+        editor.storage.characterCount?.words() ?? 0,
+        editor.storage.characterCount?.characters() ?? 0,
+      );
+    };
+    emit();
+    editor.on("update", emit);
+    return () => { editor.off("update", emit); };
+  }, [editor]);
 
   // Render preview with Mermaid blocks rendered as SVG
   const renderPreview = () => {
@@ -959,10 +975,6 @@ export function Editor({
           </>
         )}
 
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-          {wordCount.toLocaleString()} words · {charCount.toLocaleString()} chars
-        </span>
       </div>
 
       <div className="editor-scroll">
