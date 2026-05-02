@@ -24,7 +24,7 @@ import { ModelCapabilityProvider } from "./ModelCapabilityProvider.ts";
  *                   "high"/"medium"/"low" for models that accept a budget level.
  */
 export function createProvider(model: string): ModelCapabilityProvider {
-  const backend = (process.env.PROVIDER ?? "lmstudio").toLowerCase();
+  const backend = (process.env.PROVIDER ?? "ollama").toLowerCase();
 
   if (backend === "ollama") {
     const rawNumCtx = process.env.OLLAMA_NUM_CTX;
@@ -85,7 +85,7 @@ export function createProvider(model: string): ModelCapabilityProvider {
  * Used by ImageVisionPlugin when VISION_BASE_URL is not set.
  */
 export function defaultVisionBaseUrl(): string {
-  const backend = (process.env.PROVIDER ?? "lmstudio").toLowerCase();
+  const backend = (process.env.PROVIDER ?? "ollama").toLowerCase();
   return backend === "ollama"
     ? (process.env.OLLAMA_URL ?? "http://127.0.0.1:11434")
     : "http://127.0.0.1:1234";
@@ -96,7 +96,7 @@ export function defaultVisionBaseUrl(): string {
  * Used by ImageVisionPlugin when VISION_MODEL is not set.
  */
 export function defaultVisionModel(): string {
-  const backend = (process.env.PROVIDER ?? "lmstudio").toLowerCase();
+  const backend = (process.env.PROVIDER ?? "ollama").toLowerCase();
   return backend === "ollama" ? "gemma3:4b" : "google/gemma-3-4b";
 }
 
@@ -105,6 +105,6 @@ export function defaultVisionModel(): string {
  * Used by agent factories when MODEL env var is not set.
  */
 export function defaultModel(): string {
-  const backend = (process.env.PROVIDER ?? "lmstudio").toLowerCase();
+  const backend = (process.env.PROVIDER ?? "ollama").toLowerCase();
   return backend === "ollama" ? "qwen3.5:35b" : "qwen/qwen3.5-35b-a3b";
 }
