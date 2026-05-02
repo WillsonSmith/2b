@@ -10,6 +10,8 @@ interface ModelConfig {
 
 interface SettingsPanelProps {
   onClose: () => void;
+  onAutocompleteEnabledChange?: (enabled: boolean) => void;
+  onAutosaveEnabledChange?: (enabled: boolean) => void;
 }
 
 const FEATURE_LABELS: Array<{ key: keyof ModelConfig; label: string; desc: string }> = [
@@ -19,7 +21,7 @@ const FEATURE_LABELS: Array<{ key: keyof ModelConfig; label: string; desc: strin
   { key: "research", label: "Research", desc: "Gap detection and deep research synthesis" },
 ];
 
-export function SettingsPanel({ onClose }: SettingsPanelProps) {
+export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosaveEnabledChange }: SettingsPanelProps) {
   // Style guide state
   const [content, setContent] = useState("");
   const [styleStatus, setStyleStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -27,6 +29,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   // Model config state
   const [models, setModels] = useState<string[]>([]);
   const [modelConfig, setModelConfig] = useState<ModelConfig>({ default: "" });
+  const [autocompleteEnabled, setAutocompleteEnabled] = useState(false);
+  const [autosaveEnabled, setAutosaveEnabled] = useState(true);
   const [modelStatus, setModelStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   const [activeTab, setActiveTab] = useState<"style" | "models">("style");
@@ -39,8 +43,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
     fetch("/api/config")
       .then((r) => r.json())
-      .then((data: { models?: ModelConfig }) => {
+      .then((data: { models?: ModelConfig; features?: { autocomplete?: boolean; autosave?: boolean } }) => {
         if (data.models) setModelConfig(data.models);
+        if (data.features?.autocomplete !== undefined) setAutocompleteEnabled(data.features.autocomplete);
+        if (data.features?.autosave !== undefined) setAutosaveEnabled(data.features.autosave);
       })
       .catch(() => {});
 
@@ -77,13 +83,19 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       const res = await fetch("/api/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ models: modelConfig }),
+        body: JSON.stringify({ models: modelConfig, features: { autocomplete: autocompleteEnabled, autosave: autosaveEnabled } }),
       });
-      setModelStatus(res.ok ? "saved" : "error");
+      if (res.ok) {
+        onAutocompleteEnabledChange?.(autocompleteEnabled);
+        onAutosaveEnabledChange?.(autosaveEnabled);
+        setModelStatus("saved");
+      } else {
+        setModelStatus("error");
+      }
     } catch {
       setModelStatus("error");
     }
-  }, [modelConfig]);
+  }, [modelConfig, autocompleteEnabled, autosaveEnabled, onAutocompleteEnabledChange, onAutosaveEnabledChange]);
 
   // Close on Escape
   useEffect(() => {
@@ -144,6 +156,34 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             <p className="modal-desc">
               Assign different Ollama models per feature. Leave a feature on "Default" to inherit the default model.
             </p>
+            <div className="model-config-row" style={{ marginBottom: 4 }}>
+              <div className="model-config-label">
+                <span className="model-config-name">Autosave</span>
+                <span className="model-config-desc">Automatically save after 2 seconds of inactivity</span>
+              </div>
+              <label className="settings-toggle">
+                <input
+                  type="checkbox"
+                  checked={autosaveEnabled}
+                  onChange={(e) => { setAutosaveEnabled(e.target.checked); setModelStatus("idle"); }}
+                />
+                <span className="settings-toggle-track" />
+              </label>
+            </div>
+            <div className="model-config-row" style={{ marginBottom: 8 }}>
+              <div className="model-config-label">
+                <span className="model-config-name">Autocomplete</span>
+                <span className="model-config-desc">Enable inline ghost-text suggestions while typing</span>
+              </div>
+              <label className="settings-toggle">
+                <input
+                  type="checkbox"
+                  checked={autocompleteEnabled}
+                  onChange={(e) => { setAutocompleteEnabled(e.target.checked); setModelStatus("idle"); }}
+                />
+                <span className="settings-toggle-track" />
+              </label>
+            </div>
             <div className="model-config-grid">
               {FEATURE_LABELS.map(({ key, label, desc }) => (
                 <div key={key} className="model-config-row">

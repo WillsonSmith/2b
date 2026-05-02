@@ -265,6 +265,10 @@ export async function startEpistemServer(
               Object.assign(config.models, body.models);
               await saveConfig(workspaceRoot, config);
             }
+            if (body.features !== undefined) {
+              config.features = { ...config.features, ...body.features };
+              await saveConfig(workspaceRoot, config);
+            }
             return json(config);
           } catch {
             return json({ error: "Invalid JSON body" }, 400);

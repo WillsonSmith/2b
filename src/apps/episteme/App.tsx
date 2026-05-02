@@ -161,6 +161,8 @@ function App() {
 
   // Autocomplete / outline
   const [ghostText, setGhostText] = useState("");
+  const [autocompleteEnabled, setAutocompleteEnabled] = useState(false);
+  const [autosaveEnabled, setAutosaveEnabled] = useState(true);
   const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
 
   // Tone / summarize
@@ -250,6 +252,18 @@ function App() {
     if (getShell().platform() === "electron") {
       document.documentElement.classList.add("is-electron");
     }
+  }, []);
+
+  // ── Initial config load ──────────────────────────────────────────────────────
+
+  useEffect(() => {
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((data: { features?: { autocomplete?: boolean; autosave?: boolean } }) => {
+        if (data.features?.autocomplete !== undefined) setAutocompleteEnabled(data.features.autocomplete);
+        if (data.features?.autosave !== undefined) setAutosaveEnabled(data.features.autosave);
+      })
+      .catch(() => {});
   }, []);
 
   // ── WebSocket setup ──────────────────────────────────────────────────────────
@@ -501,6 +515,14 @@ function App() {
     );
   }, [activeFile, isDirty]);
 
+  // ── Autosave ──────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!autosaveEnabled || !isDirty || !activeFile) return;
+    const id = setTimeout(saveFile, 2000);
+    return () => clearTimeout(id);
+  }, [autosaveEnabled, isDirty, activeFile, editorContent, saveFile]);
+
   const refreshFiles = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: "list_workspace" }));
   }, []);
@@ -545,11 +567,10 @@ function App() {
   // ── Autocomplete ──────────────────────────────────────────────────────────────
 
   const handleAutocompleteRequest = useCallback((context: string) => {
-    if (!wsRef.current || agentState === "disconnected") return;
-    // Warn if large file before sending to autocomplete
+    if (!autocompleteEnabled || !wsRef.current || agentState === "disconnected") return;
     if (context.length > 50_000) return;
     wsRef.current.send(JSON.stringify({ type: "autocomplete_request", context }));
-  }, [agentState]);
+  }, [autocompleteEnabled, agentState]);
 
   const handleGhostAccept = useCallback(() => setGhostText(""), []);
   const handleGhostDismiss = useCallback(() => setGhostText(""), []);
@@ -1004,7 +1025,7 @@ function App() {
         </span>
       </div>
 
-      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} onAutocompleteEnabledChange={setAutocompleteEnabled} onAutosaveEnabledChange={setAutosaveEnabled} />}
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
       {showExport && (
         <ExportPanel

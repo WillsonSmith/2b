@@ -416,6 +416,29 @@ textarea { font: inherit; resize: none; }
 }
 .model-config-select:focus { outline: none; border-color: var(--accent-soft); }
 
+.settings-toggle { position: relative; display: inline-flex; align-items: center; cursor: pointer; flex-shrink: 0; }
+.settings-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.settings-toggle-track {
+  width: 36px;
+  height: 20px;
+  background: var(--border);
+  border-radius: 10px;
+  transition: background 0.15s;
+}
+.settings-toggle input:checked + .settings-toggle-track { background: var(--accent); }
+.settings-toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.15s;
+}
+.settings-toggle input:checked + .settings-toggle-track::after { transform: translateX(16px); }
+
 /* ── Lint decorations ────────────────────────────────────────────────── */
 .lint-clarity     { border-bottom: 2px solid #5588cc; cursor: help; }
 .lint-conciseness { border-bottom: 2px solid #cc9944; cursor: help; }
