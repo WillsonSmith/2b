@@ -11,7 +11,7 @@ export async function generateOutline(
   topic: string,
   config: EpistemeConfig,
 ): Promise<string> {
-  const llm = createProvider(featureModel(config, "autocomplete"));
+  const llm = createProvider(featureModel(config, "default"));
   const agent = new HeadlessAgent(llm, [], OUTLINE_SYSTEM, {
     agentName: "OutlineGenerator",
   });

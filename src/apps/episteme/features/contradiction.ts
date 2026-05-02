@@ -6,7 +6,10 @@ import { featureModel } from "../config.ts";
 import { logger } from "../../../logger.ts";
 
 const TAG = "ContradictionScanner";
-const WINDOW = 15; // memories evaluated per batch
+const WINDOW = 15; // memories per batch sent to the LLM
+// Step by half-window so adjacent batches overlap — ensures pairs spanning a
+// batch boundary are still compared against each other.
+const STRIDE = Math.ceil(WINDOW / 2);
 
 const SYSTEM = `You are a research assistant analyzing statements for definite logical contradictions.
 A contradiction is when two statements assert directly opposing facts — not just different perspectives, emphasis, or levels of detail.
@@ -50,7 +53,7 @@ export async function runContradictionScan(
   const results: ContradictionRecord[] = [];
   const seen = new Set<string>();
 
-  for (let i = 0; i < candidates.length; i += WINDOW) {
+  for (let i = 0; i < candidates.length; i += STRIDE) {
     const window = candidates.slice(i, i + WINDOW);
     if (window.length < 2) continue;
 

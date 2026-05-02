@@ -186,7 +186,7 @@ export class ResearchPlugin implements AgentPlugin {
 
   async ingestPdf(relativePath: string): Promise<unknown> {
     const absPath = resolve(join(this.root, relativePath));
-    if (!absPath.startsWith(this.root)) {
+    if (absPath !== this.root && !absPath.startsWith(this.root + "/")) {
       return { error: "Path escapes workspace boundary." };
     }
 

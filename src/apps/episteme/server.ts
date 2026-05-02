@@ -73,7 +73,7 @@ import type { ServerWebSocket } from "bun";
 import { resolve, join, basename, dirname } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { rename as fsRename, mkdir } from "node:fs/promises";
-import type { EpistemAgentBundle } from "./agent.ts";
+import type { EpistemeAgentBundle } from "./agent.ts";
 import type { EpistemeConfig } from "./config.ts";
 import { saveConfig } from "./config.ts";
 import { AutocompleteRunner } from "./features/autocomplete.ts";
@@ -85,7 +85,6 @@ import { generateFrontmatter } from "./features/metadata.ts";
 import { generateNarrativeToc, extractSectionsFromMarkdown } from "./features/toc.ts";
 import { detectAutolinkCandidates } from "./features/autolink.ts";
 import { generateTable } from "./features/table.ts";
-import { DiagramPlugin } from "./plugins/DiagramPlugin.ts";
 import type { UnifiedSearchResponse } from "./plugins/ResearchPlugin.ts";
 import { queryContradictions, runContradictionScan, buildKnowledgeGraph } from "./features/contradiction.ts";
 import type { ContradictionRecord, GraphData } from "./features/contradiction.ts";
@@ -168,6 +167,15 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
+function isWithinWorkspace(absPath: string, root: string): boolean {
+  return absPath === root || absPath.startsWith(root + "/");
+}
+
+function resolveWorkspacePath(root: string, inputPath: string): string | null {
+  const absolute = inputPath.startsWith("/") ? inputPath : resolve(join(root, inputPath));
+  return isWithinWorkspace(absolute, root) ? absolute : null;
+}
+
 /** Recursively collect all .md file paths within a directory. */
 async function collectMarkdownFiles(dir: string): Promise<string[]> {
   const results: string[] = [];
@@ -179,15 +187,16 @@ async function collectMarkdownFiles(dir: string): Promise<string[]> {
 }
 
 export async function startEpistemServer(
-  bundle: EpistemAgentBundle,
+  bundle: EpistemeAgentBundle,
   workspaceRoot: string,
   config: EpistemeConfig,
   port: number,
 ): Promise<void> {
-  const { agent, editorContext, styleGuide, research, citation } = bundle;
+  const { agent, editorContext, workspace, styleGuide, research, citation, diagram: diagramPlugin } = bundle;
   const absRoot = resolve(workspaceRoot);
 
   await agent.start();
+  await workspace.index();
   await checkPandoc();
   if (pandocAvailable) {
     console.log("Pandoc: available");
@@ -197,7 +206,6 @@ export async function startEpistemServer(
 
   const autocomplete = new AutocompleteRunner(config);
   const linter = new LintRunner(config);
-  const diagramPlugin = new DiagramPlugin(config);
 
   const clients = new Set<ServerWebSocket<unknown>>();
 
@@ -210,6 +218,16 @@ export async function startEpistemServer(
     ws.send(JSON.stringify(msg));
   }
 
+  // Debounce workspace file-list broadcasts so rapid consecutive tool calls
+  // don't each trigger a full directory scan.
+  let workspaceRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleWorkspaceRefresh(): void {
+    if (workspaceRefreshTimer) clearTimeout(workspaceRefreshTimer);
+    workspaceRefreshTimer = setTimeout(() => {
+      collectMarkdownFiles(absRoot).then((files) => broadcast({ type: "workspace_files", files }));
+    }, 200);
+  }
+
   agent.on("speak", (text) => broadcast({ type: "speak", text }));
   agent.on("state_change", (state) => broadcast({ type: "state_change", state }));
   agent.on("tool_call", (name, args) => broadcast({ type: "tool_call", name, args }));
@@ -219,7 +237,7 @@ export async function startEpistemServer(
   agent.on("tool_result", (name) => {
     broadcast({ type: "tool_result", name });
     if (FILE_MUTATING_TOOLS.has(name)) {
-      collectMarkdownFiles(absRoot).then((files) => broadcast({ type: "workspace_files", files }));
+      scheduleWorkspaceRefresh();
     }
   });
 
@@ -246,7 +264,8 @@ export async function startEpistemServer(
       "/api/models": {
         GET: async () => {
           try {
-            const res = await fetch("http://127.0.0.1:11434/api/tags");
+            const ollamaHost = process.env["OLLAMA_HOST"] ?? "http://127.0.0.1:11434";
+            const res = await fetch(`${ollamaHost}/api/tags`);
             if (!res.ok) return json({ models: [] });
             const data = (await res.json()) as { models?: Array<{ name: string }> };
             const names = (data.models ?? []).map((m) => m.name).sort();
@@ -287,10 +306,8 @@ export async function startEpistemServer(
               includeFrontmatter: boolean;
             };
             const { filePath, format, includeFrontmatter } = body;
-            const absolute = filePath.startsWith("/")
-              ? filePath
-              : resolve(join(absRoot, filePath));
-            if (!absolute.startsWith(absRoot)) {
+            const absolute = resolveWorkspacePath(absRoot, filePath);
+            if (!absolute) {
               return json({ error: "Path escapes workspace boundary." }, 400);
             }
             const content = await Bun.file(absolute).text();
@@ -321,7 +338,7 @@ export async function startEpistemServer(
             return new Response(file, {
               headers: {
                 "Content-Type": contentType,
-                "Content-Disposition": `attachment; filename="${filename}"`,
+                "Content-Disposition": `attachment; filename="${filename.replace(/["\\]/g, "")}"`,
               },
             });
           } catch {
@@ -366,10 +383,8 @@ export async function startEpistemServer(
           }
 
           case "file_open": {
-            const absolute = msg.path.startsWith("/")
-              ? msg.path
-              : resolve(join(absRoot, msg.path));
-            if (!absolute.startsWith(absRoot)) {
+            const absolute = resolveWorkspacePath(absRoot, msg.path);
+            if (!absolute) {
               send(ws, { type: "error", message: "Path escapes workspace boundary." });
               return;
             }
@@ -383,10 +398,8 @@ export async function startEpistemServer(
           }
 
           case "file_save": {
-            const absolute = msg.path.startsWith("/")
-              ? msg.path
-              : resolve(join(absRoot, msg.path));
-            if (!absolute.startsWith(absRoot)) {
+            const absolute = resolveWorkspacePath(absRoot, msg.path);
+            if (!absolute) {
               send(ws, { type: "error", message: "Path escapes workspace boundary." });
               return;
             }
@@ -411,10 +424,8 @@ export async function startEpistemServer(
           }
 
           case "file_create": {
-            const absolute = msg.path.startsWith("/")
-              ? msg.path
-              : resolve(join(absRoot, msg.path));
-            if (!absolute.startsWith(absRoot)) {
+            const absolute = resolveWorkspacePath(absRoot, msg.path);
+            if (!absolute) {
               send(ws, { type: "error", message: "Path escapes workspace boundary." });
               return;
             }
@@ -437,13 +448,9 @@ export async function startEpistemServer(
           }
 
           case "file_rename": {
-            const absOld = msg.oldPath.startsWith("/")
-              ? msg.oldPath
-              : resolve(join(absRoot, msg.oldPath));
-            const absNew = msg.newPath.startsWith("/")
-              ? msg.newPath
-              : resolve(join(absRoot, msg.newPath));
-            if (!absOld.startsWith(absRoot) || !absNew.startsWith(absRoot)) {
+            const absOld = resolveWorkspacePath(absRoot, msg.oldPath);
+            const absNew = resolveWorkspacePath(absRoot, msg.newPath);
+            if (!absOld || !absNew) {
               send(ws, { type: "error", message: "Path escapes workspace boundary." });
               return;
             }
@@ -481,16 +488,19 @@ export async function startEpistemServer(
           case "ingest_url": {
             const url = msg.url?.trim();
             if (!url) break;
-            agent.addDirect(`ingest_url ${url}`);
-            send(ws, { type: "ingest_result", success: true, message: `Ingesting ${url}…` });
+            // Strip control characters to prevent prompt injection via crafted URLs
+            const safeUrl = url.replace(/[\n\r\t]/g, "");
+            agent.addDirect(`Call the ingest_url tool with url: ${JSON.stringify(safeUrl)}`);
+            send(ws, { type: "ingest_result", success: true, message: `Ingesting ${safeUrl}…` });
             break;
           }
 
           case "ingest_pdf": {
             const path = msg.path?.trim();
             if (!path) break;
-            agent.addDirect(`ingest_pdf ${path}`);
-            send(ws, { type: "ingest_result", success: true, message: `Ingesting PDF ${path}…` });
+            const safePath = path.replace(/[\n\r\t]/g, "");
+            agent.addDirect(`Call the ingest_pdf tool with path: ${JSON.stringify(safePath)}`);
+            send(ws, { type: "ingest_result", success: true, message: `Ingesting PDF ${safePath}…` });
             break;
           }
 
@@ -636,7 +646,7 @@ export async function startEpistemServer(
             const { base64, mimeType, filename } = msg;
             if (!base64) break;
             // Write image to temp file for processing
-            const ext = mimeType.split("/")[1] ?? "png";
+            const ext = (mimeType.split("/")[1] ?? "png").replace(/[^a-z0-9]/gi, "").slice(0, 10) || "png";
             const imagePath = join(tmpdir(), `episteme-img-${Date.now()}.${ext}`);
             try {
               const imageBuffer = Buffer.from(base64, "base64");
