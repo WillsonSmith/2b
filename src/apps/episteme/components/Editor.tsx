@@ -14,6 +14,7 @@ import {
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { Tone } from "../features/tone.ts";
 import type { LintIssue } from "../features/lint.ts";
+import { WIKILINK_RE, resolveWikilinkTarget, wikilinkCreatePath } from "../features/wikilinks.ts";
 
 interface EditorProps {
   content: string;
@@ -48,6 +49,8 @@ interface EditorProps {
   onToggleRecording?: () => void;
   onAskAboutSelection?: (text: string) => void;
   onNavigate?: (path: string) => void;
+  onCreateFile?: (path: string) => void;
+  workspaceFiles?: string[];
   onCountsChange?: (words: number, chars: number) => void;
 }
 
@@ -252,6 +255,93 @@ function resolveFindMatches(doc: ProseMirrorNode, query: string, caseSensitive: 
   return matches;
 }
 
+// ── Wikilink decoration plugin ────────────────────────────────────────────────
+
+interface ResolvedWikilink {
+  from: number;
+  to: number;
+  target: string;
+  exists: boolean;
+}
+
+const wikilinkKey = new PluginKey<DecorationSet>("wikilink-decos");
+
+function buildWikilinkPlugin(getLinks: () => ResolvedWikilink[]) {
+  return new ProseMirrorPlugin({
+    key: wikilinkKey,
+    state: {
+      init: () => DecorationSet.empty,
+      apply(tr, old) {
+        if (tr.getMeta("wikilink-refresh")) {
+          const links = getLinks();
+          if (!links.length) return DecorationSet.empty;
+          const decos = links.map((l) =>
+            Decoration.inline(l.from, l.to, {
+              class: l.exists ? "wikilink" : "wikilink-broken",
+              "data-target": l.target,
+            }),
+          );
+          return DecorationSet.create(tr.doc, decos);
+        }
+        if (tr.docChanged) return old.map(tr.mapping, tr.doc);
+        return old;
+      },
+    },
+    props: {
+      decorations: (state) => wikilinkKey.getState(state) ?? DecorationSet.empty,
+    },
+  });
+}
+
+function WikilinkExtension(linksRef: React.MutableRefObject<ResolvedWikilink[]>) {
+  return Extension.create({
+    name: "wikilink",
+    addProseMirrorPlugins() {
+      return [buildWikilinkPlugin(() => linksRef.current)];
+    },
+  });
+}
+
+function resolveWikilinks(doc: ProseMirrorNode, files: string[]): ResolvedWikilink[] {
+  const chars: string[] = [];
+  const positions: number[] = [];
+  const inCode: boolean[] = [];
+
+  doc.descendants((node, pos, parent) => {
+    if (node.isText && node.text) {
+      const isCode =
+        node.marks.some((m) => m.type.name === "code") ||
+        parent?.type.name === "codeBlock";
+      for (let i = 0; i < node.text.length; i++) {
+        chars.push(node.text[i] ?? "");
+        positions.push(pos + i);
+        inCode.push(isCode);
+      }
+    }
+    return true;
+  });
+
+  const flat = chars.join("");
+  const out: ResolvedWikilink[] = [];
+
+  for (const m of flat.matchAll(WIKILINK_RE)) {
+    const idx = m.index ?? 0;
+    if (inCode[idx]) continue;
+    const len = m[0].length;
+    const from = positions[idx] ?? 0;
+    const to = (positions[idx + len - 1] ?? 0) + 1;
+    const target = (m[1] ?? "").trim();
+    out.push({
+      from,
+      to,
+      target,
+      exists: resolveWikilinkTarget(target, files) !== null,
+    });
+  }
+
+  return out;
+}
+
 // ── Find bar ──────────────────────────────────────────────────────────────────
 
 interface FindBarProps {
@@ -417,10 +507,15 @@ export function Editor({
   onToggleRecording,
   onAskAboutSelection,
   onNavigate,
+  onCreateFile,
+  workspaceFiles = [],
   onCountsChange,
 }: EditorProps) {
   const ghostRef = useRef(ghostText);
   const lintRef = useRef<ResolvedIssue[]>([]);
+  const wikilinkRef = useRef<ResolvedWikilink[]>([]);
+  const filesRef = useRef<string[]>(workspaceFiles);
+  filesRef.current = workspaceFiles;
   const findStateRef = useRef<FindState>({ matches: [], activeIndex: 0 });
   const [previewMode, setPreviewMode] = useState(false);
 
@@ -457,6 +552,7 @@ export function Editor({
       CharacterCount,
       GhostTextExtension(ghostRef, handleAccept, handleDismiss),
       LintExtension(lintRef),
+      WikilinkExtension(wikilinkRef),
       FindExtension(findStateRef),
     ],
     content,
@@ -550,6 +646,18 @@ export function Editor({
     const { tr } = editor.state;
     editor.view.dispatch(tr.setMeta("lint-refresh", true));
   }, [lintIssues, editor]);
+
+  // Resolve wikilinks and redraw on doc updates or workspace file changes
+  useEffect(() => {
+    if (!editor) return;
+    const refresh = () => {
+      wikilinkRef.current = resolveWikilinks(editor.state.doc, filesRef.current);
+      editor.view.dispatch(editor.state.tr.setMeta("wikilink-refresh", true));
+    };
+    refresh();
+    editor.on("update", refresh);
+    return () => { editor.off("update", refresh); };
+  }, [editor, workspaceFiles]);
 
   // ── Find: Cmd/Ctrl+F to open ───────────────────────────────────────────────
   useEffect(() => {
@@ -699,14 +807,29 @@ export function Editor({
     return () => dom.removeEventListener("paste", handlePaste);
   }, [editor, onImagePaste]);
 
-  // Link click — intercept local file links and route in-app
+  // Link click — intercept local file links and wikilinks
   const onNavigateRef = useRef(onNavigate);
   onNavigateRef.current = onNavigate;
+  const onCreateFileRef = useRef(onCreateFile);
+  onCreateFileRef.current = onCreateFile;
 
   useEffect(() => {
     if (!editor) return;
     const dom = editor.view.dom;
     const handleClick = (e: MouseEvent) => {
+      const wl = (e.target as HTMLElement).closest(".wikilink, .wikilink-broken");
+      if (wl) {
+        const target = wl.getAttribute("data-target") ?? "";
+        if (!target) return;
+        e.preventDefault();
+        const resolved = resolveWikilinkTarget(target, filesRef.current);
+        if (resolved) {
+          onNavigateRef.current?.(resolved);
+        } else {
+          onCreateFileRef.current?.(wikilinkCreatePath(target));
+        }
+        return;
+      }
       if (!onNavigateRef.current) return;
       const anchor = (e.target as HTMLElement).closest("a");
       if (!anchor) return;
