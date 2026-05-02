@@ -13,6 +13,7 @@ import type { WikilinkSuggestion } from "./features/autolink.ts";
 import "./styles.css";
 import { getShell } from "./shell/index.ts";
 import { useWebSocket, type UseWebSocketCallbacks } from "./hooks/useWebSocket.ts";
+import { Search, Zap, Network, Download, Settings, HelpCircle, X, Circle, CircleDot, CircleDashed } from "lucide-react";
 import { useFileManager } from "./hooks/useFileManager.ts";
 import { useEditorFeatures } from "./hooks/useEditorFeatures.ts";
 import { useResearch } from "./hooks/useResearch.ts";
@@ -70,7 +71,7 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">Keyboard Shortcuts</span>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose}><X size={14} /></button>
         </div>
         <table className="help-table">
           <tbody>
@@ -472,11 +473,13 @@ function App() {
   // ── Status indicator ──────────────────────────────────────────────────────────
 
   const statusLabel =
-    ws.agentState === "disconnected"
-      ? "○ offline"
-      : ws.agentState === "thinking"
-      ? "◉ thinking"
-      : "● ready";
+    ws.agentState === "disconnected" ? (
+      <span className="icon-inline"><Circle size={10} /> offline</span>
+    ) : ws.agentState === "thinking" ? (
+      <span className="icon-inline"><CircleDashed size={10} /> thinking</span>
+    ) : (
+      <span className="icon-inline"><CircleDot size={10} /> ready</span>
+    );
 
   const charCount = fileManager.editorContent.length;
   const showLargeFileWarning = charCount > 50_000 && !dismissedLargeFile;
@@ -519,42 +522,42 @@ function App() {
           title="Research panel"
           onClick={() => research.setShowResearch((v) => !v)}
         >
-          ⌕
+          <Search size={16} />
         </button>
         <button
           className={`header-research-btn${conflictsGraph.showConflicts ? " active" : ""}`}
           title="Conflicts panel"
           onClick={() => (conflictsGraph.showConflicts ? conflictsGraph.setShowConflicts(false) : conflictsGraph.handleOpenConflicts())}
         >
-          ⚡
+          <Zap size={16} />
         </button>
         <button
           className={`header-research-btn${conflictsGraph.showGraph ? " active" : ""}`}
           title="Knowledge graph"
           onClick={() => (conflictsGraph.showGraph ? conflictsGraph.setShowGraph(false) : conflictsGraph.handleOpenGraph())}
         >
-          ◈
+          <Network size={16} />
         </button>
         <button
           className="header-research-btn"
           title="Export document"
           onClick={() => setShowExport(true)}
         >
-          ↓
+          <Download size={16} />
         </button>
         <button
           className="header-research-btn"
           title="Keyboard shortcuts (?)"
           onClick={() => setShowHelp(true)}
         >
-          ?
+          <HelpCircle size={16} />
         </button>
         <button
           className="header-settings-btn"
           title="Style Guide"
           onClick={() => setShowSettings(true)}
         >
-          ⚙
+          <Settings size={16} />
         </button>
         <span className={`app-header-status${ws.agentState === "thinking" ? " thinking" : ws.agentState === "disconnected" ? " disconnected" : ""}`}>
           {statusLabel}
@@ -674,7 +677,7 @@ function App() {
               <>
                 <span className="status-bar-file">{fileManager.activeFile.split("/").at(-1)}</span>
                 {fileManager.isDirty && (
-                  <span style={{ color: "var(--text-dim)", fontSize: 10 }}>●</span>
+                  <Circle size={6} fill="currentColor" stroke="none" style={{ color: "var(--text-dim)" }} />
                 )}
               </>
             ) : (
