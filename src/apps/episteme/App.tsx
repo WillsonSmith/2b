@@ -17,6 +17,7 @@ import type { LintIssue } from "./features/lint.ts";
 import type { TocEntry } from "./features/toc.ts";
 import type { WikilinkSuggestion } from "./features/autolink.ts";
 import "./styles.css";
+import { getShell } from "./shell/index.ts";
 
 // ── WebSocket protocol ────────────────────────────────────────────────────────
 
@@ -175,6 +176,8 @@ function App() {
   // Workspace
   const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
   const [workspaceName, setWorkspaceName] = useState("workspace");
+  const [needsWorkspace, setNeedsWorkspace] = useState(false);
+  const [isPickingWorkspace, setIsPickingWorkspace] = useState(false);
 
   // Metadata (frontmatter)
   const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false);
@@ -241,6 +244,14 @@ function App() {
 
   const debouncedContent = useDebounce(editorContent, 500);
 
+  // ── Electron detection ───────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (getShell().platform() === "electron") {
+      document.documentElement.classList.add("is-electron");
+    }
+  }, []);
+
   // ── WebSocket setup ──────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -253,10 +264,13 @@ function App() {
         ws.send(JSON.stringify({ type: "list_workspace" }));
         fetch("/api/health")
           .then((r) => r.json())
-          .then((data: { workspace?: string; pandocAvailable?: boolean }) => {
+          .then((data: { workspace?: string | null; pandocAvailable?: boolean }) => {
             if (data.workspace) {
               const parts = data.workspace.split("/");
               setWorkspaceName(parts.at(-1) ?? data.workspace);
+              setNeedsWorkspace(false);
+            } else {
+              setNeedsWorkspace(true);
             }
             setPandocAvailable(data.pandocAvailable ?? false);
           })
@@ -874,6 +888,30 @@ function App() {
     [activeFile, isExporting],
   );
 
+  // ── Workspace picker ─────────────────────────────────────────────────────────
+
+  const handleOpenWorkspace = useCallback(async () => {
+    setIsPickingWorkspace(true);
+    try {
+      const shell = getShell();
+      const folderPath = await shell.openFolder();
+      if (!folderPath) return;
+      const res = await fetch("/api/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: folderPath }),
+      });
+      if (res.ok) {
+        // Server will restart; WebSocket disconnect/reconnect handles the transition
+        setNeedsWorkspace(false);
+      }
+    } catch {
+      // ignore — user can retry
+    } finally {
+      setIsPickingWorkspace(false);
+    }
+  }, []);
+
   // ── Status indicator ──────────────────────────────────────────────────────────
 
   const statusLabel =
@@ -885,6 +923,27 @@ function App() {
 
   const charCount = editorContent.length;
   const showLargeFileWarning = charCount > 50_000 && !dismissedLargeFile;
+
+  if (needsWorkspace) {
+    return (
+      <div className="app">
+        <div className="app-header">
+          <span className="app-header-title">Episteme</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "calc(100vh - 44px)", gap: 16 }}>
+          <p style={{ color: "var(--text-muted)", fontSize: 15 }}>No workspace selected. Choose a folder to get started.</p>
+          <button
+            className="header-settings-btn"
+            style={{ padding: "8px 20px", fontSize: 14 }}
+            disabled={isPickingWorkspace}
+            onClick={handleOpenWorkspace}
+          >
+            {isPickingWorkspace ? "Opening…" : "Open Folder"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

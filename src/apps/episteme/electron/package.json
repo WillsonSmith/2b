@@ -1,0 +1,43 @@
+{
+  "name": "episteme",
+  "version": "0.1.0",
+  "description": "Episteme — AI-powered Markdown research editor",
+  "main": "dist/main.js",
+  "private": true,
+  "scripts": {
+    "start": "tsc && electron .",
+    "build": "tsc && electron-builder",
+    "build:mac": "tsc && electron-builder --mac"
+  },
+  "devDependencies": {
+    "@types/electron": "^1.6.10",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.5.0"
+  },
+  "build": {
+    "appId": "com.episteme.app",
+    "productName": "Episteme",
+    "directories": {
+      "output": "dist-app"
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["universal"] }],
+      "icon": "icons/icon.icns",
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "icons/icon.ico"
+    },
+    "extraResources": [
+      {
+        "from": "../../../../..",
+        "to": "app",
+        "filter": ["src/**", "episteme.ts", "package.json", "bun.lockb"]
+      }
+    ],
+    "afterPack": "./scripts/afterPack.js",
+    "files": ["dist/**", "icons/**"]
+  }
+}

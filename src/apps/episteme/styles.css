@@ -43,6 +43,16 @@ textarea { font: inherit; resize: none; }
   gap: 12px;
   flex-shrink: 0;
   user-select: none;
+  -webkit-app-region: drag;
+}
+.app-header button,
+.app-header input,
+.app-header select {
+  -webkit-app-region: no-drag;
+}
+/* Space for macOS traffic-light buttons when running in Electron */
+.is-electron .app-header {
+  padding-left: 78px;
 }
 .app-header-title { font-weight: 600; color: var(--accent); font-size: 15px; }
 .app-header-workspace { color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }

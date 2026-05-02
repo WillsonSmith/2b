@@ -71,7 +71,7 @@
  */
 import type { ServerWebSocket } from "bun";
 import { resolve, join, basename, dirname } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { rename as fsRename, mkdir } from "node:fs/promises";
 import type { EpistemAgentBundle } from "./agent.ts";
 import type { EpistemeConfig } from "./config.ts";
@@ -739,4 +739,49 @@ export async function startEpistemServer(
 
   console.log(`Episteme running at http://localhost:${port}`);
   console.log(`Workspace: ${workspaceRoot}`);
+}
+
+const LAST_WORKSPACE_FILE = join(homedir(), ".config", "episteme", "last-workspace");
+
+/**
+ * Minimal stub server for when no workspace is provided at startup.
+ * Serves the UI so the user can pick a folder, then exits(0) so Electron
+ * can restart the full server with the selected workspace.
+ */
+export async function startEpistemStubServer(port: number): Promise<void> {
+  Bun.serve({
+    port,
+    routes: {
+      "/": index,
+      "/api/health": {
+        GET: () => json({ status: "ok", app: "episteme", workspace: null, pandocAvailable: false }),
+      },
+      "/api/workspace": {
+        POST: async (req: Request) => {
+          try {
+            const { path: workspacePath } = (await req.json()) as { path: string };
+            if (!workspacePath) return json({ error: "path is required" }, 400);
+            const configDir = join(homedir(), ".config", "episteme");
+            await mkdir(configDir, { recursive: true });
+            await Bun.write(LAST_WORKSPACE_FILE, workspacePath);
+            // Exit cleanly; Electron main process will restart with the new workspace
+            setTimeout(() => process.exit(0), 50);
+            return json({ success: true });
+          } catch {
+            return json({ error: "Failed to set workspace" }, 500);
+          }
+        },
+      },
+    },
+    fetch(req, server) {
+      if (server.upgrade(req)) return;
+      return new Response("Not found", { status: 404 });
+    },
+    development: {
+      hmr: true,
+      console: true,
+    },
+  });
+
+  console.log(`Episteme running at http://localhost:${port} (no workspace — waiting for folder selection)`);
 }
