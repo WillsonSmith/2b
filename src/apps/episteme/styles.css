@@ -773,6 +773,25 @@ textarea {
   cursor: help;
 }
 
+/* ── Wikilink decorations ────────────────────────────────────────────── */
+.wikilink {
+  color: var(--accent);
+  border-bottom: 1px solid var(--accent-soft);
+  cursor: pointer;
+}
+.wikilink:hover {
+  border-bottom-color: var(--accent);
+}
+.wikilink-broken {
+  color: var(--text-muted);
+  border-bottom: 1px dashed var(--text-dim);
+  cursor: pointer;
+}
+.wikilink-broken:hover {
+  color: var(--text);
+  border-bottom-color: var(--text-muted);
+}
+
 /* ── Bubble menu ─────────────────────────────────────────────────────── */
 .bubble-menu {
   display: flex;

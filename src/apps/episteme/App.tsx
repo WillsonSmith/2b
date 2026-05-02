@@ -674,6 +674,8 @@ function App() {
             onToggleRecording={voice.handleToggleRecording}
             onAskAboutSelection={handleAskAboutSelection}
             onNavigate={fileManager.openFile}
+            onCreateFile={fileManager.createFile}
+            workspaceFiles={fileManager.workspaceFiles}
             onCountsChange={handleCountsChange}
           />
 
