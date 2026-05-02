@@ -114,6 +114,7 @@ function App() {
   const [showHelp, setShowHelp] = useState(false);
   const [dismissedLargeFile, setDismissedLargeFile] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [editorCounts, setEditorCounts] = useState({ words: 0, chars: 0 });
 
   const callbacksRef = useRef<UseWebSocketCallbacks>({} as UseWebSocketCallbacks);
   const ws = useWebSocket({
@@ -162,6 +163,9 @@ function App() {
 
   const onMicError = useCallback((text: string) => {
     setMessages((prev) => [...prev, { role: "assistant", text }]);
+  }, []);
+  const handleCountsChange = useCallback((words: number, chars: number) => {
+    setEditorCounts({ words, chars });
   }, []);
   const voice = useVoiceAndMedia(ws.wsRef, ws.agentState, fileManager.setEditorContent, onMicError);
 
@@ -670,6 +674,7 @@ function App() {
             onToggleRecording={voice.handleToggleRecording}
             onAskAboutSelection={handleAskAboutSelection}
             onNavigate={fileManager.openFile}
+            onCountsChange={handleCountsChange}
           />
 
           {/* Status bar */}
@@ -685,6 +690,11 @@ function App() {
               <span style={{ color: "var(--text-dim)" }}>No file open</span>
             )}
             <div className="status-bar-spacer" />
+            {fileManager.activeFile && (
+              <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
+                {editorCounts.words.toLocaleString()} words · {editorCounts.chars.toLocaleString()} chars
+              </span>
+            )}
             {fileManager.activeFile && fileManager.isDirty && (
               <button className="status-bar-save" onClick={fileManager.saveFile} title="Save (⌘S)">
                 Save
