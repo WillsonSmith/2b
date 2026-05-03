@@ -7,7 +7,12 @@
       "Skill(explain-module:*)",
       "Bash(bunx tsc:*)",
       "Bash(git stash:*)",
-      "Bash(bun test:*)"
+      "Bash(bun test:*)",
+      "Bash(mkdir -p /tmp/episteme-test-ws)",
+      "Bash(echo \"# Test\\\\n\\\\nHello world.\")",
+      "Read(//tmp/**)",
+      "Bash(timeout 12 bun episteme.ts /tmp/episteme-test-ws)",
+      "Bash(curl *)"
     ]
   }
 }
