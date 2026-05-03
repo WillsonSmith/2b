@@ -1,36 +1,36 @@
-import { join, resolve, relative } from "node:path";
+import { join, resolve } from "node:path";
+import { stat } from "node:fs/promises";
 import type { AgentPlugin, ToolDefinition } from "../../../core/Plugin.ts";
 import type { CortexMemoryPlugin } from "../../../plugins/CortexMemoryPlugin.ts";
 import { logger } from "../../../logger.ts";
-
-interface FileEntry {
-  relativePath: string;
-  firstLine: string;
-  wordCount: number;
-}
+import type { WorkspaceDb, FileLinkRow } from "../db/workspaceDb.ts";
+import { findWikilinks, resolveWikilinkTarget } from "../features/wikilinks.ts";
 
 /**
  * Provides workspace-level file access and indexing to the agent.
  *
- * Phase 1: file crawling with FTS5 keyword search via CortexMemoryPlugin.
- * Phase 5: full semantic search (vector embeddings).
+ * Structural truth lives in `WorkspaceDb` (ws_files + ws_file_links). Memory
+ * entries are dual-written for FTS / embeddings coverage but the DB row is the
+ * authoritative record for the knowledge graph and incremental reindex.
  */
 export class WorkspacePlugin implements AgentPlugin {
   name = "Workspace";
   private readonly root: string;
   private readonly memory: CortexMemoryPlugin | null;
+  private readonly workspaceDb: WorkspaceDb;
 
-  /** In-memory cache built by index_workspace(). Maps relative path → entry. */
-  private fileIndex = new Map<string, FileEntry>();
-  private lastIndexed: number = 0;
-
-  constructor(workspaceRoot: string, memory: CortexMemoryPlugin | null = null) {
+  constructor(
+    workspaceRoot: string,
+    memory: CortexMemoryPlugin | null,
+    workspaceDb: WorkspaceDb,
+  ) {
     this.root = resolve(workspaceRoot);
     this.memory = memory;
+    this.workspaceDb = workspaceDb;
   }
 
   getSystemPromptFragment(): string {
-    const fileCount = this.fileIndex.size;
+    const fileCount = this.workspaceDb.listWorkspaceFiles().length;
     const indexed = fileCount > 0 ? ` (${fileCount} files indexed)` : " (not yet indexed)";
     return `You have access to a Markdown workspace at: ${this.root}${indexed}\nUse workspace tools to index, search, and read files in the workspace.`;
   }
@@ -97,7 +97,10 @@ export class WorkspacePlugin implements AgentPlugin {
 
   // ── Tool implementations ───────────────────────────────────────────────────
 
-  /** Public entry point — called directly on startup and by the agent via executeTool. */
+  /**
+   * Public entry point — called directly on startup and by the agent via executeTool.
+   * Incremental: skips files whose (mtime, size) match the stored row.
+   */
   async index(): Promise<unknown> {
     const glob = new Bun.Glob("**/*.md");
     const files: string[] = [];
@@ -107,23 +110,50 @@ export class WorkspacePlugin implements AgentPlugin {
     }
 
     let indexed = 0;
+    let skipped = 0;
+    const seen = new Set<string>();
+
     for (const relPath of files) {
+      seen.add(relPath);
       try {
         const absPath = join(this.root, relPath);
+        const fileStat = await stat(absPath);
+        const mtime = fileStat.mtimeMs;
+        const size = fileStat.size;
+
+        const existing = this.workspaceDb.getWorkspaceFile(relPath);
+        if (existing && existing.mtime === mtime && existing.size === size) {
+          skipped++;
+          continue;
+        }
+
         const content = await Bun.file(absPath).text();
+        const hasher = new Bun.CryptoHasher("sha256");
+        hasher.update(content);
+        const contentHash = hasher.digest("hex");
         const lines = content.split("\n");
-        const firstLine = lines.find((l) => l.trim().length > 0)?.trim().slice(0, 120) ?? relPath;
+        const firstLine = lines.find((l) => l.trim().length > 0)?.trim().slice(0, 120) ?? null;
         const wordCount = content.split(/\s+/).filter(Boolean).length;
 
-        const alreadyIndexed = this.fileIndex.has(relPath);
-        this.fileIndex.set(relPath, { relativePath: relPath, firstLine, wordCount });
+        this.workspaceDb.upsertWorkspaceFile({
+          relPath,
+          content,
+          mtime,
+          size,
+          contentHash,
+          firstLine,
+          wordCount,
+        });
 
-        // Only write to memory on first index — prevents accumulation of duplicate entries
-        // across re-index calls (memory has no upsert/delete API).
-        if (this.memory && !alreadyIndexed) {
-          const summary = content.slice(0, 800).trim();
+        const links = extractLinksForFile(content, files);
+        this.workspaceDb.replaceFileLinks(relPath, links);
+
+        // Dual-write into memory for FTS / embeddings coverage. Memory has no
+        // upsert/delete API, so re-indexes accumulate duplicate memory entries —
+        // the structural row in ws_files remains the source of truth.
+        if (this.memory) {
           await this.memory.writeMemory(
-            `[File: ${relPath}]\n${summary}`,
+            `[File: ${relPath}]\n${content}`,
             "factual",
             ["workspace-file", relPath],
             "workspace-index",
@@ -136,57 +166,54 @@ export class WorkspacePlugin implements AgentPlugin {
       }
     }
 
-    this.lastIndexed = Date.now();
+    // Prune rows whose files no longer exist on disk.
+    let deleted = 0;
+    for (const row of this.workspaceDb.listWorkspaceFiles()) {
+      if (!seen.has(row.relPath)) {
+        this.workspaceDb.deleteWorkspaceFile(row.relPath);
+        deleted++;
+      }
+    }
+
     return {
       indexed,
+      skipped,
+      deleted,
       total: files.length,
-      message: `Indexed ${indexed} Markdown files from workspace.`,
+      message: `Indexed ${indexed} (skipped ${skipped} unchanged, deleted ${deleted}).`,
     };
   }
 
-  private async searchWorkspace(query: string, limit: number): Promise<unknown> {
+  private searchWorkspace(query: string, limit: number): unknown {
     if (!query.trim()) return { results: [], message: "Empty query." };
 
     const results: Array<{ path: string; excerpt: string; source: string }> = [];
 
-    // 1. Search via CortexMemoryPlugin FTS5 (workspace-indexed memories)
-    if (this.memory) {
+    // 1. Structural LIKE search across ws_files.
+    const dbHits = this.workspaceDb.searchWorkspaceFiles(query, limit + 2);
+    for (const row of dbHits) {
+      const excerpt = row.content.slice(0, 300).replace(/\n+/g, " ").trim();
+      results.push({ path: row.relPath, excerpt, source: "index" });
+    }
+
+    // 2. Memory FTS fallback for prose-level matches that miss LIKE.
+    if (results.length < limit && this.memory) {
       const hits = this.memory.queryMemoriesRaw({
         types: ["factual"],
         contains: query,
-        limit: limit + 2, // small over-fetch to allow de-duplication
+        limit: limit + 2,
       });
-
       for (const hit of hits) {
-        if (hit.tags?.includes("workspace-file")) {
-          const excerpt = hit.text.slice(0, 300).replace(/\n+/g, " ").trim();
-          const pathTag = hit.tags.find((t) => t !== "workspace-file") ?? "";
-          results.push({ path: pathTag, excerpt, source: "index" });
-        }
-      }
-    }
-
-    // 2. Fallback: in-memory keyword scan (always runs; deduplicated by path)
-    if (results.length < limit) {
-      const lower = query.toLowerCase();
-      for (const [relPath, entry] of this.fileIndex) {
-        if (results.find((r) => r.path === relPath)) continue;
-        if (
-          relPath.toLowerCase().includes(lower) ||
-          entry.firstLine.toLowerCase().includes(lower)
-        ) {
-          results.push({
-            path: relPath,
-            excerpt: entry.firstLine,
-            source: "filename",
-          });
-        }
+        if (!hit.tags?.includes("workspace-file")) continue;
+        const path = hit.tags.find((t) => t !== "workspace-file") ?? "";
+        if (results.find((r) => r.path === path)) continue;
+        const excerpt = hit.text.slice(0, 300).replace(/\n+/g, " ").trim();
+        results.push({ path, excerpt, source: "memory" });
         if (results.length >= limit) break;
       }
     }
 
-    // 3. If still no results and no index built, do a live grep across files
-    if (results.length === 0 && this.fileIndex.size === 0) {
+    if (results.length === 0 && this.workspaceDb.listWorkspaceFiles().length === 0) {
       return {
         results: [],
         message:
@@ -233,14 +260,49 @@ export class WorkspacePlugin implements AgentPlugin {
   }
 
   private listFiles(): unknown {
-    if (this.fileIndex.size === 0) {
+    const rows = this.workspaceDb.listWorkspaceFiles();
+    if (rows.length === 0) {
       return { files: [], message: "Workspace not indexed. Run index_workspace first." };
     }
-    const files = [...this.fileIndex.values()].map((e) => ({
-      path: e.relativePath,
-      firstLine: e.firstLine,
-      words: e.wordCount,
+    const files = rows.map((r) => ({
+      path: r.relPath,
+      firstLine: r.firstLine ?? r.relPath,
+      words: r.wordCount ?? 0,
     }));
     return { files, total: files.length };
   }
+}
+
+/**
+ * Extract resolved wikilinks and relative markdown links from `content`.
+ * Both link types are resolved against the full workspace file list, so
+ * `[[notes/foo]]` and `[foo](./notes/foo.md)` both produce a link with
+ * `targetPath = "notes/foo.md"` when that file exists.
+ */
+function extractLinksForFile(
+  content: string,
+  allFiles: string[],
+): Omit<FileLinkRow, "sourcePath">[] {
+  const links: Omit<FileLinkRow, "sourcePath">[] = [];
+
+  for (const wl of findWikilinks(content)) {
+    const target = resolveWikilinkTarget(wl.target, allFiles);
+    if (target) {
+      links.push({ targetPath: target, linkType: "wikilink", raw: wl.target });
+    }
+  }
+
+  for (const m of content.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
+    const href = (m[1] ?? "").trim();
+    if (!href) continue;
+    if (href.startsWith("http") || href.startsWith("mailto:") || href.startsWith("#")) continue;
+    const cleaned = href.replace(/^\.\//, "").replace(/[?#].*$/, "");
+    if (!cleaned) continue;
+    const target = resolveWikilinkTarget(cleaned, allFiles);
+    if (target) {
+      links.push({ targetPath: target, linkType: "markdown", raw: href });
+    }
+  }
+
+  return links;
 }

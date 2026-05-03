@@ -13,6 +13,7 @@ import { DiagramPlugin } from "./plugins/DiagramPlugin.ts";
 import { CitationPlugin } from "./plugins/CitationPlugin.ts";
 import { runContradictionScan } from "./features/contradiction.ts";
 import { workspaceDbPath } from "./paths.ts";
+import { WorkspaceDb } from "./db/workspaceDb.ts";
 import type { EpistemeConfig } from "./config.ts";
 import { logger } from "../../logger.ts";
 
@@ -38,6 +39,7 @@ export interface EpistemeAgentBundle {
   research: ResearchPlugin;
   citation: CitationPlugin;
   diagram: DiagramPlugin;
+  workspaceDb: WorkspaceDb;
 }
 
 export function createEpistemAgent(
@@ -46,6 +48,7 @@ export function createEpistemAgent(
 ): EpistemeAgentBundle {
   const llm = createProvider(config.models.default);
   const dbPath = workspaceDbPath(workspaceRoot);
+  const workspaceDb = new WorkspaceDb(dbPath);
 
   const permissionManager = new AutoApprovePermissionManager();
 
@@ -60,8 +63,8 @@ export function createEpistemAgent(
   });
 
   const editorContext = new EditorContextPlugin();
-  const workspace = new WorkspacePlugin(workspaceRoot, agent.memoryPlugin);
-  const research = new ResearchPlugin(workspaceRoot, config, agent.memoryPlugin);
+  const workspace = new WorkspacePlugin(workspaceRoot, agent.memoryPlugin, workspaceDb);
+  const research = new ResearchPlugin(workspaceRoot, config, agent.memoryPlugin, workspaceDb);
   const styleGuide = new StyleGuidePlugin(workspaceRoot);
   const citation = new CitationPlugin(workspaceRoot, config, editorContext);
   const diagram = new DiagramPlugin(config);
@@ -84,7 +87,7 @@ export function createEpistemAgent(
 
   // Background contradiction scan — runs every 30 minutes
   agent.scheduleProactiveTick(CONTRADICTION_SCAN_INTERVAL, () => {
-    runContradictionScan(agent.memoryPlugin, config).then((found) => {
+    runContradictionScan(agent.memoryPlugin, config, workspaceDb).then((found) => {
       if (found.length > 0) {
         logger.info("Episteme", `Background scan found ${found.length} new contradiction(s)`);
       }
@@ -94,5 +97,5 @@ export function createEpistemAgent(
     return null; // don't queue ambient input to the agent
   });
 
-  return { agent, editorContext, workspace, styleGuide, research, citation, diagram };
+  return { agent, editorContext, workspace, styleGuide, research, citation, diagram, workspaceDb };
 }
