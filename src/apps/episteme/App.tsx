@@ -12,8 +12,22 @@ import type { ExportFormat } from "./features/export.ts";
 import type { WikilinkSuggestion } from "./features/autolink.ts";
 import "./styles.css";
 import { getShell } from "./shell/index.ts";
-import { useWebSocket, type UseWebSocketCallbacks } from "./hooks/useWebSocket.ts";
-import { Search, Zap, Network, Download, Settings, HelpCircle, X, Circle, CircleDot, CircleDashed } from "lucide-react";
+import {
+  useWebSocket,
+  type UseWebSocketCallbacks,
+} from "./hooks/useWebSocket.ts";
+import {
+  Search,
+  Zap,
+  Network,
+  Download,
+  Settings,
+  HelpCircle,
+  X,
+  Circle,
+  CircleDot,
+  CircleDashed,
+} from "lucide-react";
 import { useFileManager } from "./hooks/useFileManager.ts";
 import { useEditorFeatures } from "./hooks/useEditorFeatures.ts";
 import { useResearch } from "./hooks/useResearch.ts";
@@ -29,17 +43,31 @@ interface AutolinkBannerProps {
   onDismissAll: () => void;
 }
 
-function AutolinkBanner({ suggestions, onAccept, onDismiss, onDismissAll }: AutolinkBannerProps) {
+function AutolinkBanner({
+  suggestions,
+  onAccept,
+  onDismiss,
+  onDismissAll,
+}: AutolinkBannerProps) {
   const current = suggestions[0];
   if (!current) return null;
-  const linkName = current.filename.split("/").at(-1)?.replace(/\.md$/i, "") ?? current.filename;
+  const linkName =
+    current.filename.split("/").at(-1)?.replace(/\.md$/i, "") ??
+    current.filename;
   return (
     <div className="autolink-banner">
       <span className="autolink-text">
         Link <strong>"{current.text}"</strong> → <code>[[{linkName}]]</code>?
       </span>
-      <button className="autolink-btn accept" onClick={() => onAccept(current)}>Accept</button>
-      <button className="autolink-btn dismiss" onClick={() => onDismiss(current)}>Skip</button>
+      <button className="autolink-btn accept" onClick={() => onAccept(current)}>
+        Accept
+      </button>
+      <button
+        className="autolink-btn dismiss"
+        onClick={() => onDismiss(current)}
+      >
+        Skip
+      </button>
       {suggestions.length > 1 && (
         <button className="autolink-btn dismiss" onClick={onDismissAll}>
           Dismiss all ({suggestions.length})
@@ -72,13 +100,17 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">Keyboard Shortcuts</span>
-          <button className="modal-close" onClick={onClose}><X size={14} /></button>
+          <button className="modal-close" onClick={onClose}>
+            <X size={14} />
+          </button>
         </div>
         <table className="help-table">
           <tbody>
             {shortcuts.map(({ key, desc }) => (
               <tr key={key} className="help-row">
-                <td className="help-key"><kbd>{key}</kbd></td>
+                <td className="help-key">
+                  <kbd>{key}</kbd>
+                </td>
                 <td className="help-desc">{desc}</td>
               </tr>
             ))}
@@ -91,13 +123,22 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
 
 // ── Large file warning ────────────────────────────────────────────────────────
 
-function LargeFileBanner({ charCount, onDismiss }: { charCount: number; onDismiss: () => void }) {
+function LargeFileBanner({
+  charCount,
+  onDismiss,
+}: {
+  charCount: number;
+  onDismiss: () => void;
+}) {
   return (
     <div className="large-file-banner">
       <span>
-        This document is {(charCount / 1000).toFixed(0)}k characters — AI features may be slow or truncated.
+        This document is {(charCount / 1000).toFixed(0)}k characters — AI
+        features may be slow or truncated.
       </span>
-      <button className="autolink-btn dismiss" onClick={onDismiss}>Dismiss</button>
+      <button className="autolink-btn dismiss" onClick={onDismiss}>
+        Dismiss
+      </button>
     </div>
   );
 }
@@ -116,7 +157,9 @@ function App() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [editorCounts, setEditorCounts] = useState({ words: 0, chars: 0 });
 
-  const callbacksRef = useRef<UseWebSocketCallbacks>({} as UseWebSocketCallbacks);
+  const callbacksRef = useRef<UseWebSocketCallbacks>(
+    {} as UseWebSocketCallbacks,
+  );
   const ws = useWebSocket({
     onSpeak: (t) => callbacksRef.current.onSpeak(t),
     onStateChange: (s) => callbacksRef.current.onStateChange(s),
@@ -127,7 +170,8 @@ function App() {
     onFileSaved: () => callbacksRef.current.onFileSaved(),
     onFileCreated: (p) => callbacksRef.current.onFileCreated(p),
     onFileRenamed: (o, n) => callbacksRef.current.onFileRenamed(o, n),
-    onAutocompleteSuggestion: (t) => callbacksRef.current.onAutocompleteSuggestion(t),
+    onAutocompleteSuggestion: (t) =>
+      callbacksRef.current.onAutocompleteSuggestion(t),
     onInsertText: (t) => callbacksRef.current.onInsertText(t),
     onIngestResult: (s, m) => callbacksRef.current.onIngestResult(s, m),
     onLintResult: (i) => callbacksRef.current.onLintResult(i),
@@ -142,8 +186,10 @@ function App() {
     onDetectGapsResult: (m) => callbacksRef.current.onDetectGapsResult(m),
     onContradictionsData: (c) => callbacksRef.current.onContradictionsData(c),
     onGraphData: (d) => callbacksRef.current.onGraphData(d),
-    onCheckCitationsResult: (r) => callbacksRef.current.onCheckCitationsResult(r),
-    onFormatCitationResult: (b) => callbacksRef.current.onFormatCitationResult(b),
+    onCheckCitationsResult: (r) =>
+      callbacksRef.current.onCheckCitationsResult(r),
+    onFormatCitationResult: (b) =>
+      callbacksRef.current.onFormatCitationResult(b),
     onAltText: (t, m, b) => callbacksRef.current.onAltText(t, m, b),
     onExplainCodeResult: (e) => callbacksRef.current.onExplainCodeResult(e),
     onTranscript: (t) => callbacksRef.current.onTranscript(t),
@@ -159,7 +205,11 @@ function App() {
     fileManager.setEditorContent,
   );
   const research = useResearch(ws.wsRef, ws.agentState);
-  const conflictsGraph = useConflictsAndGraph(ws.wsRef, ws.agentState, fileManager.openFile);
+  const conflictsGraph = useConflictsAndGraph(
+    ws.wsRef,
+    ws.agentState,
+    fileManager.openFile,
+  );
 
   const onMicError = useCallback((text: string) => {
     setMessages((prev) => [...prev, { role: "assistant", text }]);
@@ -167,7 +217,12 @@ function App() {
   const handleCountsChange = useCallback((words: number, chars: number) => {
     setEditorCounts({ words, chars });
   }, []);
-  const voice = useVoiceAndMedia(ws.wsRef, ws.agentState, fileManager.setEditorContent, onMicError);
+  const voice = useVoiceAndMedia(
+    ws.wsRef,
+    ws.agentState,
+    fileManager.setEditorContent,
+    onMicError,
+  );
 
   // ── Electron detection ───────────────────────────────────────────────────────
 
@@ -182,10 +237,16 @@ function App() {
   useEffect(() => {
     fetch("/api/config")
       .then((r) => r.json())
-      .then((data: { features?: { autocomplete?: boolean; autosave?: boolean } }) => {
-        if (data.features?.autocomplete !== undefined) editorFeatures.setAutocompleteEnabled(data.features.autocomplete);
-        if (data.features?.autosave !== undefined) fileManager.setAutosaveEnabled(data.features.autosave);
-      })
+      .then(
+        (data: {
+          features?: { autocomplete?: boolean; autosave?: boolean };
+        }) => {
+          if (data.features?.autocomplete !== undefined)
+            editorFeatures.setAutocompleteEnabled(data.features.autocomplete);
+          if (data.features?.autosave !== undefined)
+            fileManager.setAutosaveEnabled(data.features.autosave);
+        },
+      )
       .catch(() => {});
   }, [editorFeatures.setAutocompleteEnabled, fileManager.setAutosaveEnabled]);
 
@@ -198,26 +259,36 @@ function App() {
     if (wasDisconnected && isConnected) {
       fetch("/api/health")
         .then((r) => r.json())
-        .then((data: { workspace?: string | null; pandocAvailable?: boolean }) => {
-          if (data.workspace) {
-            const parts = data.workspace.split("/");
-            fileManager.setWorkspaceName(parts.at(-1) ?? data.workspace);
-            fileManager.setNeedsWorkspace(false);
-          } else {
-            fileManager.setNeedsWorkspace(true);
-          }
-          setPandocAvailable(data.pandocAvailable ?? false);
-        })
+        .then(
+          (data: { workspace?: string | null; pandocAvailable?: boolean }) => {
+            if (data.workspace) {
+              const parts = data.workspace.split("/");
+              fileManager.setWorkspaceName(parts.at(-1) ?? data.workspace);
+              fileManager.setNeedsWorkspace(false);
+            } else {
+              fileManager.setNeedsWorkspace(true);
+            }
+            setPandocAvailable(data.pandocAvailable ?? false);
+          },
+        )
         .catch(() => {});
     }
     prevAgentStateRef.current = ws.agentState;
-  }, [ws.agentState, fileManager.setWorkspaceName, fileManager.setNeedsWorkspace]);
+  }, [
+    ws.agentState,
+    fileManager.setWorkspaceName,
+    fileManager.setNeedsWorkspace,
+  ]);
 
   // ── "?" key opens help ──────────────────────────────────────────────────────
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (e.key === "?" && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+      if (
+        e.key === "?" &&
+        !(e.target instanceof HTMLInputElement) &&
+        !(e.target instanceof HTMLTextAreaElement)
+      ) {
         setShowHelp((v) => !v);
       }
     }
@@ -227,29 +298,40 @@ function App() {
 
   // ── AI sidecar wrappers ─────────────────────────────────────────────────────
 
-  const sendToAgent = useCallback((text: string) => {
-    if (ws.agentState === "disconnected") return;
-    ws.sendToAgent(text);
-    setMessages((prev) => [...prev, { role: "user", text }]);
-  }, [ws]);
+  const sendToAgent = useCallback(
+    (text: string) => {
+      if (ws.agentState === "disconnected") return;
+      ws.sendToAgent(text);
+      setMessages((prev) => [...prev, { role: "user", text }]);
+    },
+    [ws],
+  );
 
   const interrupt = useCallback(() => {
     ws.interrupt();
   }, [ws]);
 
-  const handleAskAboutSelection = useCallback((text: string) => {
-    if (!ws.wsRef.current) return;
-    const msg = `[Selected text]\n\n${text}\n\n---\nWhat can you tell me about this?`;
-    ws.wsRef.current.send(JSON.stringify({ type: "send", text: msg }));
-    setMessages((prev) => [...prev, { role: "user", text: msg }]);
-    setSidecarCollapsed(false);
-  }, [ws.wsRef]);
+  const handleAskAboutSelection = useCallback(
+    (text: string) => {
+      if (!ws.wsRef.current) return;
+      const msg = `[Selected text]\n\n${text}\n\n---\nWhat can you tell me about this?`;
+      ws.wsRef.current.send(JSON.stringify({ type: "send", text: msg }));
+      setMessages((prev) => [...prev, { role: "user", text: msg }]);
+      setSidecarCollapsed(false);
+    },
+    [ws.wsRef],
+  );
 
   const handleExplainCode = useCallback(
     (code: string, language: string) => {
       if (!ws.wsRef.current || ws.agentState === "disconnected") return;
-      ws.wsRef.current.send(JSON.stringify({ type: "explain_code", code, language }));
-      setMessages((prev) => [...prev, { role: "user", text: `Explain ${language} code block` }]);
+      ws.wsRef.current.send(
+        JSON.stringify({ type: "explain_code", code, language }),
+      );
+      setMessages((prev) => [
+        ...prev,
+        { role: "user", text: `Explain ${language} code block` },
+      ]);
       setSidecarCollapsed(false);
     },
     [ws.agentState, ws.wsRef],
@@ -272,7 +354,10 @@ function App() {
 
       const uriList = e.dataTransfer.getData("text/uri-list");
       if (uriList) {
-        const urls = uriList.split("\n").map((u) => u.trim()).filter((u) => u.startsWith("http"));
+        const urls = uriList
+          .split("\n")
+          .map((u) => u.trim())
+          .filter((u) => u.startsWith("http"));
         for (const url of urls) {
           ws.wsRef.current.send(JSON.stringify({ type: "ingest_url", url }));
         }
@@ -282,18 +367,22 @@ function App() {
       const files = Array.from(e.dataTransfer.files);
       for (const file of files) {
         if (file.name.endsWith(".pdf")) {
-          ws.wsRef.current.send(JSON.stringify({ type: "ingest_pdf", path: file.name }));
+          ws.wsRef.current.send(
+            JSON.stringify({ type: "ingest_pdf", path: file.name }),
+          );
         } else if (file.type.startsWith("image/")) {
           const reader = new FileReader();
           reader.onload = () => {
             const dataUrl = reader.result as string;
             const base64 = dataUrl.split(",")[1] ?? "";
-            ws.wsRef.current?.send(JSON.stringify({
-              type: "analyze_image",
-              base64,
-              mimeType: file.type,
-              filename: file.name,
-            }));
+            ws.wsRef.current?.send(
+              JSON.stringify({
+                type: "analyze_image",
+                base64,
+                mimeType: file.type,
+                filename: file.name,
+              }),
+            );
           };
           reader.readAsDataURL(file);
         }
@@ -312,7 +401,11 @@ function App() {
         const res = await fetch("/api/export", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filePath: fileManager.activeFile, format, includeFrontmatter }),
+          body: JSON.stringify({
+            filePath: fileManager.activeFile,
+            format,
+            includeFrontmatter,
+          }),
         });
         const data = (await res.json()) as { url?: string; error?: string };
         if (data.url) {
@@ -326,7 +419,10 @@ function App() {
         } else {
           setMessages((prev) => [
             ...prev,
-            { role: "assistant", text: `[Export error] ${data.error ?? "Unknown error"}` },
+            {
+              role: "assistant",
+              text: `[Export error] ${data.error ?? "Unknown error"}`,
+            },
           ]);
         }
       } catch {
@@ -344,20 +440,31 @@ function App() {
   // ── Wire WS callbacks ────────────────────────────────────────────────────────
 
   callbacksRef.current = {
-    onSpeak: (text) => setMessages((prev) => [...prev, { role: "assistant", text }]),
+    onSpeak: (text) =>
+      setMessages((prev) => [...prev, { role: "assistant", text }]),
     onStateChange: () => {},
-    onToolCall: (name) => setMessages((prev) => [...prev, { role: "tool", name, status: "calling" }]),
-    onToolResult: (name) => setMessages((prev) => {
-      for (let i = prev.length - 1; i >= 0; i--) {
-        const m = prev[i];
-        if (m && m.role === "tool" && m.name === name && m.status === "calling") {
-          const next = [...prev];
-          next[i] = { role: "tool", name, status: "done" };
-          return next;
+    onToolCall: (name) =>
+      setMessages((prev) => [
+        ...prev,
+        { role: "tool", name, status: "calling" },
+      ]),
+    onToolResult: (name) =>
+      setMessages((prev) => {
+        for (let i = prev.length - 1; i >= 0; i--) {
+          const m = prev[i];
+          if (
+            m &&
+            m.role === "tool" &&
+            m.name === name &&
+            m.status === "calling"
+          ) {
+            const next = [...prev];
+            next[i] = { role: "tool", name, status: "done" };
+            return next;
+          }
         }
-      }
-      return prev;
-    }),
+        return prev;
+      }),
     onWorkspaceFiles: fileManager.setWorkspaceFiles,
     onFileContent: (_path, content) => {
       fileManager.setEditorContent(content);
@@ -378,7 +485,8 @@ function App() {
       editorFeatures.setAutolinkSuggestions([]);
     },
     onFileRenamed: (oldPath, newPath) => {
-      if (fileManager.activeFileRef.current === oldPath) fileManager.setActiveFile(newPath);
+      if (fileManager.activeFileRef.current === oldPath)
+        fileManager.setActiveFile(newPath);
     },
     onFileSaved: () => {
       fileManager.setSavedContent(fileManager.editorContentRef.current);
@@ -397,14 +505,18 @@ function App() {
         ...prev,
         {
           role: "assistant",
-          text: success ? `Ingestion started: ${message}` : `Ingest failed: ${message}`,
+          text: success
+            ? `Ingestion started: ${message}`
+            : `Ingest failed: ${message}`,
         },
       ]);
       fileManager.refreshFiles();
     },
     onLintResult: editorFeatures.setLintIssues,
-    onToneResult: (text, from, to) => editorFeatures.setToneReplacement({ text, from, to }),
-    onSummarizeResult: (text, insertPos) => editorFeatures.setSummarizeResult({ text, insertPos }),
+    onToneResult: (text, from, to) =>
+      editorFeatures.setToneReplacement({ text, from, to }),
+    onSummarizeResult: (text, insertPos) =>
+      editorFeatures.setSummarizeResult({ text, insertPos }),
     onMetadataResult: (yaml) => {
       editorFeatures.setMetadataResult(yaml);
       editorFeatures.setIsGeneratingMetadata(false);
@@ -414,8 +526,10 @@ function App() {
       editorFeatures.setIsTocGenerating(false);
     },
     onAutolinkResult: editorFeatures.setAutolinkSuggestions,
-    onDiagramResult: (code, from, to) => editorFeatures.setDiagramResult({ code, from, to }),
-    onTableResult: (text, insertPos) => editorFeatures.setTableResult({ text, insertPos }),
+    onDiagramResult: (code, from, to) =>
+      editorFeatures.setDiagramResult({ code, from, to }),
+    onTableResult: (text, insertPos) =>
+      editorFeatures.setTableResult({ text, insertPos }),
     onSearchResult: (results) => {
       research.setSearchResults(results);
       research.setIsSearching(false);
@@ -442,7 +556,10 @@ function App() {
       ]);
     },
     onFormatCitationResult: (bibtex) => {
-      setMessages((prev) => [...prev, { role: "assistant", text: `\`\`\`bibtex\n${bibtex}\n\`\`\`` }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", text: `\`\`\`bibtex\n${bibtex}\n\`\`\`` },
+      ]);
     },
     onAltText: (text, mimeType, base64) => {
       voice.setAltTextInsert(`![${text}](data:${mimeType};base64,${base64})`);
@@ -479,11 +596,17 @@ function App() {
 
   const statusLabel =
     ws.agentState === "disconnected" ? (
-      <span className="icon-inline"><Circle size={10} /> offline</span>
+      <span className="icon-inline">
+        <Circle size={10} /> offline
+      </span>
     ) : ws.agentState === "thinking" ? (
-      <span className="icon-inline"><CircleDashed size={10} /> thinking</span>
+      <span className="icon-inline">
+        <CircleDashed size={10} /> thinking
+      </span>
     ) : (
-      <span className="icon-inline"><CircleDot size={10} /> ready</span>
+      <span className="icon-inline">
+        <CircleDot size={10} /> ready
+      </span>
     );
 
   const charCount = fileManager.editorContent.length;
@@ -492,11 +615,20 @@ function App() {
   if (fileManager.needsWorkspace) {
     return (
       <div className="app">
-        <div className="app-header">
-          <span className="app-header-title">Episteme</span>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "calc(100vh - 44px)", gap: 16 }}>
-          <p style={{ color: "var(--text-muted)", fontSize: 15 }}>No workspace selected. Choose a folder to get started.</p>
+        <div className="app-header"></div>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "calc(100vh - 44px)",
+            gap: 16,
+          }}
+        >
+          <p style={{ color: "var(--text-muted)", fontSize: 15 }}>
+            No workspace selected. Choose a folder to get started.
+          </p>
           <button
             className="header-settings-btn"
             style={{ padding: "8px 20px", fontSize: 14 }}
@@ -519,8 +651,9 @@ function App() {
     >
       {/* Header */}
       <div className="app-header">
-        <span className="app-header-title">Episteme</span>
-        <span className="app-header-workspace">{fileManager.workspaceName}</span>
+        <span className="app-header-workspace">
+          {fileManager.workspaceName}
+        </span>
         <div className="app-header-spacer" />
         <button
           className={`header-research-btn${research.showResearch ? " active" : ""}`}
@@ -532,14 +665,22 @@ function App() {
         <button
           className={`header-research-btn${conflictsGraph.showConflicts ? " active" : ""}`}
           title="Conflicts panel"
-          onClick={() => (conflictsGraph.showConflicts ? conflictsGraph.setShowConflicts(false) : conflictsGraph.handleOpenConflicts())}
+          onClick={() =>
+            conflictsGraph.showConflicts
+              ? conflictsGraph.setShowConflicts(false)
+              : conflictsGraph.handleOpenConflicts()
+          }
         >
           <Zap size={16} />
         </button>
         <button
           className={`header-research-btn${conflictsGraph.showGraph ? " active" : ""}`}
           title="Knowledge graph"
-          onClick={() => (conflictsGraph.showGraph ? conflictsGraph.setShowGraph(false) : conflictsGraph.handleOpenGraph())}
+          onClick={() =>
+            conflictsGraph.showGraph
+              ? conflictsGraph.setShowGraph(false)
+              : conflictsGraph.handleOpenGraph()
+          }
         >
           <Network size={16} />
         </button>
@@ -564,12 +705,20 @@ function App() {
         >
           <Settings size={16} />
         </button>
-        <span className={`app-header-status${ws.agentState === "thinking" ? " thinking" : ws.agentState === "disconnected" ? " disconnected" : ""}`}>
+        <span
+          className={`app-header-status${ws.agentState === "thinking" ? " thinking" : ws.agentState === "disconnected" ? " disconnected" : ""}`}
+        >
           {statusLabel}
         </span>
       </div>
 
-      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} onAutocompleteEnabledChange={editorFeatures.setAutocompleteEnabled} onAutosaveEnabledChange={fileManager.setAutosaveEnabled} />}
+      {showSettings && (
+        <SettingsPanel
+          onClose={() => setShowSettings(false)}
+          onAutocompleteEnabledChange={editorFeatures.setAutocompleteEnabled}
+          onAutosaveEnabledChange={fileManager.setAutosaveEnabled}
+        />
+      )}
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
       {showExport && (
         <ExportPanel
@@ -621,9 +770,7 @@ function App() {
 
       {/* Offline notice */}
       {ws.agentState === "disconnected" && (
-        <div className="offline-banner">
-          AI unavailable — reconnecting…
-        </div>
+        <div className="offline-banner">AI unavailable — reconnecting…</div>
       )}
 
       {/* Body */}
@@ -641,7 +788,14 @@ function App() {
           onHeadingClick={editorFeatures.handleHeadingClick}
         />
 
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
           <Editor
             content={fileManager.editorContent}
             onUpdate={(md) => fileManager.setEditorContent(md)}
@@ -683,9 +837,16 @@ function App() {
           <div className="status-bar">
             {fileManager.activeFile ? (
               <>
-                <span className="status-bar-file">{fileManager.activeFile.split("/").at(-1)}</span>
+                <span className="status-bar-file">
+                  {fileManager.activeFile.split("/").at(-1)}
+                </span>
                 {fileManager.isDirty && (
-                  <Circle size={6} fill="currentColor" stroke="none" style={{ color: "var(--text-dim)" }} />
+                  <Circle
+                    size={6}
+                    fill="currentColor"
+                    stroke="none"
+                    style={{ color: "var(--text-dim)" }}
+                  />
                 )}
               </>
             ) : (
@@ -694,16 +855,23 @@ function App() {
             <div className="status-bar-spacer" />
             {fileManager.activeFile && (
               <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
-                {editorCounts.words.toLocaleString()} words · {editorCounts.chars.toLocaleString()} chars
+                {editorCounts.words.toLocaleString()} words ·{" "}
+                {editorCounts.chars.toLocaleString()} chars
               </span>
             )}
             {fileManager.activeFile && fileManager.isDirty && (
-              <button className="status-bar-save" onClick={fileManager.saveFile} title="Save (⌘S)">
+              <button
+                className="status-bar-save"
+                onClick={fileManager.saveFile}
+                title="Save (⌘S)"
+              >
                 Save
               </button>
             )}
             {fileManager.activeFile && !fileManager.isDirty && (
-              <span style={{ color: "var(--text-dim)", fontSize: 11 }}>Saved</span>
+              <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
+                Saved
+              </span>
             )}
           </div>
         </div>
@@ -715,7 +883,10 @@ function App() {
             onDetectGaps={research.handleDetectGaps}
             onIngest={research.handleIngestFromSearch}
             onReindex={research.handleReindex}
-            onSendToAgent={(text) => { sendToAgent(text); setSidecarCollapsed(false); }}
+            onSendToAgent={(text) => {
+              sendToAgent(text);
+              setSidecarCollapsed(false);
+            }}
             searchResults={research.searchResults}
             gapReport={research.gapReport}
             isSearching={research.isSearching}

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Copy, Check, CornerDownRight, Loader2, ArrowRight, Zap, Maximize2, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Copy, Check, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, ChevronLeft, ChevronRight, X, Square } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -191,14 +191,7 @@ function ChatInput({ isThinking, onSend, onInterrupt }: ChatInputProps) {
         </div>
       )}
 
-      <div className="sidecar-input-row">
-        <button
-          className={`sidecar-quick-toggle${showQuickActions ? " active" : ""}`}
-          onClick={() => setShowQuickActions((v) => !v)}
-          title="Quick action commands"
-        >
-          <Zap size={14} />
-        </button>
+      <div className="sidecar-input-box">
         <textarea
           className="sidecar-input"
           value={input}
@@ -214,17 +207,30 @@ function ChatInput({ isThinking, onSend, onInterrupt }: ChatInputProps) {
           disabled={isThinking}
           style={{ resize: "none" }}
         />
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <div className="sidecar-input-toolbar">
           <button
-            className="sidecar-send"
-            onClick={submit}
-            disabled={isThinking || !input.trim()}
+            className={`sidecar-quick-toggle${showQuickActions ? " active" : ""}`}
+            onClick={() => setShowQuickActions((v) => !v)}
+            title="Quick action commands"
           >
-            Send
+            <Zap size={14} />
           </button>
-          {isThinking && (
-            <button className="sidecar-interrupt" onClick={onInterrupt}>
-              Stop
+          {isThinking ? (
+            <button
+              className="sidecar-interrupt"
+              onClick={onInterrupt}
+              title="Stop"
+            >
+              <Square size={12} fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              className="sidecar-send"
+              onClick={submit}
+              disabled={!input.trim()}
+              title="Send"
+            >
+              <ArrowUp size={14} />
             </button>
           )}
         </div>
