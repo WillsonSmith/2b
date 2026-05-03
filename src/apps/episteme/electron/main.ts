@@ -9,7 +9,12 @@ let serverProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let currentPort = 4000;
 
-const LAST_WORKSPACE_FILE = path.join(os.homedir(), ".config", "episteme", "last-workspace");
+const LAST_WORKSPACE_FILE = path.join(
+  os.homedir(),
+  ".config",
+  "episteme",
+  "last-workspace",
+);
 
 function readLastWorkspace(): string | undefined {
   try {
@@ -32,7 +37,11 @@ function findFreePort(start = 4000): Promise<number> {
       const addr = server.address() as net.AddressInfo;
       server.close(() => resolve(addr.port));
     });
-    server.on("error", () => findFreePort(start + 1).then(resolve).catch(reject));
+    server.on("error", () =>
+      findFreePort(start + 1)
+        .then(resolve)
+        .catch(reject),
+    );
   });
 }
 
@@ -179,7 +188,10 @@ function buildMenu(port: number): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-async function restartWithWorkspace(workspacePath: string, port: number): Promise<void> {
+async function restartWithWorkspace(
+  workspacePath: string,
+  port: number,
+): Promise<void> {
   if (serverProcess) {
     serverProcess.kill();
     serverProcess = null;

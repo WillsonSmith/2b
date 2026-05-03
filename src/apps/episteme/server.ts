@@ -192,7 +192,7 @@ export async function startEpistemServer(
   config: EpistemeConfig,
   port: number,
 ): Promise<void> {
-  const { agent, editorContext, workspace, styleGuide, research, citation, diagram: diagramPlugin } = bundle;
+  const { agent, editorContext, workspace, styleGuide, research, citation, diagram: diagramPlugin, workspaceDb } = bundle;
   const absRoot = resolve(workspaceRoot);
 
   await agent.start();
@@ -598,14 +598,14 @@ export async function startEpistemServer(
           }
 
           case "contradictions_request": {
-            const contradictions = queryContradictions(agent.memoryPlugin);
+            const contradictions = queryContradictions(workspaceDb);
             send(ws, { type: "contradictions_data", contradictions });
             break;
           }
 
           case "contradiction_scan_request": {
-            runContradictionScan(agent.memoryPlugin, config).then((found) => {
-              const all = queryContradictions(agent.memoryPlugin);
+            runContradictionScan(agent.memoryPlugin, config, workspaceDb).then((found) => {
+              const all = queryContradictions(workspaceDb);
               send(ws, { type: "contradictions_data", contradictions: all });
               if (found.length > 0) {
                 send(ws, { type: "speak", text: `Contradiction scan complete — ${found.length} new conflict(s) found.` });
@@ -617,7 +617,7 @@ export async function startEpistemServer(
           }
 
           case "graph_request": {
-            const data = buildKnowledgeGraph(agent.memoryPlugin);
+            const data = buildKnowledgeGraph(agent.memoryPlugin, workspaceDb);
             send(ws, { type: "graph_data", data });
             break;
           }

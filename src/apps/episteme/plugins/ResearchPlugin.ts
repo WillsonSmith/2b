@@ -9,6 +9,7 @@ import type { EpistemeConfig } from "../config.ts";
 import { featureModel } from "../config.ts";
 import { logger } from "../../../logger.ts";
 import { deepIngestPdf } from "../features/research.ts";
+import type { WorkspaceDb } from "../db/workspaceDb.ts";
 
 const SUMMARIZE_SYSTEM = `You are a research assistant. Summarize the given content into structured Markdown. Use the following template:
 
@@ -56,11 +57,18 @@ export class ResearchPlugin implements AgentPlugin {
   private readonly root: string;
   private readonly memory: CortexMemoryPlugin | null;
   private readonly config: EpistemeConfig;
+  private readonly workspaceDb: WorkspaceDb;
 
-  constructor(workspaceRoot: string, config: EpistemeConfig, memory: CortexMemoryPlugin | null = null) {
+  constructor(
+    workspaceRoot: string,
+    config: EpistemeConfig,
+    memory: CortexMemoryPlugin | null,
+    workspaceDb: WorkspaceDb,
+  ) {
     this.root = resolve(workspaceRoot);
     this.memory = memory;
     this.config = config;
+    this.workspaceDb = workspaceDb;
   }
 
   getSystemPromptFragment(): string {
@@ -171,15 +179,17 @@ export class ResearchPlugin implements AgentPlugin {
     const summary = await this.summarize(rawText, url);
 
     const slug = this.urlToSlug(url);
-    const mdPath = join(this.root, "research", `${slug}.md`);
+    const relFile = `research/${slug}.md`;
+    const mdPath = join(this.root, relFile);
     await this.saveMarkdown(mdPath, summary);
 
     if (this.memory) {
       await this.memory.writeMemory(summary, "factual", ["ingested", "url", url], "research");
     }
+    this.workspaceDb.recordIngestedUrl({ url, slug, summary, filePath: relFile });
 
-    logger.info(this.name, `Ingested URL: ${url} → research/${slug}.md`);
-    return { success: true, file: `research/${slug}.md`, summary };
+    logger.info(this.name, `Ingested URL: ${url} → ${relFile}`);
+    return { success: true, file: relFile, summary };
   }
 
   // ── ingest_pdf ─────────────────────────────────────────────────────────────
@@ -209,14 +219,20 @@ export class ResearchPlugin implements AgentPlugin {
     const stem = basename(relativePath).replace(/\.pdf$/i, "");
     const ingestedDir = join(this.root, ".episteme", "ingested");
     const mdPath = join(ingestedDir, `${stem}.md`);
+    const relFile = `.episteme/ingested/${stem}.md`;
     await this.saveMarkdown(mdPath, structured);
 
     if (this.memory) {
       await this.memory.writeMemory(structured, "factual", ["ingested", "pdf", relativePath], "research");
     }
+    this.workspaceDb.recordIngestedPdf({
+      relPath: relativePath,
+      structuredContent: structured,
+      filePath: relFile,
+    });
 
-    logger.info(this.name, `Deep-ingested PDF: ${relativePath} → .episteme/ingested/${stem}.md`);
-    return { success: true, file: `.episteme/ingested/${stem}.md`, summary: structured };
+    logger.info(this.name, `Deep-ingested PDF: ${relativePath} → ${relFile}`);
+    return { success: true, file: relFile, summary: structured };
   }
 
   // ── search_arxiv ───────────────────────────────────────────────────────────

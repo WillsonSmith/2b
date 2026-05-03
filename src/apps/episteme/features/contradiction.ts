@@ -4,6 +4,7 @@ import { createProvider } from "../../../providers/llm/createProvider.ts";
 import type { EpistemeConfig } from "../config.ts";
 import { featureModel } from "../config.ts";
 import { logger } from "../../../logger.ts";
+import type { WorkspaceDb } from "../db/workspaceDb.ts";
 
 const TAG = "ContradictionScanner";
 const WINDOW = 15; // memories per batch sent to the LLM
@@ -37,21 +38,19 @@ export interface ContradictionRecord {
 export async function runContradictionScan(
   memory: CortexMemoryPlugin,
   config: EpistemeConfig,
+  workspaceDb: WorkspaceDb,
 ): Promise<ContradictionRecord[]> {
-  const allMemories = memory.queryMemoriesRaw({
+  const candidates = memory.queryMemoriesRaw({
     types: ["factual"],
     limit: 100,
   });
 
-  // Exclude existing contradiction records to avoid recursion
-  const candidates = allMemories.filter((m) => !m.tags.includes("contradiction"));
   if (candidates.length < 2) return [];
 
   logger.info(TAG, `Scanning ${candidates.length} factual memories for contradictions`);
 
   const llm = createProvider(featureModel(config, "research"));
   const results: ContradictionRecord[] = [];
-  const seen = new Set<string>();
 
   for (let i = 0; i < candidates.length; i += STRIDE) {
     const window = candidates.slice(i, i + WINDOW);
@@ -78,34 +77,33 @@ export async function runContradictionScan(
       const memB = window[pair.indexB];
       if (!memA || !memB) continue;
 
-      const pairKey = [memA.id, memB.id].sort().join("|");
-      if (seen.has(pairKey)) continue;
-      seen.add(pairKey);
+      // Persistent dedupe across runs via the unique index on (source_a_id, source_b_id).
+      if (workspaceDb.contradictionPairExists(memA.id, memB.id)) continue;
 
       const summaryText = pair.summary?.trim() ?? "Contradiction detected";
-      const contradictionText =
-        `CONTRADICTION\n\nSummary: ${summaryText}\n\n` +
-        `Source A (id:${memA.id}): ${memA.text.slice(0, 400)}\n\n` +
-        `Source B (id:${memB.id}): ${memB.text.slice(0, 400)}`;
+      const sourceAText = memA.text.replace(/\n+/g, " ").slice(0, 300);
+      const sourceBText = memB.text.replace(/\n+/g, " ").slice(0, 300);
 
-      const newId = await memory.writeMemory(
-        contradictionText,
-        "factual",
-        ["contradiction", `source_a:${memA.id}`, `source_b:${memB.id}`],
-        "episteme",
-      );
+      const id = workspaceDb.recordContradiction({
+        summary: summaryText,
+        sourceAId: memA.id,
+        sourceBId: memB.id,
+        sourceAText,
+        sourceBText,
+      });
 
+      // Keep the contradicts edge in the memory graph for downstream consumers.
       await memory.linkMemories(memA.id, memB.id, "contradicts");
 
       logger.info(TAG, `Contradiction found: "${summaryText.slice(0, 60)}"`);
 
       results.push({
-        id: newId ?? pairKey,
+        id,
         summary: summaryText,
         sourceAId: memA.id,
         sourceBId: memB.id,
-        sourceAText: memA.text.replace(/\n+/g, " ").slice(0, 300),
-        sourceBText: memB.text.replace(/\n+/g, " ").slice(0, 300),
+        sourceAText,
+        sourceBText,
         timestamp: Date.now(),
       });
     }
@@ -115,34 +113,16 @@ export async function runContradictionScan(
   return results;
 }
 
-export function queryContradictions(memory: CortexMemoryPlugin): ContradictionRecord[] {
-  const memories = memory.queryMemoriesRaw({
-    tags: ["contradiction"],
-    limit: 50,
-  });
-
-  return memories
-    .filter((m) => m.text.startsWith("CONTRADICTION"))
-    .map((m) => {
-      const sourceATag = m.tags.find((t) => t.startsWith("source_a:"));
-      const sourceBTag = m.tags.find((t) => t.startsWith("source_b:"));
-      const sourceAId = sourceATag?.slice("source_a:".length) ?? "";
-      const sourceBId = sourceBTag?.slice("source_b:".length) ?? "";
-
-      const summaryMatch = m.text.match(/Summary: ([^\n]+)/);
-      const aMatch = m.text.match(/Source A[^:]*: ([^\n]+(?:\n(?!Source)[^\n]+)*)/);
-      const bMatch = m.text.match(/Source B[^:]*: ([^\n]+(?:\n(?!Source)[^\n]+)*)/);
-
-      return {
-        id: m.id,
-        summary: summaryMatch?.[1]?.trim() ?? "Contradiction",
-        sourceAId,
-        sourceBId,
-        sourceAText: aMatch?.[1]?.trim().slice(0, 300) ?? "",
-        sourceBText: bMatch?.[1]?.trim().slice(0, 300) ?? "",
-        timestamp: m.timestamp,
-      };
-    });
+export function queryContradictions(workspaceDb: WorkspaceDb): ContradictionRecord[] {
+  return workspaceDb.listContradictions(50).map((row) => ({
+    id: row.id,
+    summary: row.summary,
+    sourceAId: row.sourceAId,
+    sourceBId: row.sourceBId,
+    sourceAText: row.sourceAText,
+    sourceBText: row.sourceBText,
+    timestamp: row.createdAt,
+  }));
 }
 
 export interface GraphNode {
@@ -171,96 +151,77 @@ const NODE_COLORS: Record<string, string> = {
   factual: "#666680",
 };
 
-function extractDocumentLinks(content: string): string[] {
-  const refs = new Set<string>();
-  for (const m of content.matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)) {
-    const name = (m[1] ?? "").trim().toLowerCase();
-    if (name) refs.add(name);
-  }
-  for (const m of content.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
-    const href = (m[1] ?? "").trim();
-    if (href.startsWith("http") || href.startsWith("mailto:") || href.startsWith("#")) continue;
-    const filename = href.split("/").at(-1)?.replace(/\.md$/i, "").toLowerCase() ?? "";
-    if (filename) refs.add(filename);
-  }
-  return [...refs];
-}
-
-export function buildKnowledgeGraph(memory: CortexMemoryPlugin): GraphData {
-  const allFactual = memory.queryMemoriesRaw({ types: ["factual"], limit: 150 });
-
+export function buildKnowledgeGraph(
+  memory: CortexMemoryPlugin,
+  workspaceDb: WorkspaceDb,
+): GraphData {
   const nodes: GraphNode[] = [];
   const links: GraphLink[] = [];
   const nodeIds = new Set<string>();
 
-  for (const m of allFactual) {
-    if (m.tags.includes("contradiction")) continue; // handled separately
-    const isFile = m.tags.includes("workspace-file");
-    const filePath = isFile ? m.tags.find((t) => t !== "workspace-file") : undefined;
-    const label = filePath
-      ? filePath.split("/").at(-1)?.replace(/\.md$/i, "") ?? filePath
-      : m.text.split("\n")[0]?.slice(0, 50) ?? m.id.slice(0, 8);
+  // 1. Workspace file nodes — keyed by rel_path so node IDs survive re-indexing.
+  for (const row of workspaceDb.listWorkspaceFiles()) {
+    const id = `file:${row.relPath}`;
+    const label = row.relPath.split("/").at(-1)?.replace(/\.md$/i, "") ?? row.relPath;
+    nodes.push({
+      id,
+      label,
+      type: "workspace-file",
+      file: row.relPath,
+      color: NODE_COLORS["workspace-file"]!,
+    });
+    nodeIds.add(id);
+  }
 
+  // 2. File-to-file edges from pre-resolved link table.
+  for (const link of workspaceDb.getAllLinks()) {
+    const src = `file:${link.sourcePath}`;
+    const tgt = `file:${link.targetPath}`;
+    if (!nodeIds.has(src) || !nodeIds.has(tgt) || src === tgt) continue;
+    links.push({ source: src, target: tgt, linkType: "document-link", color: "#55cc88" });
+  }
+
+  // 3. Non-file factual memory nodes (excluding legacy workspace-file/contradiction tags).
+  // The contradiction-tag filter is vestigial — kept one release as a safety net for
+  // databases that still contain old prose-encoded contradiction memories.
+  const allFactual = memory.queryMemoriesRaw({ types: ["factual"], limit: 150 });
+  for (const m of allFactual) {
+    if (m.tags.includes("workspace-file")) continue;
+    if (m.tags.includes("contradiction")) continue;
+    const label = m.text.split("\n")[0]?.slice(0, 50) ?? m.id.slice(0, 8);
     nodes.push({
       id: m.id,
       label,
-      type: isFile ? "workspace-file" : "factual",
-      file: filePath,
-      color: NODE_COLORS[isFile ? "workspace-file" : "factual"] ?? NODE_COLORS["factual"]!,
+      type: "factual",
+      color: NODE_COLORS["factual"]!,
     });
     nodeIds.add(m.id);
   }
 
-  // Build edges from document cross-references (wikilinks and markdown links)
-  const fileNodeByBasename = new Map<string, string>();
-  for (const n of nodes) {
-    if (n.type !== "workspace-file") continue;
-    const basename = (n.file ?? n.label).split("/").at(-1)?.replace(/\.md$/i, "").toLowerCase() ?? "";
-    if (basename) fileNodeByBasename.set(basename, n.id);
-  }
-
-  const seenDocLinks = new Set<string>();
-  for (const m of allFactual) {
-    if (!m.tags.includes("workspace-file")) continue;
-    if (!nodeIds.has(m.id)) continue;
-    for (const ref of extractDocumentLinks(m.text)) {
-      const targetId = fileNodeByBasename.get(ref);
-      if (!targetId || targetId === m.id) continue;
-      const edgeKey = `${m.id}→${targetId}`;
-      if (seenDocLinks.has(edgeKey)) continue;
-      seenDocLinks.add(edgeKey);
-      links.push({ source: m.id, target: targetId, linkType: "document-link", color: "#55cc88" });
-    }
-  }
-
-  // Build edges from contradiction records
-  const contradictions = allFactual.filter((m) => m.tags.includes("contradiction"));
-  for (const c of contradictions) {
-    const sourceATag = c.tags.find((t) => t.startsWith("source_a:"));
-    const sourceBTag = c.tags.find((t) => t.startsWith("source_b:"));
-    const idA = sourceATag?.slice("source_a:".length);
-    const idB = sourceBTag?.slice("source_b:".length);
-
-    if (idA && idB && nodeIds.has(idA) && nodeIds.has(idB)) {
-      links.push({ source: idA, target: idB, linkType: "contradicts", color: "#cc5555" });
-    }
-
-    // Add contradiction node itself
-    const summaryMatch = c.text.match(/Summary: ([^\n]+)/);
-    const label = summaryMatch?.[1]?.slice(0, 40) ?? "Contradiction";
+  // 4. Contradiction nodes + edges. source_a_id / source_b_id reference memory IDs.
+  for (const c of workspaceDb.listContradictions()) {
+    const cid = `contradiction:${c.id}`;
     nodes.push({
-      id: c.id,
-      label,
+      id: cid,
+      label: c.summary.slice(0, 40),
       type: "contradiction",
       color: NODE_COLORS["contradiction"]!,
     });
-    nodeIds.add(c.id);
+    nodeIds.add(cid);
 
-    if (idA && nodeIds.has(idA)) {
-      links.push({ source: c.id, target: idA, linkType: "contradicts", color: "#cc5555" });
+    if (nodeIds.has(c.sourceAId)) {
+      links.push({ source: cid, target: c.sourceAId, linkType: "contradicts", color: "#cc5555" });
     }
-    if (idB && nodeIds.has(idB)) {
-      links.push({ source: c.id, target: idB, linkType: "contradicts", color: "#cc5555" });
+    if (nodeIds.has(c.sourceBId)) {
+      links.push({ source: cid, target: c.sourceBId, linkType: "contradicts", color: "#cc5555" });
+    }
+    if (nodeIds.has(c.sourceAId) && nodeIds.has(c.sourceBId)) {
+      links.push({
+        source: c.sourceAId,
+        target: c.sourceBId,
+        linkType: "contradicts",
+        color: "#cc5555",
+      });
     }
   }
 
