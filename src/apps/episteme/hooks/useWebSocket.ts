@@ -1,44 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { UnifiedSearchResponse } from "../components/ResearchPanel.tsx";
-import type { ContradictionRecord } from "../components/ConflictsPanel.tsx";
-import type { GraphData } from "../components/KnowledgeGraph.tsx";
+import type { UnifiedSearchResponse } from "../plugins/ResearchPlugin.ts";
+import type { ContradictionRecord, GraphData } from "../features/contradiction.ts";
+import type { CitationCheckResult } from "../plugins/CitationPlugin.ts";
 import type { LintIssue } from "../features/lint.ts";
 import type { TocEntry } from "../features/toc.ts";
 import type { WikilinkSuggestion } from "../features/autolink.ts";
+import { assertNever, type ServerMsg } from "../protocol.ts";
 
 type AgentState = "idle" | "thinking" | "disconnected";
-
-type ServerMsg =
-  | { type: "speak"; text: string }
-  | { type: "state_change"; state: "idle" | "thinking" }
-  | { type: "tool_call"; name: string; args: Record<string, unknown> }
-  | { type: "tool_result"; name: string }
-  | { type: "file_content"; path: string; content: string }
-  | { type: "workspace_files"; files: string[] }
-  | { type: "file_saved" }
-  | { type: "file_created"; path: string }
-  | { type: "file_renamed"; oldPath: string; newPath: string }
-  | { type: "autocomplete_suggestion"; text: string }
-  | { type: "insert_text"; text: string }
-  | { type: "ingest_result"; success: boolean; message: string }
-  | { type: "tone_result"; text: string; from: number; to: number }
-  | { type: "summarize_result"; text: string; insertPos: number }
-  | { type: "lint_result"; issues: LintIssue[] }
-  | { type: "metadata_result"; yaml: string }
-  | { type: "toc_result"; entries: TocEntry[] }
-  | { type: "autolink_result"; suggestions: WikilinkSuggestion[] }
-  | { type: "diagram_result"; code: string; from: number; to: number }
-  | { type: "table_result"; text: string; insertPos: number }
-  | { type: "search_result"; results: UnifiedSearchResponse }
-  | { type: "detect_gaps_result"; markdown: string }
-  | { type: "contradictions_data"; contradictions: ContradictionRecord[] }
-  | { type: "graph_data"; data: GraphData }
-  | { type: "check_citations_result"; result: { valid: string[]; broken: string[] } }
-  | { type: "format_citation_result"; bibtex: string }
-  | { type: "alt_text"; text: string; mimeType: string; base64: string }
-  | { type: "explain_code_result"; explanation: string }
-  | { type: "transcript"; text: string }
-  | { type: "error"; message: string };
 
 export interface UseWebSocketCallbacks {
   onSpeak: (text: string) => void;
@@ -65,7 +34,7 @@ export interface UseWebSocketCallbacks {
   onDetectGapsResult: (markdown: string) => void;
   onContradictionsData: (contradictions: ContradictionRecord[]) => void;
   onGraphData: (data: GraphData) => void;
-  onCheckCitationsResult: (result: { valid: string[]; broken: string[] }) => void;
+  onCheckCitationsResult: (result: CitationCheckResult) => void;
   onFormatCitationResult: (bibtex: string) => void;
   onAltText: (text: string, mimeType: string, base64: string) => void;
   onExplainCodeResult: (explanation: string) => void;
@@ -196,6 +165,8 @@ export function useWebSocket(callbacks: UseWebSocketCallbacks): {
           case "error":
             cb.onError(msg.message);
             break;
+          default:
+            assertNever(msg);
         }
       };
     }

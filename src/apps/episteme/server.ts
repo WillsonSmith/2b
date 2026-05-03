@@ -1,73 +1,16 @@
 /**
  * Episteme HTTP + WebSocket server.
  *
- * WebSocket protocol (client → server):
- *   { type: "send",                text }               — chat message to agent
- *   { type: "interrupt" }                               — abort in-flight LLM call
- *   { type: "editor_context",      file, content, cursor } — editor state update
- *   { type: "file_open",           path }               — read file from workspace
- *   { type: "file_save",           path, content }      — write file to workspace
- *   { type: "list_workspace" }                          — request workspace file list
- *   { type: "autocomplete_request", context }           — request ghost-text suggestion
- *   { type: "outline_request",     topic }              — generate outline for topic
- *   { type: "ingest_url",          url }                — ingest URL via ResearchPlugin
- *   { type: "ingest_pdf",          path }               — ingest workspace PDF path
- *   { type: "tone_transform",      text, tone, from, to } — transform selection tone
- *   { type: "summarize_request",   text, insertPos }    — summarize text, insert at pos
- *   { type: "metadata_request",    title, preview }     — generate YAML frontmatter
- *   { type: "toc_request",         markdown }           — generate narrative TOC
- *   { type: "autolink_request",    markdown, files }    — detect wikilink candidates
- *   { type: "diagram_request",     description, from, to } — generate Mermaid diagram
- *   { type: "table_request",       text, insertPos }    — generate Markdown table
- *   { type: "search_request",      query }              — unified search (arXiv + Wikipedia + workspace)
- *   { type: "detect_gaps_request", topic }              — detect knowledge gaps in workspace
- *   { type: "contradictions_request" }                  — fetch stored contradictions
- *   { type: "contradiction_scan_request" }              — run a new contradiction scan now
- *   { type: "graph_request" }                           — fetch knowledge graph data
- *   { type: "check_citations_request" }                 — validate bibliography URLs
- *   { type: "format_citation_request", url }            — format a URL as BibTeX
- *   { type: "analyze_image",       base64, mimeType, filename } — generate alt text for image
- *   { type: "explain_code",        code, language }     — explain a code block
- *   { type: "voice_data",          audioBase64, mimeType } — transcribe recorded audio
- *
- * WebSocket protocol (server → client):
- *   { type: "speak",                text }
- *   { type: "state_change",         state }             — "idle" | "thinking"
- *   { type: "tool_call",            name, args }
- *   { type: "tool_result",          name }
- *   { type: "file_content",         path, content }     — response to file_open
- *   { type: "workspace_files",      files }             — list of relative .md paths
- *   { type: "file_saved" }                              — save confirmed
- *   { type: "autocomplete_suggestion", text }           — ghost-text response
- *   { type: "insert_text",          text }              — insert at cursor (outline)
- *   { type: "ingest_result",        success, message }  — ingest outcome
- *   { type: "tone_result",          text, from, to }    — transformed text + original range
- *   { type: "summarize_result",     text, insertPos }   — summary text + insertion position
- *   { type: "lint_result",          issues }            — array of LintIssue after file_save
- *   { type: "metadata_result",      yaml }              — generated YAML frontmatter
- *   { type: "toc_result",           entries }           — narrative TOC entries
- *   { type: "autolink_result",      suggestions }       — wikilink candidates
- *   { type: "diagram_result",       code, from, to }    — Mermaid code + original range
- *   { type: "table_result",         text, insertPos }   — Markdown table + insertion pos
- *   { type: "search_result",        results }           — unified search response
- *   { type: "detect_gaps_result",   markdown }          — gap report as Markdown
- *   { type: "contradictions_data",  contradictions }    — stored contradiction records
- *   { type: "graph_data",           nodes, links }      — knowledge graph data
- *   { type: "check_citations_result", valid, broken }   — citation validation result
- *   { type: "format_citation_result", bibtex }          — formatted BibTeX entry
- *   { type: "alt_text",             text, mimeType, base64 } — generated alt text + image data
- *   { type: "explain_code_result",  explanation }       — code explanation
- *   { type: "transcript",           text }              — voice transcription result
- *   { type: "error",                message }
+ * WebSocket protocol: see ./protocol.ts (ClientMsg, ServerMsg).
  *
  * REST:
- *   GET  /api/health
- *   GET  /api/style-guide
+ *   GET   /api/health
+ *   GET   /api/style-guide
  *   PATCH /api/style-guide    body: raw Markdown text
- *   GET  /api/config
+ *   GET   /api/config
  *   PATCH /api/config         { models }
- *   POST /api/export          { filePath, format, includeFrontmatter }
- *   GET  /api/exports/:filename
+ *   POST  /api/export         { filePath, format, includeFrontmatter }
+ *   GET   /api/exports/:filename
  */
 import type { ServerWebSocket } from "bun";
 import { resolve, join, basename, dirname } from "node:path";
@@ -85,80 +28,11 @@ import { generateFrontmatter } from "./features/metadata.ts";
 import { generateNarrativeToc, extractSectionsFromMarkdown } from "./features/toc.ts";
 import { detectAutolinkCandidates } from "./features/autolink.ts";
 import { generateTable } from "./features/table.ts";
-import type { UnifiedSearchResponse } from "./plugins/ResearchPlugin.ts";
 import { queryContradictions, runContradictionScan, buildKnowledgeGraph } from "./features/contradiction.ts";
-import type { ContradictionRecord, GraphData } from "./features/contradiction.ts";
-import type { CitationCheckResult } from "./plugins/CitationPlugin.ts";
-import type { Tone } from "./features/tone.ts";
-import type { LintIssue } from "./features/lint.ts";
-import type { TocEntry } from "./features/toc.ts";
-import type { WikilinkSuggestion } from "./features/autolink.ts";
 import { checkPandoc, exportDocument, pandocAvailable } from "./features/export.ts";
 import { explainCode } from "./features/explain.ts";
+import { assertNever, type ClientMsg, type ServerMsg } from "./protocol.ts";
 import index from "./index.html";
-
-type ClientMsg =
-  | { type: "send"; text: string }
-  | { type: "interrupt" }
-  | { type: "editor_context"; file: string; content: string; cursor: number }
-  | { type: "file_open"; path: string }
-  | { type: "file_save"; path: string; content: string }
-  | { type: "file_create"; path: string }
-  | { type: "file_rename"; oldPath: string; newPath: string }
-  | { type: "list_workspace" }
-  | { type: "autocomplete_request"; context: string }
-  | { type: "outline_request"; topic: string }
-  | { type: "ingest_url"; url: string }
-  | { type: "ingest_pdf"; path: string }
-  | { type: "tone_transform"; text: string; tone: Tone; from: number; to: number }
-  | { type: "summarize_request"; text: string; insertPos: number }
-  | { type: "metadata_request"; title: string; preview: string }
-  | { type: "toc_request"; markdown: string }
-  | { type: "autolink_request"; markdown: string; files: string[] }
-  | { type: "diagram_request"; description: string; from: number; to: number }
-  | { type: "table_request"; text: string; insertPos: number }
-  | { type: "search_request"; query: string }
-  | { type: "detect_gaps_request"; topic: string }
-  | { type: "contradictions_request" }
-  | { type: "contradiction_scan_request" }
-  | { type: "graph_request" }
-  | { type: "check_citations_request" }
-  | { type: "format_citation_request"; url: string }
-  | { type: "analyze_image"; base64: string; mimeType: string; filename: string }
-  | { type: "explain_code"; code: string; language: string }
-  | { type: "voice_data"; audioBase64: string; mimeType: string };
-
-type ServerMsg =
-  | { type: "speak"; text: string }
-  | { type: "state_change"; state: "idle" | "thinking" }
-  | { type: "tool_call"; name: string; args: Record<string, unknown> }
-  | { type: "tool_result"; name: string }
-  | { type: "file_content"; path: string; content: string }
-  | { type: "workspace_files"; files: string[] }
-  | { type: "file_saved" }
-  | { type: "file_created"; path: string }
-  | { type: "file_renamed"; oldPath: string; newPath: string }
-  | { type: "autocomplete_suggestion"; text: string }
-  | { type: "insert_text"; text: string }
-  | { type: "ingest_result"; success: boolean; message: string }
-  | { type: "tone_result"; text: string; from: number; to: number }
-  | { type: "summarize_result"; text: string; insertPos: number }
-  | { type: "lint_result"; issues: LintIssue[] }
-  | { type: "metadata_result"; yaml: string }
-  | { type: "toc_result"; entries: TocEntry[] }
-  | { type: "autolink_result"; suggestions: WikilinkSuggestion[] }
-  | { type: "diagram_result"; code: string; from: number; to: number }
-  | { type: "table_result"; text: string; insertPos: number }
-  | { type: "search_result"; results: UnifiedSearchResponse }
-  | { type: "detect_gaps_result"; markdown: string }
-  | { type: "contradictions_data"; contradictions: ContradictionRecord[] }
-  | { type: "graph_data"; data: GraphData }
-  | { type: "check_citations_result"; result: CitationCheckResult }
-  | { type: "format_citation_result"; bibtex: string }
-  | { type: "alt_text"; text: string; mimeType: string; base64: string }
-  | { type: "explain_code_result"; explanation: string }
-  | { type: "transcript"; text: string }
-  | { type: "error"; message: string };
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -738,6 +612,9 @@ export async function startEpistemServer(
             }
             break;
           }
+
+          default:
+            assertNever(msg);
         }
       },
     },
