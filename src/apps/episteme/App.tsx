@@ -153,6 +153,7 @@ function App() {
   const [dismissedLargeFile, setDismissedLargeFile] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [editorCounts, setEditorCounts] = useState({ words: 0, chars: 0 });
+  const [indexProgress, setIndexProgress] = useState<{ indexed: number; total: number } | null>(null);
 
   const ws = useWebSocket();
 
@@ -470,6 +471,10 @@ function App() {
       editorFeatures.setLintIssues([]);
       editorFeatures.setAutolinkSuggestions([]);
     });
+    const unsubIndex = ws.subscribe("index_progress", (msg) => {
+      if (msg.total === 0 || msg.indexed >= msg.total) setIndexProgress(null);
+      else setIndexProgress({ indexed: msg.indexed, total: msg.total });
+    });
     return () => {
       unsubSpeak();
       unsubToolCall();
@@ -481,6 +486,7 @@ function App() {
       unsubError();
       unsubFileContent();
       unsubFileCreated();
+      unsubIndex();
     };
   }, [ws.subscribe, fileManager.refreshFiles, editorFeatures, research, conflictsGraph]);
 
@@ -597,6 +603,11 @@ function App() {
         >
           <Settings size={16} />
         </button>
+        {indexProgress && (
+          <span className="app-header-index-progress" title="Indexing workspace files">
+            Indexing {indexProgress.indexed}/{indexProgress.total}
+          </span>
+        )}
         <span
           className={`app-header-status${ws.agentState === "thinking" ? " thinking" : ws.agentState === "disconnected" ? " disconnected" : ""}`}
         >
@@ -797,8 +808,10 @@ function App() {
           <KnowledgeGraph
             onClose={() => conflictsGraph.setShowGraph(false)}
             onRefresh={conflictsGraph.handleRefreshGraph}
+            onLoadMore={conflictsGraph.handleLoadMoreGraph}
             onNodeClick={conflictsGraph.handleGraphNodeClick}
             graphData={conflictsGraph.graphData}
+            pagination={conflictsGraph.graphPagination}
             isLoading={conflictsGraph.isLoadingGraph}
           />
         )}

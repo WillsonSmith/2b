@@ -9,9 +9,11 @@ import { featureModel } from "../config.ts";
 import type { WorkspaceDb } from "../db/workspaceDb.ts";
 
 const TAG = "ContradictionScanner";
-const WINDOW = 15;
-const STRIDE = Math.ceil(WINDOW / 2);
-const SCAN_INTERVAL_MS = 30 * 60 * 1000;
+const DEFAULT_WINDOW = 15;
+const DEFAULT_STRIDE = Math.ceil(DEFAULT_WINDOW / 2);
+const DEFAULT_INTERVAL_MS = 30 * 60 * 1000;
+const DEFAULT_GRAPH_LIMIT = 500;
+const META_LAST_SCAN_KEY = "contradiction_last_scan_at";
 
 const SYSTEM = `You are a research assistant analyzing statements for definite logical contradictions.
 A contradiction is when two statements assert directly opposing facts — not just different perspectives, emphasis, or levels of detail.
@@ -89,7 +91,8 @@ export class ContradictionPlugin implements AgentPlugin {
   }
 
   onInit(agent: BaseAgent): void {
-    agent.scheduleProactiveTick(SCAN_INTERVAL_MS, () => {
+    const intervalMs = this.config.contradictionScan?.intervalMs ?? DEFAULT_INTERVAL_MS;
+    agent.scheduleProactiveTick(intervalMs, () => {
       this.runScan().then((found) => {
         if (found.length > 0) {
           logger.info("Episteme", `Background scan found ${found.length} new contradiction(s)`);
@@ -147,22 +150,35 @@ export class ContradictionPlugin implements AgentPlugin {
   }
 
   async runScan(): Promise<ContradictionRecord[]> {
-    const candidates = this.memory.queryMemoriesRaw({
+    const window = this.config.contradictionScan?.window ?? DEFAULT_WINDOW;
+    const stride = this.config.contradictionScan?.stride ?? DEFAULT_STRIDE;
+
+    const lastScanRaw = this.workspaceDb.getMeta(META_LAST_SCAN_KEY);
+    const lastScanAt = lastScanRaw ? Number(lastScanRaw) : 0;
+    const scanStartedAt = Date.now();
+
+    const filter: Parameters<typeof this.memory.queryMemoriesRaw>[0] = {
       types: ["factual"],
       limit: 100,
-    });
+    };
+    if (lastScanAt > 0) filter.after = lastScanAt;
+    const candidates = this.memory.queryMemoriesRaw(filter);
 
-    if (candidates.length < 2) return [];
+    if (candidates.length < 2) {
+      // Still bump the marker so future runs only see truly newer memories.
+      this.workspaceDb.setMeta(META_LAST_SCAN_KEY, String(scanStartedAt));
+      return [];
+    }
 
-    logger.info(TAG, `Scanning ${candidates.length} factual memories for contradictions`);
+    logger.info(TAG, `Scanning ${candidates.length} factual memories for contradictions (after=${lastScanAt})`);
 
     const results: ContradictionRecord[] = [];
 
-    for (let i = 0; i < candidates.length; i += STRIDE) {
-      const window = candidates.slice(i, i + WINDOW);
-      if (window.length < 2) continue;
+    for (let i = 0; i < candidates.length; i += stride) {
+      const batch = candidates.slice(i, i + window);
+      if (batch.length < 2) continue;
 
-      const prompt = window
+      const prompt = batch
         .map((m, idx) => `[${idx}] ${m.text.replace(/\n+/g, " ").slice(0, 300)}`)
         .join("\n\n");
 
@@ -177,8 +193,8 @@ export class ContradictionPlugin implements AgentPlugin {
       }
 
       for (const pair of pairs) {
-        const memA = window[pair.indexA];
-        const memB = window[pair.indexB];
+        const memA = batch[pair.indexA];
+        const memB = batch[pair.indexB];
         if (!memA || !memB) continue;
 
         if (this.workspaceDb.contradictionPairExists(memA.id, memB.id)) continue;
@@ -211,6 +227,7 @@ export class ContradictionPlugin implements AgentPlugin {
       }
     }
 
+    this.workspaceDb.setMeta(META_LAST_SCAN_KEY, String(scanStartedAt));
     logger.info(TAG, `Scan complete — ${results.length} new contradictions found`);
     return results;
   }
@@ -227,14 +244,20 @@ export class ContradictionPlugin implements AgentPlugin {
     }));
   }
 
-  buildKnowledgeGraph(): GraphData {
+  buildKnowledgeGraph(
+    limit: number = DEFAULT_GRAPH_LIMIT,
+    offset: number = 0,
+  ): GraphData & { pagination: { offset: number; limit: number; totalFiles: number } } {
     const nodes: GraphNode[] = [];
     const links: GraphLink[] = [];
     const nodeIds = new Set<string>();
 
-    for (const row of this.workspaceDb.listWorkspaceFiles()) {
+    const totalFiles = this.workspaceDb.countWorkspaceFiles();
+    for (const row of this.workspaceDb.listWorkspaceFileSummaries(limit, offset)) {
       const id = `file:${row.relPath}`;
-      const label = row.relPath.split("/").at(-1)?.replace(/\.md$/i, "") ?? row.relPath;
+      const label = row.firstLine?.trim()
+        ? row.firstLine.replace(/^#+\s*/, "").slice(0, 50)
+        : row.relPath.split("/").at(-1)?.replace(/\.md$/i, "") ?? row.relPath;
       nodes.push({
         id,
         label,
@@ -294,6 +317,6 @@ export class ContradictionPlugin implements AgentPlugin {
       }
     }
 
-    return { nodes, links };
+    return { nodes, links, pagination: { offset, limit, totalFiles } };
   }
 }

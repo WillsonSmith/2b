@@ -88,7 +88,8 @@ export async function handleResearch(
     }
 
     case "graph_request": {
-      send(ws, { type: "graph_data", data: contradiction.buildKnowledgeGraph() });
+      const { pagination, ...data } = contradiction.buildKnowledgeGraph(msg.limit, msg.offset);
+      send(ws, { type: "graph_data", data, pagination });
       return;
     }
 

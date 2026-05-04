@@ -40,7 +40,7 @@ export type ClientMsg =
   | { type: "detect_gaps_request"; topic: string }
   | { type: "contradictions_request" }
   | { type: "contradiction_scan_request" }
-  | { type: "graph_request" }
+  | { type: "graph_request"; limit?: number; offset?: number }
   | { type: "check_citations_request" }
   | { type: "format_citation_request"; url: string }
   | { type: "analyze_image"; base64: string; mimeType: string; filename: string }
@@ -55,6 +55,7 @@ export type ServerMsg =
   | { type: "tool_result"; name: string }
   | { type: "file_content"; path: string; content: string }
   | { type: "workspace_files"; files: string[] }
+  | { type: "index_progress"; indexed: number; total: number }
   | { type: "file_saved" }
   | { type: "file_created"; path: string }
   | { type: "file_renamed"; oldPath: string; newPath: string }
@@ -72,7 +73,7 @@ export type ServerMsg =
   | { type: "search_result"; results: UnifiedSearchResponse }
   | { type: "detect_gaps_result"; markdown: string }
   | { type: "contradictions_data"; contradictions: ContradictionRecord[] }
-  | { type: "graph_data"; data: GraphData }
+  | { type: "graph_data"; data: GraphData; pagination: { offset: number; limit: number; totalFiles: number } }
   | { type: "check_citations_result"; result: CitationCheckResult }
   | { type: "format_citation_result"; bibtex: string }
   | { type: "alt_text"; text: string }

@@ -19,6 +19,12 @@ export interface WorkspaceSearchHit {
   excerpt: string;
 }
 
+export interface WorkspaceFileSummary {
+  relPath: string;
+  firstLine: string | null;
+  wordCount: number | null;
+}
+
 export interface FileLinkRow {
   sourcePath: string;
   targetPath: string;
@@ -94,7 +100,7 @@ interface IngestedPdfRecord {
   ingested_at: number;
 }
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /**
  * Structural data store for the Episteme workspace: files, link edges,
@@ -109,6 +115,8 @@ export class WorkspaceDb {
   private stmtUpsertFile!: ReturnType<Database["prepare"]>;
   private stmtGetFile!: ReturnType<Database["prepare"]>;
   private stmtListFiles!: ReturnType<Database["prepare"]>;
+  private stmtListFileSummaries!: ReturnType<Database["prepare"]>;
+  private stmtCountFiles!: ReturnType<Database["prepare"]>;
   private stmtDeleteFile!: ReturnType<Database["prepare"]>;
   private stmtSearchFiles!: ReturnType<Database["prepare"]>;
   private stmtDeleteLinks!: ReturnType<Database["prepare"]>;
@@ -124,6 +132,8 @@ export class WorkspaceDb {
   private stmtRecordPdf!: ReturnType<Database["prepare"]>;
   private stmtGetPdf!: ReturnType<Database["prepare"]>;
   private stmtListPdfs!: ReturnType<Database["prepare"]>;
+  private stmtGetMeta!: ReturnType<Database["prepare"]>;
+  private stmtSetMeta!: ReturnType<Database["prepare"]>;
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath, { create: true });
@@ -240,11 +250,20 @@ export class WorkspaceDb {
       )
     `);
 
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS ws_meta (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    `);
+
     if (previousVersion > 0 && previousVersion < 2) {
       this.db.run(`
         INSERT INTO ws_files_fts(rowid, rel_path, first_line, content)
         SELECT rowid, rel_path, first_line, content FROM ws_files
       `);
+    }
+    if (previousVersion > 0 && previousVersion < SCHEMA_VERSION) {
       this.db.run("UPDATE ws_schema_version SET version = ?", [SCHEMA_VERSION]);
     }
   }
@@ -264,6 +283,13 @@ export class WorkspaceDb {
     `);
     this.stmtGetFile = this.db.prepare("SELECT * FROM ws_files WHERE rel_path = ?");
     this.stmtListFiles = this.db.prepare("SELECT * FROM ws_files ORDER BY rel_path");
+    this.stmtListFileSummaries = this.db.prepare(`
+      SELECT rel_path, first_line, word_count
+      FROM ws_files
+      ORDER BY rel_path
+      LIMIT ? OFFSET ?
+    `);
+    this.stmtCountFiles = this.db.prepare("SELECT COUNT(*) AS c FROM ws_files");
     this.stmtDeleteFile = this.db.prepare("DELETE FROM ws_files WHERE rel_path = ?");
     this.stmtSearchFiles = this.db.prepare(`
       SELECT
@@ -330,6 +356,12 @@ export class WorkspaceDb {
     this.stmtListPdfs = this.db.prepare(
       "SELECT * FROM ingested_pdfs ORDER BY ingested_at DESC LIMIT ?",
     );
+
+    this.stmtGetMeta = this.db.prepare("SELECT value FROM ws_meta WHERE key = ?");
+    this.stmtSetMeta = this.db.prepare(`
+      INSERT INTO ws_meta (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `);
   }
 
   // ── workspace files ──────────────────────────────────────────────────────
@@ -356,6 +388,28 @@ export class WorkspaceDb {
   listWorkspaceFiles(): WorkspaceFileRow[] {
     const rows = this.stmtListFiles.all() as WsFileRecord[];
     return rows.map(toWorkspaceFileRow);
+  }
+
+  /**
+   * Lightweight projection — omits content + content_hash + mtime + size.
+   * Use when you only need labels for UI / graph rendering.
+   */
+  listWorkspaceFileSummaries(limit: number, offset: number = 0): WorkspaceFileSummary[] {
+    const rows = this.stmtListFileSummaries.all(limit, offset) as Array<{
+      rel_path: string;
+      first_line: string | null;
+      word_count: number | null;
+    }>;
+    return rows.map((r) => ({
+      relPath: r.rel_path,
+      firstLine: r.first_line,
+      wordCount: r.word_count,
+    }));
+  }
+
+  countWorkspaceFiles(): number {
+    const r = this.stmtCountFiles.get() as { c: number } | null;
+    return r?.c ?? 0;
   }
 
   deleteWorkspaceFile(relPath: string): void {
@@ -461,6 +515,17 @@ export class WorkspaceDb {
   listIngestedPdfs(limit: number = 50): IngestedPdfRow[] {
     const rows = this.stmtListPdfs.all(limit) as IngestedPdfRecord[];
     return rows.map(toIngestedPdfRow);
+  }
+
+  // ── meta ─────────────────────────────────────────────────────────────────
+
+  getMeta(key: string): string | null {
+    const r = this.stmtGetMeta.get(key) as { value: string } | null;
+    return r?.value ?? null;
+  }
+
+  setMeta(key: string, value: string): void {
+    this.stmtSetMeta.run(key, value);
   }
 
   close(): void {

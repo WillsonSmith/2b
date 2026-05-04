@@ -15,10 +15,16 @@ export class WorkspacePlugin implements AgentPlugin {
   name = "Workspace";
   private readonly root: string;
   private readonly workspaceDb: WorkspaceDb;
+  private progressListener: ((indexed: number, total: number) => void) | null = null;
 
   constructor(workspaceRoot: string, workspaceDb: WorkspaceDb) {
     this.root = resolve(workspaceRoot);
     this.workspaceDb = workspaceDb;
+  }
+
+  /** Register a callback invoked once before, and once after each batch of, index(). */
+  setIndexProgressListener(listener: (indexed: number, total: number) => void): void {
+    this.progressListener = listener;
   }
 
   getSystemPromptFragment(): string {
@@ -92,8 +98,12 @@ export class WorkspacePlugin implements AgentPlugin {
   /**
    * Public entry point — called directly on startup and by the agent via executeTool.
    * Incremental: skips files whose (mtime, size) match the stored row.
+   * Reads files in parallel batches of 16; calls onProgress after each batch.
    */
-  async index(): Promise<unknown> {
+  async index(
+    onProgress?: (indexed: number, total: number) => void,
+  ): Promise<unknown> {
+    const BATCH_SIZE = 16;
     const glob = new Bun.Glob("**/*.md");
     const files: string[] = [];
 
@@ -103,47 +113,25 @@ export class WorkspacePlugin implements AgentPlugin {
 
     let indexed = 0;
     let skipped = 0;
-    const seen = new Set<string>();
+    let processed = 0;
+    const seen = new Set<string>(files);
+    const total = files.length;
+    const emit = (n: number) => {
+      onProgress?.(n, total);
+      this.progressListener?.(n, total);
+    };
 
-    for (const relPath of files) {
-      seen.add(relPath);
-      try {
-        const absPath = join(this.root, relPath);
-        const fileStat = await stat(absPath);
-        const mtime = fileStat.mtimeMs;
-        const size = fileStat.size;
+    emit(0);
 
-        const existing = this.workspaceDb.getWorkspaceFile(relPath);
-        if (existing && existing.mtime === mtime && existing.size === size) {
-          skipped++;
-          continue;
-        }
-
-        const content = await Bun.file(absPath).text();
-        const hasher = new Bun.CryptoHasher("sha256");
-        hasher.update(content);
-        const contentHash = hasher.digest("hex");
-        const lines = content.split("\n");
-        const firstLine = lines.find((l) => l.trim().length > 0)?.trim().slice(0, 120) ?? null;
-        const wordCount = content.split(/\s+/).filter(Boolean).length;
-
-        this.workspaceDb.upsertWorkspaceFile({
-          relPath,
-          content,
-          mtime,
-          size,
-          contentHash,
-          firstLine,
-          wordCount,
-        });
-
-        const links = extractLinksForFile(content, files);
-        this.workspaceDb.replaceFileLinks(relPath, links);
-
-        indexed++;
-      } catch (err) {
-        logger.warn(this.name, `Failed to index ${relPath}:`, err);
+    for (let i = 0; i < files.length; i += BATCH_SIZE) {
+      const batch = files.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(batch.map((relPath) => this.indexFile(relPath, files)));
+      for (const r of results) {
+        if (r === "indexed") indexed++;
+        else if (r === "skipped") skipped++;
       }
+      processed += batch.length;
+      emit(processed);
     }
 
     // Prune rows whose files no longer exist on disk.
@@ -159,9 +147,53 @@ export class WorkspacePlugin implements AgentPlugin {
       indexed,
       skipped,
       deleted,
-      total: files.length,
+      total,
       message: `Indexed ${indexed} (skipped ${skipped} unchanged, deleted ${deleted}).`,
     };
+  }
+
+  /** Index one file. Returns the outcome so the batched caller can tally. */
+  private async indexFile(
+    relPath: string,
+    allFiles: string[],
+  ): Promise<"indexed" | "skipped" | "failed"> {
+    try {
+      const absPath = join(this.root, relPath);
+      const fileStat = await stat(absPath);
+      const mtime = fileStat.mtimeMs;
+      const size = fileStat.size;
+
+      const existing = this.workspaceDb.getWorkspaceFile(relPath);
+      if (existing && existing.mtime === mtime && existing.size === size) {
+        return "skipped";
+      }
+
+      const content = await Bun.file(absPath).text();
+      const hasher = new Bun.CryptoHasher("sha256");
+      hasher.update(content);
+      const contentHash = hasher.digest("hex");
+      const lines = content.split("\n");
+      const firstLine = lines.find((l) => l.trim().length > 0)?.trim().slice(0, 120) ?? null;
+      const wordCount = content.split(/\s+/).filter(Boolean).length;
+
+      this.workspaceDb.upsertWorkspaceFile({
+        relPath,
+        content,
+        mtime,
+        size,
+        contentHash,
+        firstLine,
+        wordCount,
+      });
+
+      const links = extractLinksForFile(content, allFiles);
+      this.workspaceDb.replaceFileLinks(relPath, links);
+
+      return "indexed";
+    } catch (err) {
+      logger.warn(this.name, `Failed to index ${relPath}:`, err);
+      return "failed";
+    }
   }
 
   /** FTS-backed workspace search. Returns [] for empty queries. */

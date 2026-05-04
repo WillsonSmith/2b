@@ -7,16 +7,20 @@ export type { GraphData, GraphNode, GraphLink };
 interface KnowledgeGraphProps {
   onClose: () => void;
   onRefresh: () => void;
+  onLoadMore?: () => void;
   onNodeClick: (file: string) => void;
   graphData: GraphData | null;
+  pagination?: { offset: number; limit: number; totalFiles: number } | null;
   isLoading: boolean;
 }
 
 export function KnowledgeGraph({
   onClose,
   onRefresh,
+  onLoadMore,
   onNodeClick,
   graphData,
+  pagination,
   isLoading,
 }: KnowledgeGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -118,6 +122,17 @@ export function KnowledgeGraph({
       {graphData && !isEmpty && (
         <div className="knowledge-graph-footer">
           {graphData.nodes.length} nodes · {graphData.links.length} links
+          {pagination && pagination.offset + pagination.limit < pagination.totalFiles && onLoadMore && (
+            <button
+              className="knowledge-graph-btn"
+              style={{ marginLeft: 8 }}
+              onClick={onLoadMore}
+              disabled={isLoading}
+              title={`Showing ${pagination.offset + pagination.limit} of ${pagination.totalFiles} files`}
+            >
+              Load more
+            </button>
+          )}
         </div>
       )}
     </div>
