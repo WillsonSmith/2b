@@ -1,7 +1,8 @@
 import type { AgentPlugin } from "../../../core/Plugin.ts";
 
-/** Maximum characters of document content injected into the agent context per turn. */
-const CONTENT_BUDGET = 6000;
+/** Half-window of document content injected around the cursor (bytes per side). */
+const WINDOW_HALF = 3000;
+const ELISION_MARKER = "[...truncated...]";
 
 export class EditorContextPlugin implements AgentPlugin {
   name = "EditorContext";
@@ -27,10 +28,19 @@ export class EditorContextPlugin implements AgentPlugin {
 
   getContext(): string {
     if (!this.currentFile) return "";
-    const preview =
-      this.currentContent.length > CONTENT_BUDGET
-        ? this.currentContent.slice(0, CONTENT_BUDGET) + "\n...[document truncated]"
-        : this.currentContent;
-    return `[Current Document: ${this.currentFile}]\n${preview}`;
+    return `[Current Document: ${this.currentFile}]\n${this.windowedContent()}`;
+  }
+
+  private windowedContent(): string {
+    const total = this.currentContent.length;
+    if (total <= WINDOW_HALF * 2) return this.currentContent;
+
+    const cursor = Math.max(0, Math.min(this.currentCursor, total));
+    const start = Math.max(0, cursor - WINDOW_HALF);
+    const end = Math.min(total, cursor + WINDOW_HALF);
+    const middle = this.currentContent.slice(start, end);
+    const head = start > 0 ? `${ELISION_MARKER}\n` : "";
+    const tail = end < total ? `\n${ELISION_MARKER}` : "";
+    return `${head}${middle}${tail}`;
   }
 }

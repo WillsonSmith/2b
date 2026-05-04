@@ -29,7 +29,7 @@ describe("WorkspacePlugin.index() — wikilink resolution", () => {
     await writeFile(join(root, "notes", "beta.md"), "# Beta\nplain content");
 
     const db = new WorkspaceDb(":memory:");
-    const plugin = new WorkspacePlugin(root, null, db);
+    const plugin = new WorkspacePlugin(root, db);
     await plugin.index();
 
     const links = db.getOutboundLinks("notes/alpha.md");
@@ -45,7 +45,7 @@ describe("WorkspacePlugin.index() — wikilink resolution", () => {
     await writeFile(join(root, "deep", "nested", "target.md"), "ok");
 
     const db = new WorkspaceDb(":memory:");
-    const plugin = new WorkspacePlugin(root, null, db);
+    const plugin = new WorkspacePlugin(root, db);
     await plugin.index();
 
     const links = db.getOutboundLinks("src.md");
@@ -59,7 +59,7 @@ describe("WorkspacePlugin.index() — wikilink resolution", () => {
     await writeFile(join(root, "foo.md"), "ok");
 
     const db = new WorkspaceDb(":memory:");
-    const plugin = new WorkspacePlugin(root, null, db);
+    const plugin = new WorkspacePlugin(root, db);
     await plugin.index();
 
     const links = db.getOutboundLinks("src.md");
@@ -72,7 +72,7 @@ describe("WorkspacePlugin.index() — wikilink resolution", () => {
     await writeFile(join(root, "stable.md"), "content");
 
     const db = new WorkspaceDb(":memory:");
-    const plugin = new WorkspacePlugin(root, null, db);
+    const plugin = new WorkspacePlugin(root, db);
     const first = (await plugin.index()) as { indexed: number; skipped: number };
     expect(first.indexed).toBe(1);
     expect(first.skipped).toBe(0);
@@ -88,7 +88,7 @@ describe("WorkspacePlugin.index() — wikilink resolution", () => {
     await writeFile(join(root, "gone.md"), "will be removed");
 
     const db = new WorkspaceDb(":memory:");
-    const plugin = new WorkspacePlugin(root, null, db);
+    const plugin = new WorkspacePlugin(root, db);
     await plugin.index();
     expect(db.getWorkspaceFile("gone.md")).not.toBeNull();
 
@@ -107,7 +107,7 @@ describe("buildKnowledgeGraph — wikilink edges", () => {
     await writeFile(join(root, "target.md"), "ok");
 
     const db = new WorkspaceDb(":memory:");
-    const plugin = new WorkspacePlugin(root, null, db);
+    const plugin = new WorkspacePlugin(root, db);
     await plugin.index();
 
     // The graph builder takes a memory plugin too; pass a stub that returns no

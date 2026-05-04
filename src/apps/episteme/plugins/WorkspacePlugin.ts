@@ -1,7 +1,6 @@
 import { join, resolve } from "node:path";
 import { stat } from "node:fs/promises";
 import type { AgentPlugin, ToolDefinition } from "../../../core/Plugin.ts";
-import type { CortexMemoryPlugin } from "../../../plugins/CortexMemoryPlugin.ts";
 import { logger } from "../../../logger.ts";
 import type { WorkspaceDb, FileLinkRow } from "../db/workspaceDb.ts";
 import { findWikilinks, resolveWikilinkTarget } from "../features/wikilinks.ts";
@@ -9,23 +8,16 @@ import { findWikilinks, resolveWikilinkTarget } from "../features/wikilinks.ts";
 /**
  * Provides workspace-level file access and indexing to the agent.
  *
- * Structural truth lives in `WorkspaceDb` (ws_files + ws_file_links). Memory
- * entries are dual-written for FTS / embeddings coverage but the DB row is the
- * authoritative record for the knowledge graph and incremental reindex.
+ * Structural truth lives in `WorkspaceDb` (ws_files + ws_file_links + ws_files_fts).
+ * Workspace search runs against the FTS5 index.
  */
 export class WorkspacePlugin implements AgentPlugin {
   name = "Workspace";
   private readonly root: string;
-  private readonly memory: CortexMemoryPlugin | null;
   private readonly workspaceDb: WorkspaceDb;
 
-  constructor(
-    workspaceRoot: string,
-    memory: CortexMemoryPlugin | null,
-    workspaceDb: WorkspaceDb,
-  ) {
+  constructor(workspaceRoot: string, workspaceDb: WorkspaceDb) {
     this.root = resolve(workspaceRoot);
-    this.memory = memory;
     this.workspaceDb = workspaceDb;
   }
 
@@ -148,18 +140,6 @@ export class WorkspacePlugin implements AgentPlugin {
         const links = extractLinksForFile(content, files);
         this.workspaceDb.replaceFileLinks(relPath, links);
 
-        // Dual-write into memory for FTS / embeddings coverage. Memory has no
-        // upsert/delete API, so re-indexes accumulate duplicate memory entries —
-        // the structural row in ws_files remains the source of truth.
-        if (this.memory) {
-          await this.memory.writeMemory(
-            `[File: ${relPath}]\n${content}`,
-            "factual",
-            ["workspace-file", relPath],
-            "workspace-index",
-          );
-        }
-
         indexed++;
       } catch (err) {
         logger.warn(this.name, `Failed to index ${relPath}:`, err);
@@ -187,41 +167,22 @@ export class WorkspacePlugin implements AgentPlugin {
   private searchWorkspace(query: string, limit: number): unknown {
     if (!query.trim()) return { results: [], message: "Empty query." };
 
-    const results: Array<{ path: string; excerpt: string; source: string }> = [];
-
-    // 1. Structural LIKE search across ws_files.
-    const dbHits = this.workspaceDb.searchWorkspaceFiles(query, limit + 2);
-    for (const row of dbHits) {
-      const excerpt = row.content.slice(0, 300).replace(/\n+/g, " ").trim();
-      results.push({ path: row.relPath, excerpt, source: "index" });
-    }
-
-    // 2. Memory FTS fallback for prose-level matches that miss LIKE.
-    if (results.length < limit && this.memory) {
-      const hits = this.memory.queryMemoriesRaw({
-        types: ["factual"],
-        contains: query,
-        limit: limit + 2,
-      });
-      for (const hit of hits) {
-        if (!hit.tags?.includes("workspace-file")) continue;
-        const path = hit.tags.find((t) => t !== "workspace-file") ?? "";
-        if (results.find((r) => r.path === path)) continue;
-        const excerpt = hit.text.slice(0, 300).replace(/\n+/g, " ").trim();
-        results.push({ path, excerpt, source: "memory" });
-        if (results.length >= limit) break;
-      }
-    }
-
-    if (results.length === 0 && this.workspaceDb.listWorkspaceFiles().length === 0) {
+    const hits = this.workspaceDb.searchWorkspaceFiles(query, limit);
+    if (hits.length === 0 && this.workspaceDb.listWorkspaceFiles().length === 0) {
       return {
         results: [],
         message:
           "No results. Workspace is not indexed yet — run index_workspace first for full search.",
       };
     }
-
-    return { results: results.slice(0, limit), query };
+    return {
+      results: hits.map((h) => ({
+        path: h.relPath,
+        excerpt: h.excerpt,
+        source: "index",
+      })),
+      query,
+    };
   }
 
   private async getFile(relativePath: string): Promise<unknown> {
@@ -238,22 +199,12 @@ export class WorkspacePlugin implements AgentPlugin {
 
   private factCheck(claim: string): unknown {
     if (!claim.trim()) return { matches: [], message: "Empty claim." };
-    if (!this.memory) {
+    if (this.workspaceDb.listWorkspaceFiles().length === 0) {
       return { matches: [], message: "Workspace not indexed. Run index_workspace first." };
     }
-    const hits = this.memory.queryMemoriesRaw({
-      types: ["factual"],
-      contains: claim,
-      limit: 6,
-    });
-    const matches = hits
-      .filter((h) => h.tags?.includes("workspace-file"))
-      .map((h) => ({
-        path: h.tags?.find((t) => t !== "workspace-file") ?? "",
-        excerpt: h.text.slice(0, 300).replace(/\n+/g, " ").trim(),
-      }));
+    const hits = this.workspaceDb.searchWorkspaceFiles(claim, 6);
     return {
-      matches,
+      matches: hits.map((h) => ({ path: h.relPath, excerpt: h.excerpt })),
       claim,
       note: "Full contradiction detection available in Phase 5.",
     };

@@ -312,23 +312,15 @@ export class ResearchPlugin implements AgentPlugin {
   // ── search_workspace (internal) ────────────────────────────────────────────
 
   private searchWorkspaceMemory(query: string): SearchResult[] {
-    if (!this.memory) return [];
-
-    const memories = this.memory.queryMemoriesRaw({
-      tags: ["workspace-file"],
-      contains: query,
-      limit: 8,
-    });
-
-    return memories.map((m) => {
-      const path = m.tags.find((t) => t !== "workspace-file") ?? "";
-      const title = path.split("/").at(-1)?.replace(/\.md$/i, "") ?? path;
+    const hits = this.workspaceDb.searchWorkspaceFiles(query, 8);
+    return hits.map((h) => {
+      const title = h.relPath.split("/").at(-1)?.replace(/\.md$/i, "") ?? h.relPath;
       return {
         title,
-        excerpt: m.text.replace(/\n+/g, " ").slice(0, 400),
+        excerpt: h.excerpt,
         authors: [],
         date: "",
-        url: path,
+        url: h.relPath,
         source: "workspace" as const,
       };
     });
@@ -360,21 +352,13 @@ export class ResearchPlugin implements AgentPlugin {
   // ── detect_gaps ────────────────────────────────────────────────────────────
 
   async detectGaps(topic: string): Promise<string> {
-    if (!this.memory) {
-      return "# Knowledge Gap Report\n\nNo workspace memory available. Run `index_workspace` first.";
-    }
-
-    const memories = this.memory.queryMemoriesRaw({
-      tags: ["workspace-file"],
-      limit: 20,
-    });
-
-    if (memories.length === 0) {
+    const rows = this.workspaceDb.listWorkspaceFiles().slice(0, 20);
+    if (rows.length === 0) {
       return "# Knowledge Gap Report\n\nNo indexed workspace files found. Run `index_workspace` first.";
     }
 
-    const context = memories
-      .map((m) => m.text.slice(0, 600))
+    const context = rows
+      .map((r) => `[File: ${r.relPath}]\n${r.content.slice(0, 600)}`)
       .join("\n\n---\n\n");
 
     const llm = createProvider(featureModel(this.config, "research"));

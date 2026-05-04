@@ -63,7 +63,7 @@ export function createEpistemAgent(
   });
 
   const editorContext = new EditorContextPlugin();
-  const workspace = new WorkspacePlugin(workspaceRoot, agent.memoryPlugin, workspaceDb);
+  const workspace = new WorkspacePlugin(workspaceRoot, workspaceDb);
   const research = new ResearchPlugin(workspaceRoot, config, agent.memoryPlugin, workspaceDb);
   const styleGuide = new StyleGuidePlugin(workspaceRoot);
   const citation = new CitationPlugin(workspaceRoot, config, editorContext);
