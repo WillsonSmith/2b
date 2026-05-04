@@ -45,7 +45,8 @@ export type ClientMsg =
   | { type: "format_citation_request"; url: string }
   | { type: "analyze_image"; base64: string; mimeType: string; filename: string }
   | { type: "explain_code"; code: string; language: string }
-  | { type: "voice_data"; audioBase64: string; mimeType: string };
+  | { type: "voice_data"; audioBase64: string; mimeType: string }
+  | { type: "lint_request"; content: string };
 
 export type ServerMsg =
   | { type: "speak"; text: string }
@@ -74,7 +75,7 @@ export type ServerMsg =
   | { type: "graph_data"; data: GraphData }
   | { type: "check_citations_result"; result: CitationCheckResult }
   | { type: "format_citation_result"; bibtex: string }
-  | { type: "alt_text"; text: string; mimeType: string; base64: string }
+  | { type: "alt_text"; text: string }
   | { type: "explain_code_result"; explanation: string }
   | { type: "transcript"; text: string }
   | { type: "error"; message: string };

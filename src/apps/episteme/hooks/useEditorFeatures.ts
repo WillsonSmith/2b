@@ -4,6 +4,7 @@ import type { LintIssue } from "../features/lint.ts";
 import type { TocEntry } from "../features/toc.ts";
 import type { WikilinkSuggestion } from "../features/autolink.ts";
 import type { Subscribe } from "./useWebSocket.ts";
+import { useDebounce } from "./useDebounce.ts";
 
 type AgentState = "idle" | "thinking" | "disconnected";
 
@@ -11,6 +12,7 @@ export function useEditorFeatures(
   wsRef: React.MutableRefObject<WebSocket | null>,
   agentState: AgentState,
   activeFile: string | null,
+  editorContent: string,
   editorContentRef: React.MutableRefObject<string>,
   setEditorContent: React.Dispatch<React.SetStateAction<string>>,
   subscribe: Subscribe,
@@ -141,6 +143,16 @@ export function useEditorFeatures(
     },
     [agentState, wsRef],
   );
+
+  // Idle-debounced lint — fires 5s after the user stops typing, decoupled
+  // from autosave so the linter doesn't spin every 2s.
+  const debouncedLintContent = useDebounce(editorContent, 5000);
+  useEffect(() => {
+    if (!activeFile || !wsRef.current || agentState === "disconnected") return;
+    const trimmed = debouncedLintContent.trim();
+    if (!trimmed) return;
+    wsRef.current.send(JSON.stringify({ type: "lint_request", content: debouncedLintContent }));
+  }, [debouncedLintContent, activeFile, agentState, wsRef]);
 
   // Server → client subscriptions
   useEffect(() => {

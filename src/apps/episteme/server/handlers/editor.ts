@@ -22,7 +22,8 @@ export type EditorMsg = Extract<
       | "toc_request"
       | "autolink_request"
       | "diagram_request"
-      | "table_request";
+      | "table_request"
+      | "lint_request";
   }
 >;
 
@@ -31,7 +32,7 @@ export async function handleEditor(
   ctx: WsContext,
   ws: ServerWebSocket<unknown>,
 ): Promise<void> {
-  const { send, broadcast, editorContext, autocomplete, diagram, config } = ctx;
+  const { send, broadcast, editorContext, autocomplete, diagram, linter, config } = ctx;
 
   switch (msg.type) {
     case "editor_context":
@@ -123,6 +124,15 @@ export async function handleEditor(
       }).catch(() => {
         send(ws, { type: "error", message: "Failed to generate table." });
       });
+      return;
+    }
+
+    case "lint_request": {
+      const { content } = msg;
+      if (!content?.trim()) return;
+      linter.run(content).then((issues) => {
+        send(ws, { type: "lint_result", issues });
+      }).catch(() => {});
       return;
     }
   }

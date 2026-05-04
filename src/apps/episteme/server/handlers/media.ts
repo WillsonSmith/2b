@@ -49,10 +49,10 @@ export async function handleMedia(
         const altText = (await getAltTextAgent(config).ask(
           `Generate short descriptive alt text for an image. The filename is: "${hint}". Alt text:`,
         )).trim().replace(/^["']|["']$/g, "");
-        send(ws, { type: "alt_text", text: altText, mimeType, base64 });
+        send(ws, { type: "alt_text", text: altText });
       } catch {
         const fallback = filename.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ").trim();
-        send(ws, { type: "alt_text", text: fallback, mimeType, base64 });
+        send(ws, { type: "alt_text", text: fallback });
       } finally {
         await Bun.$`rm -f ${imagePath}`.quiet().catch(() => {});
       }

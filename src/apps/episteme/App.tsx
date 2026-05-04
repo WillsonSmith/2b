@@ -161,6 +161,7 @@ function App() {
     ws.wsRef,
     ws.agentState,
     fileManager.activeFile,
+    fileManager.editorContent,
     fileManager.editorContentRef,
     fileManager.setEditorContent,
     ws.subscribe,
@@ -338,20 +339,13 @@ function App() {
           reader.onload = () => {
             const dataUrl = reader.result as string;
             const base64 = dataUrl.split(",")[1] ?? "";
-            ws.wsRef.current?.send(
-              JSON.stringify({
-                type: "analyze_image",
-                base64,
-                mimeType: file.type,
-                filename: file.name,
-              }),
-            );
+            voice.handleImagePaste(base64, file.type, file.name);
           };
           reader.readAsDataURL(file);
         }
       }
     },
-    [ws.agentState, ws.wsRef],
+    [ws.agentState, ws.wsRef, voice],
   );
 
   // ── Export ─────────────────────────────────────────────────────────────────

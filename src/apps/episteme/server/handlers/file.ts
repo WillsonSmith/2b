@@ -5,6 +5,7 @@ import type { ClientMsg } from "../../protocol.ts";
 import { detectAutolinkCandidates } from "../../features/autolink.ts";
 import type { WsContext } from "../context.ts";
 
+
 export type FileMsg = Extract<
   ClientMsg,
   { type: "list_workspace" | "file_open" | "file_save" | "file_create" | "file_rename" }
@@ -15,7 +16,7 @@ export async function handleFile(
   ctx: WsContext,
   ws: ServerWebSocket<unknown>,
 ): Promise<void> {
-  const { send, absRoot, linter, collectMarkdownFiles, resolveWorkspacePath } = ctx;
+  const { send, absRoot, collectMarkdownFiles, resolveWorkspacePath } = ctx;
 
   switch (msg.type) {
     case "list_workspace": {
@@ -48,11 +49,7 @@ export async function handleFile(
       try {
         await Bun.write(absolute, msg.content);
         send(ws, { type: "file_saved" });
-        // Async lint — non-blocking, only send to the saving client
-        linter.run(msg.content).then((issues) => {
-          send(ws, { type: "lint_result", issues });
-        }).catch(() => {});
-        // Async autolink detection after save
+        // Async autolink detection after save (lint runs on its own idle cadence)
         collectMarkdownFiles().then((files) => {
           const suggestions = detectAutolinkCandidates(msg.content, files);
           if (suggestions.length > 0) {

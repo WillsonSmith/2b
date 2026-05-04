@@ -81,6 +81,7 @@ async function dispatch(
     case "autolink_request":
     case "diagram_request":
     case "table_request":
+    case "lint_request":
       return handleEditor(msg, ctx, ws);
 
     case "ingest_url":
