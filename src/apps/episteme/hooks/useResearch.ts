@@ -1,11 +1,13 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { UnifiedSearchResponse } from "../components/ResearchPanel.tsx";
+import type { Subscribe } from "./useWebSocket.ts";
 
 type AgentState = "idle" | "thinking" | "disconnected";
 
 export function useResearch(
   wsRef: React.MutableRefObject<WebSocket | null>,
   agentState: AgentState,
+  subscribe: Subscribe,
 ) {
   const [showResearch, setShowResearch] = useState(false);
   const [searchResults, setSearchResults] = useState<UnifiedSearchResponse | null>(null);
@@ -36,6 +38,21 @@ export function useResearch(
     if (!wsRef.current || agentState === "disconnected") return;
     wsRef.current.send(JSON.stringify({ type: "send", text: "Please run the index_workspace tool to re-index all workspace files." }));
   }, [agentState, wsRef]);
+
+  useEffect(() => {
+    const unsubSearch = subscribe("search_result", (msg) => {
+      setSearchResults(msg.results);
+      setIsSearching(false);
+    });
+    const unsubGaps = subscribe("detect_gaps_result", (msg) => {
+      setGapReport(msg.markdown);
+      setIsDetectingGaps(false);
+    });
+    return () => {
+      unsubSearch();
+      unsubGaps();
+    };
+  }, [subscribe]);
 
   return {
     showResearch,

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getShell } from "../shell/index.ts";
 import { useDebounce } from "./useDebounce.ts";
+import type { Subscribe } from "./useWebSocket.ts";
 
 type AgentState = "idle" | "thinking" | "disconnected";
 
 export function useFileManager(
   wsRef: React.MutableRefObject<WebSocket | null>,
   agentState: AgentState,
+  subscribe: Subscribe,
 ) {
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [editorContent, setEditorContent] = useState("");
@@ -83,6 +85,36 @@ export function useFileManager(
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [saveFile]);
+
+  // Server → client subscriptions
+  useEffect(() => {
+    const unsubFiles = subscribe("workspace_files", (msg) => setWorkspaceFiles(msg.files));
+    const unsubContent = subscribe("file_content", (msg) => {
+      setEditorContent(msg.content);
+      setSavedContent(msg.content);
+      setIsDirty(false);
+    });
+    const unsubCreated = subscribe("file_created", (msg) => {
+      setActiveFile(msg.path);
+      setEditorContent("");
+      setSavedContent("");
+      setIsDirty(false);
+    });
+    const unsubRenamed = subscribe("file_renamed", (msg) => {
+      if (activeFileRef.current === msg.oldPath) setActiveFile(msg.newPath);
+    });
+    const unsubSaved = subscribe("file_saved", () => {
+      setSavedContent(editorContentRef.current);
+      setIsDirty(false);
+    });
+    return () => {
+      unsubFiles();
+      unsubContent();
+      unsubCreated();
+      unsubRenamed();
+      unsubSaved();
+    };
+  }, [subscribe]);
 
   const handleOpenWorkspace = useCallback(async () => {
     setIsPickingWorkspace(true);

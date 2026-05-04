@@ -17,7 +17,7 @@
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { createEpistemAgent } from "./src/apps/episteme/agent.ts";
-import { startEpistemServer, startEpistemStubServer } from "./src/apps/episteme/server.ts";
+import { startEpistemServer, startEpistemStubServer } from "./src/apps/episteme/server/index.ts";
 import { loadConfig } from "./src/apps/episteme/config.ts";
 
 // ── Parse CLI args ─────────────────────────────────────────────────────────────
