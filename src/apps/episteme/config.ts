@@ -9,7 +9,7 @@ export interface EpistemModelConfig {
   autocomplete?: string;
   /** Powerful model for deep research synthesis and gap detection. */
   research?: string;
-  /** Fast model for AI linting and style checks (runs on every save). */
+  /** Fast model for AI linting and style checks (runs on a 5s idle debounce). */
   linting?: string;
   /** Model for multi-format export rendering. */
   export?: string;
@@ -22,9 +22,20 @@ export interface EpistemeFeatures {
   autosave?: boolean;
 }
 
+/** Tunables for ContradictionPlugin's background scan. All fields optional. */
+export interface ContradictionScanConfig {
+  /** Memories per LLM batch. Default: 15. */
+  window?: number;
+  /** Step between batches. Lower = more overlap (catches pairs across boundaries). Default: ceil(window/2) = 8. */
+  stride?: number;
+  /** Background scan cadence in ms. Default: 1_800_000 (30 min). */
+  intervalMs?: number;
+}
+
 export interface EpistemeConfig {
   models: EpistemModelConfig;
   features?: EpistemeFeatures;
+  contradictionScan?: ContradictionScanConfig;
 }
 
 function defaultConfig(): EpistemeConfig {

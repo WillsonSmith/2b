@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ContradictionRecord } from "../components/ConflictsPanel.tsx";
-import type { GraphData } from "../components/KnowledgeGraph.tsx";
+import type { GraphData, GraphLink } from "../components/KnowledgeGraph.tsx";
 import type { Subscribe } from "./useWebSocket.ts";
 
 type AgentState = "idle" | "thinking" | "disconnected";
+
+interface GraphPagination {
+  offset: number;
+  limit: number;
+  totalFiles: number;
+}
 
 export function useConflictsAndGraph(
   wsRef: React.MutableRefObject<WebSocket | null>,
@@ -17,6 +23,7 @@ export function useConflictsAndGraph(
 
   const [showGraph, setShowGraph] = useState(false);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
+  const [graphPagination, setGraphPagination] = useState<GraphPagination | null>(null);
   const [isLoadingGraph, setIsLoadingGraph] = useState(false);
 
   const handleOpenConflicts = useCallback(() => {
@@ -44,6 +51,18 @@ export function useConflictsAndGraph(
     wsRef.current.send(JSON.stringify({ type: "graph_request" }));
   }, [agentState, wsRef]);
 
+  const handleLoadMoreGraph = useCallback(() => {
+    if (!wsRef.current || agentState === "disconnected" || !graphPagination) return;
+    const nextOffset = graphPagination.offset + graphPagination.limit;
+    if (nextOffset >= graphPagination.totalFiles) return;
+    setIsLoadingGraph(true);
+    wsRef.current.send(JSON.stringify({
+      type: "graph_request",
+      offset: nextOffset,
+      limit: graphPagination.limit,
+    }));
+  }, [agentState, wsRef, graphPagination]);
+
   const handleGraphNodeClick = useCallback((file: string) => {
     openFile(file);
   }, [openFile]);
@@ -54,7 +73,22 @@ export function useConflictsAndGraph(
       setIsScanning(false);
     });
     const unsubGraph = subscribe("graph_data", (msg) => {
-      setGraphData(msg.data);
+      setGraphPagination(msg.pagination);
+      if (msg.pagination.offset === 0) {
+        setGraphData(msg.data);
+      } else {
+        // Append the newly paginated slice, deduplicating by node id and edge identity.
+        setGraphData((prev) => {
+          if (!prev) return msg.data;
+          const ids = new Set(prev.nodes.map((n) => n.id));
+          const newNodes = msg.data.nodes.filter((n) => !ids.has(n.id));
+          const linkKey = (l: GraphLink) =>
+            `${typeof l.source === "string" ? l.source : (l.source as { id: string }).id}>${typeof l.target === "string" ? l.target : (l.target as { id: string }).id}>${l.linkType}`;
+          const linkSet = new Set(prev.links.map(linkKey));
+          const newLinks = msg.data.links.filter((l) => !linkSet.has(linkKey(l)));
+          return { nodes: [...prev.nodes, ...newNodes], links: [...prev.links, ...newLinks] };
+        });
+      }
       setIsLoadingGraph(false);
     });
     return () => {
@@ -69,6 +103,7 @@ export function useConflictsAndGraph(
     isScanning,
     showGraph,
     graphData,
+    graphPagination,
     isLoadingGraph,
     setShowConflicts,
     setContradictions,
@@ -80,6 +115,7 @@ export function useConflictsAndGraph(
     handleContradictionScan,
     handleOpenGraph,
     handleRefreshGraph,
+    handleLoadMoreGraph,
     handleGraphNodeClick,
   };
 }

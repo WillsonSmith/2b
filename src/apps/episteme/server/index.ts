@@ -118,7 +118,6 @@ export async function startEpistemServer(
   const absRoot = resolve(workspaceRoot);
 
   await agent.start();
-  await workspace.index();
   await checkPandoc();
   if (pandocAvailable) {
     console.log("Pandoc: available");
@@ -177,6 +176,12 @@ export async function startEpistemServer(
     resolveWorkspacePath,
     scheduleWorkspaceRefresh,
   };
+
+  workspace.setIndexProgressListener((indexed, total) => {
+    broadcast({ type: "index_progress", indexed, total });
+  });
+  // Initial index after the listener is wired so connected clients see progress.
+  await workspace.index();
 
   agent.on("speak", (text) => broadcast({ type: "speak", text }));
   agent.on("state_change", (state) => broadcast({ type: "state_change", state }));

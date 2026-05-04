@@ -57,6 +57,7 @@ export function useWebSocket(): UseWebSocketReturn {
       case "tool_result":
       case "file_content":
       case "workspace_files":
+      case "index_progress":
       case "file_saved":
       case "file_created":
       case "file_renamed":
