@@ -62,13 +62,25 @@ export function createEpistemAgent(
 
   const editorContext = new EditorContextPlugin();
   const workspace = new WorkspacePlugin(workspaceRoot, workspaceDb);
-  const research = new ResearchPlugin(workspaceRoot, config, agent.memoryPlugin, workspaceDb, workspace);
+  const research = new ResearchPlugin(
+    workspaceRoot,
+    config,
+    agent.memoryPlugin,
+    workspaceDb,
+    workspace,
+  );
   const styleGuide = new StyleGuidePlugin(workspaceRoot);
   const citation = new CitationPlugin(workspaceRoot, config, editorContext);
   const diagram = new DiagramPlugin(config);
-  const contradiction = new ContradictionPlugin(agent.memoryPlugin, config, workspaceDb);
+  const contradiction = new ContradictionPlugin(
+    agent.memoryPlugin,
+    config,
+    workspaceDb,
+  );
 
-  agent.registerPlugin(new MemoryPlugin(llm));
+  agent.registerPlugin(
+    new MemoryPlugin(llm, { minMessages: 15, maxMessages: 30 }),
+  );
   agent.registerPlugin(new BehaviorPlugin(agent.memoryPlugin, llm));
   agent.registerPlugin(new FileSystemPlugin({ allowedRoots: [workspaceRoot] }));
   agent.registerPlugin(editorContext);
@@ -85,5 +97,15 @@ export function createEpistemAgent(
     }),
   );
 
-  return { agent, editorContext, workspace, styleGuide, research, citation, diagram, contradiction, workspaceDb };
+  return {
+    agent,
+    editorContext,
+    workspace,
+    styleGuide,
+    research,
+    citation,
+    diagram,
+    contradiction,
+    workspaceDb,
+  };
 }
