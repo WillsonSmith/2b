@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Editor } from "./components/Editor.tsx";
+import { Editor } from "./components/editor/Editor.tsx";
 import { FileTree } from "./components/FileTree.tsx";
 import { AISidecar, type SidecarMessage } from "./components/AISidecar.tsx";
 import { SettingsPanel } from "./components/SettingsPanel.tsx";
@@ -12,10 +12,7 @@ import type { ExportFormat } from "./features/export.ts";
 import type { WikilinkSuggestion } from "./features/autolink.ts";
 import "./styles.css";
 import { getShell } from "./shell/index.ts";
-import {
-  useWebSocket,
-  type UseWebSocketCallbacks,
-} from "./hooks/useWebSocket.ts";
+import { useWebSocket } from "./hooks/useWebSocket.ts";
 import {
   Search,
   Zap,
@@ -157,58 +154,23 @@ function App() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [editorCounts, setEditorCounts] = useState({ words: 0, chars: 0 });
 
-  const callbacksRef = useRef<UseWebSocketCallbacks>(
-    {} as UseWebSocketCallbacks,
-  );
-  const ws = useWebSocket({
-    onSpeak: (t) => callbacksRef.current.onSpeak(t),
-    onStateChange: (s) => callbacksRef.current.onStateChange(s),
-    onToolCall: (n, a) => callbacksRef.current.onToolCall(n, a),
-    onToolResult: (n) => callbacksRef.current.onToolResult(n),
-    onFileContent: (p, c) => callbacksRef.current.onFileContent(p, c),
-    onWorkspaceFiles: (f) => callbacksRef.current.onWorkspaceFiles(f),
-    onFileSaved: () => callbacksRef.current.onFileSaved(),
-    onFileCreated: (p) => callbacksRef.current.onFileCreated(p),
-    onFileRenamed: (o, n) => callbacksRef.current.onFileRenamed(o, n),
-    onAutocompleteSuggestion: (t) =>
-      callbacksRef.current.onAutocompleteSuggestion(t),
-    onInsertText: (t) => callbacksRef.current.onInsertText(t),
-    onIngestResult: (s, m) => callbacksRef.current.onIngestResult(s, m),
-    onLintResult: (i) => callbacksRef.current.onLintResult(i),
-    onToneResult: (t, f, to) => callbacksRef.current.onToneResult(t, f, to),
-    onSummarizeResult: (t, p) => callbacksRef.current.onSummarizeResult(t, p),
-    onMetadataResult: (y) => callbacksRef.current.onMetadataResult(y),
-    onTocResult: (e) => callbacksRef.current.onTocResult(e),
-    onAutolinkResult: (s) => callbacksRef.current.onAutolinkResult(s),
-    onDiagramResult: (c, f, t) => callbacksRef.current.onDiagramResult(c, f, t),
-    onTableResult: (t, p) => callbacksRef.current.onTableResult(t, p),
-    onSearchResult: (r) => callbacksRef.current.onSearchResult(r),
-    onDetectGapsResult: (m) => callbacksRef.current.onDetectGapsResult(m),
-    onContradictionsData: (c) => callbacksRef.current.onContradictionsData(c),
-    onGraphData: (d) => callbacksRef.current.onGraphData(d),
-    onCheckCitationsResult: (r) =>
-      callbacksRef.current.onCheckCitationsResult(r),
-    onFormatCitationResult: (b) =>
-      callbacksRef.current.onFormatCitationResult(b),
-    onAltText: (t, m, b) => callbacksRef.current.onAltText(t, m, b),
-    onExplainCodeResult: (e) => callbacksRef.current.onExplainCodeResult(e),
-    onTranscript: (t) => callbacksRef.current.onTranscript(t),
-    onError: (m) => callbacksRef.current.onError(m),
-  });
+  const ws = useWebSocket();
 
-  const fileManager = useFileManager(ws.wsRef, ws.agentState);
+  const fileManager = useFileManager(ws.wsRef, ws.agentState, ws.subscribe);
   const editorFeatures = useEditorFeatures(
     ws.wsRef,
     ws.agentState,
     fileManager.activeFile,
     fileManager.editorContentRef,
     fileManager.setEditorContent,
+    ws.subscribe,
   );
-  const research = useResearch(ws.wsRef, ws.agentState);
+  const research = useResearch(ws.wsRef, ws.agentState, ws.subscribe);
   const conflictsGraph = useConflictsAndGraph(
     ws.wsRef,
     ws.agentState,
     fileManager.openFile,
+    ws.subscribe,
   );
 
   const onMicError = useCallback((text: string) => {
@@ -222,6 +184,7 @@ function App() {
     ws.agentState,
     fileManager.setEditorContent,
     onMicError,
+    ws.subscribe,
   );
 
   // ── Electron detection ───────────────────────────────────────────────────────
@@ -437,151 +400,63 @@ function App() {
     [fileManager.activeFile, isExporting],
   );
 
-  // ── Wire WS callbacks ────────────────────────────────────────────────────────
+  // ── Cross-cutting WebSocket subscriptions ───────────────────────────────────
 
-  callbacksRef.current = {
-    onSpeak: (text) =>
-      setMessages((prev) => [...prev, { role: "assistant", text }]),
-    onStateChange: () => {},
-    onToolCall: (name) =>
-      setMessages((prev) => [
-        ...prev,
-        { role: "tool", name, status: "calling" },
-      ]),
-    onToolResult: (name) =>
+  useEffect(() => {
+    const unsubSpeak = ws.subscribe("speak", (msg) =>
+      setMessages((prev) => [...prev, { role: "assistant", text: msg.text }]),
+    );
+    const unsubToolCall = ws.subscribe("tool_call", (msg) =>
+      setMessages((prev) => [...prev, { role: "tool", name: msg.name, status: "calling" }]),
+    );
+    const unsubToolResult = ws.subscribe("tool_result", (msg) =>
       setMessages((prev) => {
         for (let i = prev.length - 1; i >= 0; i--) {
           const m = prev[i];
-          if (
-            m &&
-            m.role === "tool" &&
-            m.name === name &&
-            m.status === "calling"
-          ) {
+          if (m && m.role === "tool" && m.name === msg.name && m.status === "calling") {
             const next = [...prev];
-            next[i] = { role: "tool", name, status: "done" };
+            next[i] = { role: "tool", name: msg.name, status: "done" };
             return next;
           }
         }
         return prev;
       }),
-    onWorkspaceFiles: fileManager.setWorkspaceFiles,
-    onFileContent: (_path, content) => {
-      fileManager.setEditorContent(content);
-      fileManager.setSavedContent(content);
-      fileManager.setIsDirty(false);
-      editorFeatures.setGhostText("");
-      editorFeatures.setLintIssues([]);
-      editorFeatures.setAutolinkSuggestions([]);
-      setDismissedLargeFile(false);
-    },
-    onFileCreated: (path) => {
-      fileManager.setActiveFile(path);
-      fileManager.setEditorContent("");
-      fileManager.setSavedContent("");
-      fileManager.setIsDirty(false);
-      editorFeatures.setGhostText("");
-      editorFeatures.setLintIssues([]);
-      editorFeatures.setAutolinkSuggestions([]);
-    },
-    onFileRenamed: (oldPath, newPath) => {
-      if (fileManager.activeFileRef.current === oldPath)
-        fileManager.setActiveFile(newPath);
-    },
-    onFileSaved: () => {
-      fileManager.setSavedContent(fileManager.editorContentRef.current);
-      fileManager.setIsDirty(false);
-    },
-    onAutocompleteSuggestion: editorFeatures.setGhostText,
-    onInsertText: (text) => {
-      fileManager.setEditorContent((prev) => {
-        const sep = prev.trim() ? "\n\n" : "";
-        return prev + sep + text;
-      });
-      editorFeatures.setIsGeneratingOutline(false);
-    },
-    onIngestResult: (success, message) => {
+    );
+    const unsubExplain = ws.subscribe("explain_code_result", (msg) => {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", text: `**Code explanation:**\n\n${msg.explanation}` },
+      ]);
+      setSidecarCollapsed(false);
+    });
+    const unsubCheck = ws.subscribe("check_citations_result", (msg) => {
+      const { valid, broken } = msg.result;
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          text: success
-            ? `Ingestion started: ${message}`
-            : `Ingest failed: ${message}`,
+          text: `Citations: ${valid.length} valid, ${broken.length} broken.${broken.length > 0 ? "\n\nBroken:\n" + broken.join("\n") : ""}`,
+        },
+      ]);
+    });
+    const unsubFormat = ws.subscribe("format_citation_result", (msg) =>
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", text: `\`\`\`bibtex\n${msg.bibtex}\n\`\`\`` },
+      ]),
+    );
+    const unsubIngest = ws.subscribe("ingest_result", (msg) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: msg.success ? `Ingestion started: ${msg.message}` : `Ingest failed: ${msg.message}`,
         },
       ]);
       fileManager.refreshFiles();
-    },
-    onLintResult: editorFeatures.setLintIssues,
-    onToneResult: (text, from, to) =>
-      editorFeatures.setToneReplacement({ text, from, to }),
-    onSummarizeResult: (text, insertPos) =>
-      editorFeatures.setSummarizeResult({ text, insertPos }),
-    onMetadataResult: (yaml) => {
-      editorFeatures.setMetadataResult(yaml);
-      editorFeatures.setIsGeneratingMetadata(false);
-    },
-    onTocResult: (entries) => {
-      editorFeatures.setTocEntries(entries);
-      editorFeatures.setIsTocGenerating(false);
-    },
-    onAutolinkResult: editorFeatures.setAutolinkSuggestions,
-    onDiagramResult: (code, from, to) =>
-      editorFeatures.setDiagramResult({ code, from, to }),
-    onTableResult: (text, insertPos) =>
-      editorFeatures.setTableResult({ text, insertPos }),
-    onSearchResult: (results) => {
-      research.setSearchResults(results);
-      research.setIsSearching(false);
-    },
-    onDetectGapsResult: (markdown) => {
-      research.setGapReport(markdown);
-      research.setIsDetectingGaps(false);
-    },
-    onContradictionsData: (contradictions) => {
-      conflictsGraph.setContradictions(contradictions);
-      conflictsGraph.setIsScanning(false);
-    },
-    onGraphData: (data) => {
-      conflictsGraph.setGraphData(data);
-      conflictsGraph.setIsLoadingGraph(false);
-    },
-    onCheckCitationsResult: (result) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          text: `Citations: ${result.valid.length} valid, ${result.broken.length} broken.${result.broken.length > 0 ? "\n\nBroken:\n" + result.broken.join("\n") : ""}`,
-        },
-      ]);
-    },
-    onFormatCitationResult: (bibtex) => {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", text: `\`\`\`bibtex\n${bibtex}\n\`\`\`` },
-      ]);
-    },
-    onAltText: (text, mimeType, base64) => {
-      voice.setAltTextInsert(`![${text}](data:${mimeType};base64,${base64})`);
-    },
-    onExplainCodeResult: (explanation) => {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", text: `**Code explanation:**\n\n${explanation}` },
-      ]);
-      setSidecarCollapsed(false);
-    },
-    onTranscript: (text) => {
-      fileManager.setEditorContent((prev) => {
-        const sep = prev.trim() ? "\n\n" : "";
-        return prev + sep + text;
-      });
-    },
-    onError: (message) => {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", text: `[Error] ${message}` },
-      ]);
+    });
+    const unsubError = ws.subscribe("error", (msg) => {
+      setMessages((prev) => [...prev, { role: "assistant", text: `[Error] ${msg.message}` }]);
       editorFeatures.setIsGeneratingMetadata(false);
       editorFeatures.setIsTocGenerating(false);
       research.setIsSearching(false);
@@ -589,8 +464,31 @@ function App() {
       conflictsGraph.setIsScanning(false);
       conflictsGraph.setIsLoadingGraph(false);
       setIsExporting(false);
-    },
-  };
+    });
+    const unsubFileContent = ws.subscribe("file_content", () => {
+      editorFeatures.setGhostText("");
+      editorFeatures.setLintIssues([]);
+      editorFeatures.setAutolinkSuggestions([]);
+      setDismissedLargeFile(false);
+    });
+    const unsubFileCreated = ws.subscribe("file_created", () => {
+      editorFeatures.setGhostText("");
+      editorFeatures.setLintIssues([]);
+      editorFeatures.setAutolinkSuggestions([]);
+    });
+    return () => {
+      unsubSpeak();
+      unsubToolCall();
+      unsubToolResult();
+      unsubExplain();
+      unsubCheck();
+      unsubFormat();
+      unsubIngest();
+      unsubError();
+      unsubFileContent();
+      unsubFileCreated();
+    };
+  }, [ws.subscribe, fileManager.refreshFiles, editorFeatures, research, conflictsGraph]);
 
   // ── Status indicator ──────────────────────────────────────────────────────────
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Subscribe } from "./useWebSocket.ts";
 
 type AgentState = "idle" | "thinking" | "disconnected";
 
@@ -7,6 +8,7 @@ export function useVoiceAndMedia(
   agentState: AgentState,
   setEditorContent: React.Dispatch<React.SetStateAction<string>>,
   onMicError: (text: string) => void,
+  subscribe: Subscribe,
 ) {
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -69,6 +71,22 @@ export function useVoiceAndMedia(
     },
     [agentState, wsRef],
   );
+
+  useEffect(() => {
+    const unsubTranscript = subscribe("transcript", (msg) => {
+      setEditorContent((prev) => {
+        const sep = prev.trim() ? "\n\n" : "";
+        return prev + sep + msg.text;
+      });
+    });
+    const unsubAlt = subscribe("alt_text", (msg) => {
+      setAltTextInsert(`![${msg.text}](data:${msg.mimeType};base64,${msg.base64})`);
+    });
+    return () => {
+      unsubTranscript();
+      unsubAlt();
+    };
+  }, [subscribe, setEditorContent]);
 
   return {
     isRecording,

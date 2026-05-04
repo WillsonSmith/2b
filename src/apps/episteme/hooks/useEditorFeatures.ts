@@ -1,8 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Tone } from "../features/tone.ts";
 import type { LintIssue } from "../features/lint.ts";
 import type { TocEntry } from "../features/toc.ts";
 import type { WikilinkSuggestion } from "../features/autolink.ts";
+import type { Subscribe } from "./useWebSocket.ts";
 
 type AgentState = "idle" | "thinking" | "disconnected";
 
@@ -12,6 +13,7 @@ export function useEditorFeatures(
   activeFile: string | null,
   editorContentRef: React.MutableRefObject<string>,
   setEditorContent: React.Dispatch<React.SetStateAction<string>>,
+  subscribe: Subscribe,
 ) {
   const [ghostText, setGhostText] = useState("");
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(false);
@@ -139,6 +141,52 @@ export function useEditorFeatures(
     },
     [agentState, wsRef],
   );
+
+  // Server → client subscriptions
+  useEffect(() => {
+    const unsubAuto = subscribe("autocomplete_suggestion", (msg) => setGhostText(msg.text));
+    const unsubInsert = subscribe("insert_text", (msg) => {
+      setEditorContent((prev) => {
+        const sep = prev.trim() ? "\n\n" : "";
+        return prev + sep + msg.text;
+      });
+      setIsGeneratingOutline(false);
+    });
+    const unsubLint = subscribe("lint_result", (msg) => setLintIssues(msg.issues));
+    const unsubTone = subscribe("tone_result", (msg) =>
+      setToneReplacement({ text: msg.text, from: msg.from, to: msg.to }),
+    );
+    const unsubSummarize = subscribe("summarize_result", (msg) =>
+      setSummarizeResult({ text: msg.text, insertPos: msg.insertPos }),
+    );
+    const unsubMetadata = subscribe("metadata_result", (msg) => {
+      setMetadataResult(msg.yaml);
+      setIsGeneratingMetadata(false);
+    });
+    const unsubToc = subscribe("toc_result", (msg) => {
+      setTocEntries(msg.entries);
+      setIsTocGenerating(false);
+    });
+    const unsubAutolink = subscribe("autolink_result", (msg) => setAutolinkSuggestions(msg.suggestions));
+    const unsubDiagram = subscribe("diagram_result", (msg) =>
+      setDiagramResult({ code: msg.code, from: msg.from, to: msg.to }),
+    );
+    const unsubTable = subscribe("table_result", (msg) =>
+      setTableResult({ text: msg.text, insertPos: msg.insertPos }),
+    );
+    return () => {
+      unsubAuto();
+      unsubInsert();
+      unsubLint();
+      unsubTone();
+      unsubSummarize();
+      unsubMetadata();
+      unsubToc();
+      unsubAutolink();
+      unsubDiagram();
+      unsubTable();
+    };
+  }, [subscribe, setEditorContent]);
 
   return {
     ghostText,
