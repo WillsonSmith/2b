@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import type { ClientMsg } from "../../protocol.ts";
 import { HeadlessAgent } from "../../../../core/HeadlessAgent.ts";
 import { createProvider } from "../../../../providers/llm/createProvider.ts";
+import type { EpistemeConfig } from "../../config.ts";
 import { featureModel } from "../../config.ts";
 import { explainCode } from "../../features/explain.ts";
 import type { WsContext } from "../context.ts";
@@ -16,6 +17,17 @@ export type MediaMsg = Extract<
 const ALT_TEXT_SYSTEM =
   "You generate concise descriptive alt text for images. Return ONLY the alt text — " +
   "no quotes, no punctuation at the end, no explanation.";
+
+let altTextAgent: HeadlessAgent | null = null;
+function getAltTextAgent(config: EpistemeConfig): HeadlessAgent {
+  if (!altTextAgent) {
+    const llm = createProvider(featureModel(config, "default"));
+    altTextAgent = new HeadlessAgent(llm, [], ALT_TEXT_SYSTEM, {
+      agentName: "AltTextGenerator",
+    });
+  }
+  return altTextAgent;
+}
 
 export async function handleMedia(
   msg: MediaMsg,
@@ -34,11 +46,7 @@ export async function handleMedia(
         const imageBuffer = Buffer.from(base64, "base64");
         await Bun.write(imagePath, imageBuffer);
         const hint = filename.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ").trim();
-        const llm = createProvider(featureModel(config, "default"));
-        const altAgent = new HeadlessAgent(llm, [], ALT_TEXT_SYSTEM, {
-          agentName: "AltTextGenerator",
-        });
-        const altText = (await altAgent.ask(
+        const altText = (await getAltTextAgent(config).ask(
           `Generate short descriptive alt text for an image. The filename is: "${hint}". Alt text:`,
         )).trim().replace(/^["']|["']$/g, "");
         send(ws, { type: "alt_text", text: altText, mimeType, base64 });

@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorkspacePlugin } from "./WorkspacePlugin.ts";
 import { WorkspaceDb } from "../db/workspaceDb.ts";
-import { buildKnowledgeGraph } from "../features/contradiction.ts";
+import { ContradictionPlugin } from "./ContradictionPlugin.ts";
+import type { CortexMemoryPlugin } from "../../../plugins/CortexMemoryPlugin.ts";
 
 const tmpDirs: string[] = [];
 
@@ -100,7 +101,7 @@ describe("WorkspacePlugin.index() — wikilink resolution", () => {
   });
 });
 
-describe("buildKnowledgeGraph — wikilink edges", () => {
+describe("ContradictionPlugin.buildKnowledgeGraph — wikilink edges", () => {
   test("emits a document-link edge between files connected by [[wikilink]]", async () => {
     const root = await makeTempWorkspace();
     await writeFile(join(root, "src.md"), "this links to [[target]]");
@@ -110,13 +111,14 @@ describe("buildKnowledgeGraph — wikilink edges", () => {
     const plugin = new WorkspacePlugin(root, db);
     await plugin.index();
 
-    // The graph builder takes a memory plugin too; pass a stub that returns no
+    // ContradictionPlugin needs a memory plugin too; pass a stub that returns no
     // memories so we can assert purely on the structural edges.
     const memoryStub = {
       queryMemoriesRaw: () => [],
-    } as unknown as Parameters<typeof buildKnowledgeGraph>[0];
+    } as unknown as CortexMemoryPlugin;
 
-    const graph = buildKnowledgeGraph(memoryStub, db);
+    const cp = new ContradictionPlugin(memoryStub, {} as ConstructorParameters<typeof ContradictionPlugin>[1], db);
+    const graph = cp.buildKnowledgeGraph();
     const fileNodes = graph.nodes.filter((n) => n.type === "workspace-file");
     expect(fileNodes.length).toBe(2);
 

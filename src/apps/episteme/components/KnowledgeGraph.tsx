@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback } from "react";
 import { RotateCw, X } from "lucide-react";
-import type { GraphData, GraphNode, GraphLink } from "../features/contradiction.ts";
+import type { GraphData, GraphNode, GraphLink } from "../plugins/ContradictionPlugin.ts";
 
 export type { GraphData, GraphNode, GraphLink };
 

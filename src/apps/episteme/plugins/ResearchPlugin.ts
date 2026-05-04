@@ -10,6 +10,7 @@ import { featureModel } from "../config.ts";
 import { logger } from "../../../logger.ts";
 import { deepIngestPdf } from "../features/research.ts";
 import type { WorkspaceDb } from "../db/workspaceDb.ts";
+import type { WorkspacePlugin } from "./WorkspacePlugin.ts";
 
 const SUMMARIZE_SYSTEM = `You are a research assistant. Summarize the given content into structured Markdown. Use the following template:
 
@@ -58,17 +59,42 @@ export class ResearchPlugin implements AgentPlugin {
   private readonly memory: CortexMemoryPlugin | null;
   private readonly config: EpistemeConfig;
   private readonly workspaceDb: WorkspaceDb;
+  private readonly workspace: WorkspacePlugin;
+  private summarizerAgent: HeadlessAgent | null = null;
+  private gapAgent: HeadlessAgent | null = null;
 
   constructor(
     workspaceRoot: string,
     config: EpistemeConfig,
     memory: CortexMemoryPlugin | null,
     workspaceDb: WorkspaceDb,
+    workspace: WorkspacePlugin,
   ) {
     this.root = resolve(workspaceRoot);
     this.memory = memory;
     this.config = config;
     this.workspaceDb = workspaceDb;
+    this.workspace = workspace;
+  }
+
+  private getSummarizerAgent(): HeadlessAgent {
+    if (!this.summarizerAgent) {
+      const llm = createProvider(featureModel(this.config, "research"));
+      this.summarizerAgent = new HeadlessAgent(llm, [], SUMMARIZE_SYSTEM, {
+        agentName: "ResearchSummarizer",
+      });
+    }
+    return this.summarizerAgent;
+  }
+
+  private getGapAgent(): HeadlessAgent {
+    if (!this.gapAgent) {
+      const llm = createProvider(featureModel(this.config, "research"));
+      this.gapAgent = new HeadlessAgent(llm, [], GAP_DETECTION_SYSTEM, {
+        agentName: "GapDetector",
+      });
+    }
+    return this.gapAgent;
   }
 
   getSystemPromptFragment(): string {
@@ -312,18 +338,14 @@ export class ResearchPlugin implements AgentPlugin {
   // ── search_workspace (internal) ────────────────────────────────────────────
 
   private searchWorkspaceMemory(query: string): SearchResult[] {
-    const hits = this.workspaceDb.searchWorkspaceFiles(query, 8);
-    return hits.map((h) => {
-      const title = h.relPath.split("/").at(-1)?.replace(/\.md$/i, "") ?? h.relPath;
-      return {
-        title,
-        excerpt: h.excerpt,
-        authors: [],
-        date: "",
-        url: h.relPath,
-        source: "workspace" as const,
-      };
-    });
+    return this.workspace.search(query, 8).map((h) => ({
+      title: h.relPath.split("/").at(-1)?.replace(/\.md$/i, "") ?? h.relPath,
+      excerpt: h.excerpt,
+      authors: [],
+      date: "",
+      url: h.relPath,
+      source: "workspace" as const,
+    }));
   }
 
   // ── unified_search ─────────────────────────────────────────────────────────
@@ -361,22 +383,13 @@ export class ResearchPlugin implements AgentPlugin {
       .map((r) => `[File: ${r.relPath}]\n${r.content.slice(0, 600)}`)
       .join("\n\n---\n\n");
 
-    const llm = createProvider(featureModel(this.config, "research"));
-    const agent = new HeadlessAgent(llm, [], GAP_DETECTION_SYSTEM, {
-      agentName: "GapDetector",
-    });
-
-    return agent.ask(`Topic: ${topic}\n\nWorkspace notes:\n\n${context}`);
+    return this.getGapAgent().ask(`Topic: ${topic}\n\nWorkspace notes:\n\n${context}`);
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
   private async summarize(text: string, source: string): Promise<string> {
-    const llm = createProvider(featureModel(this.config, "research"));
-    const agent = new HeadlessAgent(llm, [], SUMMARIZE_SYSTEM, {
-      agentName: "ResearchSummarizer",
-    });
-    return agent.ask(`Summarize the following content (source: ${source}):\n\n${text}`);
+    return this.getSummarizerAgent().ask(`Summarize the following content (source: ${source}):\n\n${text}`);
   }
 
   private async saveMarkdown(absPath: string, content: string): Promise<void> {

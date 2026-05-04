@@ -1,5 +1,5 @@
 import { RotateCw, X } from "lucide-react";
-import type { ContradictionRecord } from "../features/contradiction.ts";
+import type { ContradictionRecord } from "../plugins/ContradictionPlugin.ts";
 
 export type { ContradictionRecord };
 

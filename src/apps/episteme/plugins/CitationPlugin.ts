@@ -38,6 +38,7 @@ export class CitationPlugin implements AgentPlugin {
   private readonly root: string;
   private readonly config: EpistemeConfig;
   private readonly editorContext: EditorContextPlugin;
+  private formatterAgent: HeadlessAgent | null = null;
 
   constructor(
     workspaceRoot: string,
@@ -47,6 +48,16 @@ export class CitationPlugin implements AgentPlugin {
     this.root = resolve(workspaceRoot);
     this.config = config;
     this.editorContext = editorContext;
+  }
+
+  private getFormatterAgent(): HeadlessAgent {
+    if (!this.formatterAgent) {
+      const llm = createProvider(featureModel(this.config, "research"));
+      this.formatterAgent = new HeadlessAgent(llm, [], BIBTEX_SYSTEM, {
+        agentName: "CitationFormatter",
+      });
+    }
+    return this.formatterAgent;
   }
 
   getSystemPromptFragment(): string {
@@ -129,11 +140,6 @@ export class CitationPlugin implements AgentPlugin {
       return `% Error fetching ${url}: ${err}`;
     }
 
-    const llm = createProvider(featureModel(this.config, "research"));
-    const agent = new HeadlessAgent(llm, [], BIBTEX_SYSTEM, {
-      agentName: "CitationFormatter",
-    });
-
     const prompt =
       `Title: ${metadata.title}\n` +
       `Author: ${metadata.author}\n` +
@@ -141,7 +147,7 @@ export class CitationPlugin implements AgentPlugin {
       `URL: ${metadata.url}\n` +
       `Today: ${new Date().toISOString().slice(0, 10)}`;
 
-    return agent.ask(prompt);
+    return this.getFormatterAgent().ask(prompt);
   }
 
   // ── export_citations ───────────────────────────────────────────────────────

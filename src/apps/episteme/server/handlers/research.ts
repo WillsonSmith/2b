@@ -1,6 +1,5 @@
 import type { ServerWebSocket } from "bun";
 import type { ClientMsg } from "../../protocol.ts";
-import { queryContradictions, runContradictionScan, buildKnowledgeGraph } from "../../features/contradiction.ts";
 import type { WsContext } from "../context.ts";
 
 export type ResearchMsg = Extract<
@@ -24,7 +23,7 @@ export async function handleResearch(
   ctx: WsContext,
   ws: ServerWebSocket<unknown>,
 ): Promise<void> {
-  const { send, agent, research, citation, workspaceDb, config } = ctx;
+  const { send, agent, research, citation, contradiction } = ctx;
 
   switch (msg.type) {
     case "ingest_url": {
@@ -69,15 +68,13 @@ export async function handleResearch(
     }
 
     case "contradictions_request": {
-      const contradictions = queryContradictions(workspaceDb);
-      send(ws, { type: "contradictions_data", contradictions });
+      send(ws, { type: "contradictions_data", contradictions: contradiction.listContradictions() });
       return;
     }
 
     case "contradiction_scan_request": {
-      runContradictionScan(agent.memoryPlugin, config, workspaceDb).then((found) => {
-        const all = queryContradictions(workspaceDb);
-        send(ws, { type: "contradictions_data", contradictions: all });
+      contradiction.runScan().then((found) => {
+        send(ws, { type: "contradictions_data", contradictions: contradiction.listContradictions() });
         if (found.length > 0) {
           send(ws, {
             type: "speak",
@@ -91,8 +88,7 @@ export async function handleResearch(
     }
 
     case "graph_request": {
-      const data = buildKnowledgeGraph(agent.memoryPlugin, workspaceDb);
-      send(ws, { type: "graph_data", data });
+      send(ws, { type: "graph_data", data: contradiction.buildKnowledgeGraph() });
       return;
     }
 

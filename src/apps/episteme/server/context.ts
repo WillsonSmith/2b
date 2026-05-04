@@ -8,6 +8,7 @@ import type { ResearchPlugin } from "../plugins/ResearchPlugin.ts";
 import type { CitationPlugin } from "../plugins/CitationPlugin.ts";
 import type { DiagramPlugin } from "../plugins/DiagramPlugin.ts";
 import type { StyleGuidePlugin } from "../plugins/StyleGuidePlugin.ts";
+import type { ContradictionPlugin } from "../plugins/ContradictionPlugin.ts";
 import type { AutocompleteRunner } from "../features/autocomplete.ts";
 import type { LintRunner } from "../features/lint.ts";
 import type { ServerMsg } from "../protocol.ts";
@@ -25,6 +26,7 @@ export interface WsContext {
   citation: CitationPlugin;
   diagram: DiagramPlugin;
   styleGuide: StyleGuidePlugin;
+  contradiction: ContradictionPlugin;
   workspaceDb: WorkspaceDb;
   config: EpistemeConfig;
   absRoot: string;

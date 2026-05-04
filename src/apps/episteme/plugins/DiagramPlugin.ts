@@ -11,9 +11,18 @@ Default to flowchart LR unless another type is clearly more appropriate (sequenc
 export class DiagramPlugin implements AgentPlugin {
   name = "Diagram";
   private config: EpistemeConfig;
+  private agent: HeadlessAgent | null = null;
 
   constructor(config: EpistemeConfig) {
     this.config = config;
+  }
+
+  private getAgent(): HeadlessAgent {
+    if (!this.agent) {
+      const llm = createProvider(featureModel(this.config, "default"));
+      this.agent = new HeadlessAgent(llm, [], SYSTEM, { agentName: "DiagramGenerator" });
+    }
+    return this.agent;
   }
 
   getSystemPromptFragment(): string {
@@ -51,9 +60,7 @@ export class DiagramPlugin implements AgentPlugin {
   }
 
   async generate(description: string): Promise<string> {
-    const llm = createProvider(featureModel(this.config, "default"));
-    const agent = new HeadlessAgent(llm, [], SYSTEM, { agentName: "DiagramGenerator" });
-    const mermaid = await agent.ask(description);
+    const mermaid = await this.getAgent().ask(description);
     return mermaid.trim();
   }
 }
