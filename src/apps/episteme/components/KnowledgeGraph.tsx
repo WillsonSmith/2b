@@ -31,7 +31,10 @@ export function KnowledgeGraph({
 
   const isEmpty = !graphData || (graphData.nodes.length === 0 && graphData.links.length === 0);
 
-  // Mount the force-graph instance once the container is available
+  // Mount the force-graph instance once the container is available.
+  // The container is a dedicated sibling div with no React-managed children — ForceGraph's
+  // init() calls `domNode.innerHTML = ''`, which would otherwise yank React-managed nodes
+  // out of the DOM and cause NotFoundError on the next removeChild.
   useEffect(() => {
     if (!containerRef.current) return;
     if (isEmpty) return;
@@ -106,8 +109,9 @@ export function KnowledgeGraph({
         </div>
       </div>
 
-      <div className="knowledge-graph-body" ref={containerRef}>
-        {isLoading && (
+      <div className="knowledge-graph-body">
+        <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+        {isLoading && isEmpty && (
           <div className="knowledge-graph-empty">Loading graph…</div>
         )}
         {!isLoading && isEmpty && (
