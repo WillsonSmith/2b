@@ -85,6 +85,52 @@ describe("WorkspaceDb - workspace files", () => {
     const byPath = db.searchWorkspaceFiles("beta");
     expect(byPath.map((r) => r.relPath)).toContain("notes/beta.md");
   });
+
+  test("searchWorkspaceFiles returns FTS snippet excerpts", () => {
+    const db = makeDb();
+    db.upsertWorkspaceFile(
+      makeFile({
+        relPath: "notes/long.md",
+        content: "intro paragraph blah blah ... the quantum mechanics chapter follows here ...",
+      }),
+    );
+    const hits = db.searchWorkspaceFiles("quantum");
+    expect(hits.length).toBe(1);
+    expect(hits[0]!.relPath).toBe("notes/long.md");
+    expect(hits[0]!.excerpt.toLowerCase()).toContain("quantum");
+  });
+
+  test("searchWorkspaceFiles is updated when ws_files row is updated", () => {
+    const db = makeDb();
+    db.upsertWorkspaceFile(makeFile({ relPath: "x.md", content: "first version mentions sandwiches" }));
+    expect(db.searchWorkspaceFiles("sandwiches").length).toBe(1);
+    db.upsertWorkspaceFile(makeFile({ relPath: "x.md", content: "second version mentions tacos" }));
+    expect(db.searchWorkspaceFiles("sandwiches").length).toBe(0);
+    expect(db.searchWorkspaceFiles("tacos").length).toBe(1);
+  });
+
+  test("searchWorkspaceFiles is updated when ws_files row is deleted", () => {
+    const db = makeDb();
+    db.upsertWorkspaceFile(makeFile({ relPath: "y.md", content: "uniquetokenfoo" }));
+    expect(db.searchWorkspaceFiles("uniquetokenfoo").length).toBe(1);
+    db.deleteWorkspaceFile("y.md");
+    expect(db.searchWorkspaceFiles("uniquetokenfoo").length).toBe(0);
+  });
+
+  test("searchWorkspaceFiles ANDs multi-word queries", () => {
+    const db = makeDb();
+    db.upsertWorkspaceFile(makeFile({ relPath: "a.md", content: "alpha and beta together" }));
+    db.upsertWorkspaceFile(makeFile({ relPath: "b.md", content: "alpha alone" }));
+    const both = db.searchWorkspaceFiles("alpha beta");
+    expect(both.map((r) => r.relPath)).toEqual(["a.md"]);
+  });
+
+  test("searchWorkspaceFiles returns [] for empty query", () => {
+    const db = makeDb();
+    db.upsertWorkspaceFile(makeFile());
+    expect(db.searchWorkspaceFiles("").length).toBe(0);
+    expect(db.searchWorkspaceFiles("   ").length).toBe(0);
+  });
 });
 
 describe("WorkspaceDb - file links", () => {

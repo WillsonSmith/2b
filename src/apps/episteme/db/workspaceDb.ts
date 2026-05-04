@@ -12,6 +12,13 @@ export interface WorkspaceFileRow {
   indexedAt: number;
 }
 
+export interface WorkspaceSearchHit {
+  relPath: string;
+  firstLine: string | null;
+  wordCount: number | null;
+  excerpt: string;
+}
+
 export interface FileLinkRow {
   sourcePath: string;
   targetPath: string;
@@ -87,7 +94,7 @@ interface IngestedPdfRecord {
   ingested_at: number;
 }
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /**
  * Structural data store for the Episteme workspace: files, link edges,
@@ -135,6 +142,7 @@ export class WorkspaceDb {
     const existing = this.db
       .query<{ version: number }, []>("SELECT version FROM ws_schema_version LIMIT 1")
       .get();
+    const previousVersion = existing?.version ?? 0;
     if (!existing) {
       this.db.run("INSERT INTO ws_schema_version (version) VALUES (?)", [SCHEMA_VERSION]);
     }
@@ -154,6 +162,33 @@ export class WorkspaceDb {
     this.db.run(
       "CREATE INDEX IF NOT EXISTS idx_ws_files_indexed_at ON ws_files(indexed_at)",
     );
+
+    this.db.run(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS ws_files_fts USING fts5(
+        rel_path,
+        first_line,
+        content,
+        tokenize = 'porter unicode61'
+      )
+    `);
+    this.db.run(`
+      CREATE TRIGGER IF NOT EXISTS ws_files_ai AFTER INSERT ON ws_files BEGIN
+        INSERT INTO ws_files_fts(rowid, rel_path, first_line, content)
+        VALUES (new.rowid, new.rel_path, new.first_line, new.content);
+      END
+    `);
+    this.db.run(`
+      CREATE TRIGGER IF NOT EXISTS ws_files_ad AFTER DELETE ON ws_files BEGIN
+        DELETE FROM ws_files_fts WHERE rowid = old.rowid;
+      END
+    `);
+    this.db.run(`
+      CREATE TRIGGER IF NOT EXISTS ws_files_au AFTER UPDATE ON ws_files BEGIN
+        DELETE FROM ws_files_fts WHERE rowid = old.rowid;
+        INSERT INTO ws_files_fts(rowid, rel_path, first_line, content)
+        VALUES (new.rowid, new.rel_path, new.first_line, new.content);
+      END
+    `);
 
     this.db.run(`
       CREATE TABLE IF NOT EXISTS ws_file_links (
@@ -204,6 +239,14 @@ export class WorkspaceDb {
         ingested_at        INTEGER NOT NULL
       )
     `);
+
+    if (previousVersion > 0 && previousVersion < 2) {
+      this.db.run(`
+        INSERT INTO ws_files_fts(rowid, rel_path, first_line, content)
+        SELECT rowid, rel_path, first_line, content FROM ws_files
+      `);
+      this.db.run("UPDATE ws_schema_version SET version = ?", [SCHEMA_VERSION]);
+    }
   }
 
   private prepareStatements(): void {
@@ -223,9 +266,15 @@ export class WorkspaceDb {
     this.stmtListFiles = this.db.prepare("SELECT * FROM ws_files ORDER BY rel_path");
     this.stmtDeleteFile = this.db.prepare("DELETE FROM ws_files WHERE rel_path = ?");
     this.stmtSearchFiles = this.db.prepare(`
-      SELECT * FROM ws_files
-      WHERE content LIKE ? OR rel_path LIKE ? OR first_line LIKE ?
-      ORDER BY indexed_at DESC
+      SELECT
+        ws_files.rel_path   AS rel_path,
+        ws_files.first_line AS first_line,
+        ws_files.word_count AS word_count,
+        snippet(ws_files_fts, -1, '', '', '…', 12) AS excerpt
+      FROM ws_files_fts
+      JOIN ws_files ON ws_files.rowid = ws_files_fts.rowid
+      WHERE ws_files_fts MATCH ?
+      ORDER BY rank
       LIMIT ?
     `);
 
@@ -313,10 +362,25 @@ export class WorkspaceDb {
     this.stmtDeleteFile.run(relPath);
   }
 
-  searchWorkspaceFiles(query: string, limit: number = 8): WorkspaceFileRow[] {
-    const term = `%${query}%`;
-    const rows = this.stmtSearchFiles.all(term, term, term, limit) as WsFileRecord[];
-    return rows.map(toWorkspaceFileRow);
+  searchWorkspaceFiles(query: string, limit: number = 8): WorkspaceSearchHit[] {
+    const fts = buildFtsQuery(query);
+    if (!fts) return [];
+    try {
+      const rows = this.stmtSearchFiles.all(fts, limit) as Array<{
+        rel_path: string;
+        first_line: string | null;
+        word_count: number | null;
+        excerpt: string;
+      }>;
+      return rows.map((r) => ({
+        relPath: r.rel_path,
+        firstLine: r.first_line,
+        wordCount: r.word_count,
+        excerpt: r.excerpt,
+      }));
+    } catch {
+      return [];
+    }
   }
 
   // ── file links ───────────────────────────────────────────────────────────
@@ -455,4 +519,13 @@ function toIngestedPdfRow(r: IngestedPdfRecord): IngestedPdfRow {
     filePath: r.file_path,
     ingestedAt: r.ingested_at,
   };
+}
+
+function buildFtsQuery(query: string): string {
+  return query
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => `"${t.replace(/"/g, '""')}"`)
+    .join(" ");
 }
