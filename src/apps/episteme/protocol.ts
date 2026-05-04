@@ -12,7 +12,7 @@ import type { TocEntry } from "./features/toc.ts";
 import type { WikilinkSuggestion } from "./features/autolink.ts";
 import type { UnifiedSearchResponse } from "./plugins/ResearchPlugin.ts";
 import type { CitationCheckResult } from "./plugins/CitationPlugin.ts";
-import type { ContradictionRecord, GraphData } from "./features/contradiction.ts";
+import type { ContradictionRecord, GraphData } from "./plugins/ContradictionPlugin.ts";
 
 export type AgentRunState = "idle" | "thinking";
 

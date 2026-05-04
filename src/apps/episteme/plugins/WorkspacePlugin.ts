@@ -2,7 +2,7 @@ import { join, resolve } from "node:path";
 import { stat } from "node:fs/promises";
 import type { AgentPlugin, ToolDefinition } from "../../../core/Plugin.ts";
 import { logger } from "../../../logger.ts";
-import type { WorkspaceDb, FileLinkRow } from "../db/workspaceDb.ts";
+import type { WorkspaceDb, FileLinkRow, WorkspaceSearchHit } from "../db/workspaceDb.ts";
 import { findWikilinks, resolveWikilinkTarget } from "../features/wikilinks.ts";
 
 /**
@@ -164,10 +164,16 @@ export class WorkspacePlugin implements AgentPlugin {
     };
   }
 
+  /** FTS-backed workspace search. Returns [] for empty queries. */
+  search(query: string, limit: number = 8): WorkspaceSearchHit[] {
+    if (!query.trim()) return [];
+    return this.workspaceDb.searchWorkspaceFiles(query, limit);
+  }
+
   private searchWorkspace(query: string, limit: number): unknown {
     if (!query.trim()) return { results: [], message: "Empty query." };
 
-    const hits = this.workspaceDb.searchWorkspaceFiles(query, limit);
+    const hits = this.search(query, limit);
     if (hits.length === 0 && this.workspaceDb.listWorkspaceFiles().length === 0) {
       return {
         results: [],
