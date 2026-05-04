@@ -28,17 +28,40 @@ export function useFileManager(
   activeFileRef.current = activeFile;
 
   const debouncedContent = useDebounce(editorContent, 500);
+  const lastSentHashRef = useRef<string>("");
+
+  // Reset the dedupe hash whenever the active file changes so the next push
+  // for a freshly opened file always goes through.
+  useEffect(() => {
+    lastSentHashRef.current = "";
+  }, [activeFile]);
 
   useEffect(() => {
     if (!activeFile || !wsRef.current || agentState === "disconnected") return;
-    wsRef.current.send(
-      JSON.stringify({
-        type: "editor_context",
-        file: activeFile,
-        content: debouncedContent,
-        cursor: 0,
-      }),
-    );
+    let cancelled = false;
+    (async () => {
+      const buf = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(debouncedContent),
+      );
+      const hash = Array.from(new Uint8Array(buf))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+      if (cancelled) return;
+      if (hash === lastSentHashRef.current) return;
+      lastSentHashRef.current = hash;
+      wsRef.current?.send(
+        JSON.stringify({
+          type: "editor_context",
+          file: activeFile,
+          content: debouncedContent,
+          cursor: 0,
+        }),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [debouncedContent, activeFile, agentState, wsRef]);
 
   useEffect(() => {

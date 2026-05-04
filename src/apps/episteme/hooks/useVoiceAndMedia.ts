@@ -14,6 +14,11 @@ export function useVoiceAndMedia(
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
+  // Tracks the most recent image we sent for alt-text generation so the
+  // alt_text reply (which carries only the generated text) can be combined
+  // with the original image bytes into a Markdown image insert.
+  const pendingImageRef = useRef<{ base64: string; mimeType: string } | null>(null);
+
   const [altTextInsert, setAltTextInsert] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,6 +72,7 @@ export function useVoiceAndMedia(
   const handleImagePaste = useCallback(
     (base64: string, mimeType: string, filename: string) => {
       if (!wsRef.current || agentState === "disconnected") return;
+      pendingImageRef.current = { base64, mimeType };
       wsRef.current.send(JSON.stringify({ type: "analyze_image", base64, mimeType, filename }));
     },
     [agentState, wsRef],
@@ -80,7 +86,10 @@ export function useVoiceAndMedia(
       });
     });
     const unsubAlt = subscribe("alt_text", (msg) => {
-      setAltTextInsert(`![${msg.text}](data:${msg.mimeType};base64,${msg.base64})`);
+      const pending = pendingImageRef.current;
+      pendingImageRef.current = null;
+      if (!pending) return;
+      setAltTextInsert(`![${msg.text}](data:${pending.mimeType};base64,${pending.base64})`);
     });
     return () => {
       unsubTranscript();
