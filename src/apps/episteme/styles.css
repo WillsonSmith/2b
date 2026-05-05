@@ -190,6 +190,7 @@ textarea {
 }
 
 .editor-toolbar {
+  overflow-x: auto;
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
   padding: 4px 8px;
@@ -197,6 +198,10 @@ textarea {
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 .toolbar-btn {
   display: flex;
@@ -267,10 +272,12 @@ textarea {
 }
 .tiptap ul,
 .tiptap ol {
-  padding-left: 1.5em;
+  padding-left: 0.8em;
   margin-bottom: 0.75em;
 }
 .tiptap li {
+  display: flex;
+  gap: 0.4rem;
   margin-bottom: 0.2em;
   line-height: 1.65;
 }
@@ -505,7 +512,9 @@ textarea {
   background: var(--accent);
   color: #fff;
   flex-shrink: 0;
-  transition: background 0.1s, opacity 0.1s;
+  transition:
+    background 0.1s,
+    opacity 0.1s;
 }
 .sidecar-send:hover:not(:disabled) {
   background: var(--accent);
@@ -2216,7 +2225,9 @@ textarea {
   background: var(--red);
   color: #fff;
   flex-shrink: 0;
-  transition: background 0.1s, filter 0.1s;
+  transition:
+    background 0.1s,
+    filter 0.1s;
 }
 .sidecar-interrupt:hover {
   filter: brightness(1.1);

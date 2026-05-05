@@ -1,6 +1,6 @@
 import {
   Undo2, Redo2, Mic, Square, Quote, Code2, Minus, List, ListOrdered,
-  ListTree, FileCode, Loader2,
+  ListTree, FileCode, Loader2, Table, CheckSquare,
 } from "lucide-react";
 import type { Editor } from "@tiptap/react";
 
@@ -144,6 +144,26 @@ export function MarkdownToolbar({
         active={false}
       >
         <Minus size={14} />
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() =>
+          editor
+            ?.chain()
+            .focus()
+            .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+            .run()
+        }
+        title="Insert table"
+        active={false}
+      >
+        <Table size={14} />
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor?.chain().focus().toggleTaskList().run()}
+        active={editor?.isActive("taskList")}
+        title="Task list"
+      >
+        <CheckSquare size={14} />
       </ToolbarButton>
 
       <div className="toolbar-sep" />
