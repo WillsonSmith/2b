@@ -19,6 +19,7 @@ export function useEditorFeatures(
 ) {
   const [ghostText, setGhostText] = useState("");
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(false);
+  const [lintEnabled, setLintEnabled] = useState(true);
 
   const [toneReplacement, setToneReplacement] = useState<{ text: string; from: number; to: number } | null>(null);
   const [summarizeResult, setSummarizeResult] = useState<{ text: string; insertPos: number } | null>(null);
@@ -148,11 +149,11 @@ export function useEditorFeatures(
   // from autosave so the linter doesn't spin every 2s.
   const debouncedLintContent = useDebounce(editorContent, 5000);
   useEffect(() => {
-    if (!activeFile || !wsRef.current || agentState === "disconnected") return;
+    if (!lintEnabled || !activeFile || !wsRef.current || agentState === "disconnected") return;
     const trimmed = debouncedLintContent.trim();
     if (!trimmed) return;
     wsRef.current.send(JSON.stringify({ type: "lint_request", content: debouncedLintContent }));
-  }, [debouncedLintContent, activeFile, agentState, wsRef]);
+  }, [lintEnabled, debouncedLintContent, activeFile, agentState, wsRef]);
 
   // Server → client subscriptions
   useEffect(() => {
@@ -203,6 +204,7 @@ export function useEditorFeatures(
   return {
     ghostText,
     autocompleteEnabled,
+    lintEnabled,
     toneReplacement,
     summarizeResult,
     isGeneratingMetadata,
@@ -216,6 +218,7 @@ export function useEditorFeatures(
     isGeneratingOutline,
     setGhostText,
     setAutocompleteEnabled,
+    setLintEnabled,
     setToneReplacement,
     setSummarizeResult,
     setIsGeneratingMetadata,
