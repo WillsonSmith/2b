@@ -258,7 +258,7 @@ export function Editor({
       CharacterCount,
       TaskList,
       TaskItem.configure({ nested: true }),
-      Table.configure({ resizable: false }),
+      Table.configure({ resizable: false, renderWrapper: true }),
       TableRow,
       TableHeader,
       TableCell,
