@@ -8,8 +8,8 @@
 }
 
 :root {
-  --bg: #1a1a1a;
-  --bg-raised: #222222;
+  --bg: #181818;
+  --bg-raised: #202020;
   --bg-highlight: #2a2a2a;
   --bg-active: #2e3a50;
   --border: #333333;
@@ -17,8 +17,8 @@
   --text: #d4d4d4;
   --text-muted: #888888;
   --text-dim: #555555;
-  --accent: #5588cc;
-  --accent-soft: #3a5080;
+  --accent: #6699dd;
+  --accent-soft: #3d5a90;
   --green: #4caf70;
   --red: #cc5555;
   --sidebar-w: 220px;
@@ -294,7 +294,7 @@ textarea {
   color: #c9d1d9;
 }
 .tiptap pre {
-  background: #1a1a1a;
+  background: #181818;
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 14px 16px;
@@ -781,7 +781,7 @@ textarea {
 
 /* ── Lint decorations ────────────────────────────────────────────────── */
 .lint-clarity {
-  border-bottom: 2px solid #5588cc;
+  border-bottom: 2px solid #6699dd;
   cursor: help;
 }
 .lint-conciseness {
@@ -944,7 +944,7 @@ textarea {
   box-sizing: border-box;
 }
 .file-tree-rename-input:focus {
-  border-color: var(--accent, #5588cc);
+  border-color: var(--accent, #6699dd);
 }
 
 .file-tree-context-menu {
