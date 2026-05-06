@@ -1650,10 +1650,14 @@ textarea {
   margin: var(--md-sp5) 0;
 }
 
+.markdown-view .table-scroll {
+  overflow-x: auto;
+  margin-bottom: var(--md-sp3);
+  -webkit-overflow-scrolling: touch;
+}
 .markdown-view table {
   border-collapse: collapse;
-  width: 100%;
-  margin-bottom: var(--md-sp3);
+  min-width: 100%;
   font-size: var(--md-scale-sm);
   line-height: 1.5;
 }

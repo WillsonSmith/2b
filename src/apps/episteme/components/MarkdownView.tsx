@@ -1,6 +1,16 @@
 import { useMemo, useCallback } from "react";
 import { marked } from "marked";
 
+marked.use({
+  renderer: {
+    table(token) {
+      const defaultRenderer = new marked.Renderer();
+      const tableHtml = defaultRenderer.table.call(this, token);
+      return `<div class="table-scroll">${tableHtml}</div>`;
+    },
+  },
+});
+
 interface MarkdownViewProps {
   content: string;
   className?: string;
