@@ -57,7 +57,10 @@ async function dispatch(
 ): Promise<void> {
   switch (msg.type) {
     case "send":
-      if (msg.text.trim()) ctx.agent.addDirect(msg.text.trim());
+      if (msg.text.trim()) {
+        ctx.workspaceDb.appendChatMessage("user", msg.text.trim());
+        ctx.agent.addDirect(msg.text.trim());
+      }
       return;
 
     case "interrupt":
@@ -183,7 +186,10 @@ export async function startEpistemServer(
   // Initial index after the listener is wired so connected clients see progress.
   await workspace.index();
 
-  agent.on("speak", (text) => broadcast({ type: "speak", text }));
+  agent.on("speak", (text) => {
+    workspaceDb.appendChatMessage("assistant", text);
+    broadcast({ type: "speak", text });
+  });
   agent.on("state_change", (state) => broadcast({ type: "state_change", state }));
   agent.on("tool_call", (name, args) => broadcast({ type: "tool_call", name, args }));
   const FILE_MUTATING_TOOLS = new Set([
@@ -248,6 +254,9 @@ export async function startEpistemServer(
             return json({ error: "Invalid JSON body" }, 400);
           }
         },
+      },
+      "/api/chat-history": {
+        GET: () => json(workspaceDb.listChatMessages(200)),
       },
       "/api/export": {
         POST: async (req: Request) => {

@@ -106,5 +106,5 @@ export function defaultVisionModel(): string {
  */
 export function defaultModel(): string {
   const backend = (process.env.PROVIDER ?? "ollama").toLowerCase();
-  return backend === "ollama" ? "qwen3.5:35b" : "qwen/qwen3.5-35b-a3b";
+  return backend === "ollama" ? "gemma4:26b" : "google/gemma-4-26b-a4b";
 }

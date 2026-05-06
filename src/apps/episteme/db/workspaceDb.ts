@@ -57,6 +57,13 @@ export interface IngestedPdfRow {
   ingestedAt: number;
 }
 
+export interface ChatMessageRow {
+  id: number;
+  role: "user" | "assistant";
+  text: string;
+  createdAt: number;
+}
+
 interface WsFileRecord {
   rel_path: string;
   content: string;
@@ -100,7 +107,14 @@ interface IngestedPdfRecord {
   ingested_at: number;
 }
 
-const SCHEMA_VERSION = 3;
+interface ChatMessageRecord {
+  id: number;
+  role: string;
+  text: string;
+  created_at: number;
+}
+
+const SCHEMA_VERSION = 4;
 
 /**
  * Structural data store for the Episteme workspace: files, link edges,
@@ -134,6 +148,8 @@ export class WorkspaceDb {
   private stmtListPdfs!: ReturnType<Database["prepare"]>;
   private stmtGetMeta!: ReturnType<Database["prepare"]>;
   private stmtSetMeta!: ReturnType<Database["prepare"]>;
+  private stmtAppendChatMessage!: ReturnType<Database["prepare"]>;
+  private stmtListChatMessages!: ReturnType<Database["prepare"]>;
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath, { create: true });
@@ -257,6 +273,15 @@ export class WorkspaceDb {
       )
     `);
 
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        role       TEXT NOT NULL,
+        text       TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `);
+
     if (previousVersion > 0 && previousVersion < 2) {
       this.db.run(`
         INSERT INTO ws_files_fts(rowid, rel_path, first_line, content)
@@ -362,6 +387,13 @@ export class WorkspaceDb {
       INSERT INTO ws_meta (key, value) VALUES (?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `);
+
+    this.stmtAppendChatMessage = this.db.prepare(
+      "INSERT INTO chat_messages (role, text, created_at) VALUES (?, ?, ?)",
+    );
+    this.stmtListChatMessages = this.db.prepare(
+      "SELECT * FROM chat_messages ORDER BY id ASC LIMIT ?",
+    );
   }
 
   // ── workspace files ──────────────────────────────────────────────────────
@@ -526,6 +558,22 @@ export class WorkspaceDb {
 
   setMeta(key: string, value: string): void {
     this.stmtSetMeta.run(key, value);
+  }
+
+  // ── chat history ─────────────────────────────────────────────────────────
+
+  appendChatMessage(role: "user" | "assistant", text: string): void {
+    this.stmtAppendChatMessage.run(role, text, Date.now());
+  }
+
+  listChatMessages(limit: number = 200): ChatMessageRow[] {
+    const rows = this.stmtListChatMessages.all(limit) as ChatMessageRecord[];
+    return rows.map((r) => ({
+      id: r.id,
+      role: r.role as "user" | "assistant",
+      text: r.text,
+      createdAt: r.created_at,
+    }));
   }
 
   close(): void {

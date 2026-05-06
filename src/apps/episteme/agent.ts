@@ -79,7 +79,7 @@ export function createEpistemAgent(
   );
 
   agent.registerPlugin(
-    new MemoryPlugin(llm, { minMessages: 15, maxMessages: 30 }),
+    new MemoryPlugin(llm, { minMessages: 10, maxMessages: 15 }),
   );
   agent.registerPlugin(new BehaviorPlugin(agent.memoryPlugin, llm));
   agent.registerPlugin(new FileSystemPlugin({ allowedRoots: [workspaceRoot] }));
