@@ -204,12 +204,14 @@ function App() {
       .then((r) => r.json())
       .then(
         (data: {
-          features?: { autocomplete?: boolean; autosave?: boolean };
+          features?: { autocomplete?: boolean; autosave?: boolean; lint?: boolean };
         }) => {
           if (data.features?.autocomplete !== undefined)
             editorFeatures.setAutocompleteEnabled(data.features.autocomplete);
           if (data.features?.autosave !== undefined)
             fileManager.setAutosaveEnabled(data.features.autosave);
+          if (data.features?.lint !== undefined)
+            editorFeatures.setLintEnabled(data.features.lint);
         },
       )
       .catch(() => {});
@@ -620,6 +622,7 @@ function App() {
           onClose={() => setShowSettings(false)}
           onAutocompleteEnabledChange={editorFeatures.setAutocompleteEnabled}
           onAutosaveEnabledChange={fileManager.setAutosaveEnabled}
+          onLintEnabledChange={editorFeatures.setLintEnabled}
         />
       )}
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}

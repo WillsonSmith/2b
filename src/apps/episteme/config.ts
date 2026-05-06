@@ -20,6 +20,8 @@ export interface EpistemeFeatures {
   autocomplete?: boolean;
   /** Whether the editor autosaves after a pause in typing. Default: true. */
   autosave?: boolean;
+  /** Whether AI linting runs on a 5s idle debounce. Default: true. */
+  lint?: boolean;
 }
 
 /** Tunables for ContradictionPlugin's background scan. All fields optional. */
