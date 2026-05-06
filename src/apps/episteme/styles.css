@@ -1465,82 +1465,147 @@ textarea {
   background: var(--accent-soft);
 }
 
+/* ── Markdown typography system ──────────────────────────────────────────── */
+/*
+  Scale: major second (×1.125) from a 14px base
+    xs   → 0.75rem  (10.5px) — meta / labels
+    sm   → 0.857rem (12px)   — code, captions
+    base → 1rem     (14px)   — body
+    h3   → 1.125rem (15.75px)
+    h2   → 1.286rem (18px)   — rounded from 1.125²
+    h1   → 1.5rem   (21px)   — one clean step above h2
+
+  Spacing: 4-point grid expressed in rem
+    sp1 → 0.25rem  (3.5px)  — list-item gap
+    sp2 → 0.5rem   (7px)    — tight block gap
+    sp3 → 0.875rem (12.25px) — standard block gap
+    sp4 → 1.25rem  (17.5px) — heading top margin
+    sp5 → 2rem     (28px)   — section break / hr
+
+  Heading rhythm rule:
+    margin-top = sp4 (pull away from previous content)
+    margin-bottom = sp2 (stay close to own content)
+    First heading in a container removes its top margin.
+*/
+:root {
+  --md-scale-xs:   0.75rem;
+  --md-scale-sm:   0.857rem;
+  --md-scale-base: 1rem;
+  --md-scale-h3:   1.125rem;
+  --md-scale-h2:   1.286rem;
+  --md-scale-h1:   1.5rem;
+
+  --md-leading-heading: 1.25;
+  --md-leading-body:    1.72;
+  --md-leading-code:    1.6;
+
+  --md-sp1: 0.25rem;
+  --md-sp2: 0.5rem;
+  --md-sp3: 0.875rem;
+  --md-sp4: 1.25rem;
+  --md-sp5: 2rem;
+
+  --md-indent: 1.5em;
+
+  --md-font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  --md-code-size: 0.857em;
+
+  --md-radius-sm: 3px;
+  --md-radius-md: 5px;
+}
+
 /* ── MarkdownView ────────────────────────────────────────────────────── */
 .markdown-view {
-  line-height: 1.65;
+  font-size: var(--md-scale-base);
+  line-height: var(--md-leading-body);
   color: var(--text);
   word-break: break-word;
 }
+
 .markdown-view h1,
 .markdown-view h2,
 .markdown-view h3,
 .markdown-view h4,
 .markdown-view h5,
 .markdown-view h6 {
-  color: var(--text);
   font-weight: 600;
-  margin: 1em 0 0.4em;
-  line-height: 1.3;
+  line-height: var(--md-leading-heading);
+  color: var(--text);
+  margin-top: var(--md-sp4);
+  margin-bottom: var(--md-sp2);
 }
-.markdown-view h1 {
-  font-size: 1.3em;
+.markdown-view :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
 }
-.markdown-view h2 {
-  font-size: 1.15em;
-}
-.markdown-view h3 {
-  font-size: 1.05em;
-}
+.markdown-view h1 { font-size: var(--md-scale-h1); }
+.markdown-view h2 { font-size: var(--md-scale-h2); }
+.markdown-view h3 { font-size: var(--md-scale-h3); }
 .markdown-view h4,
 .markdown-view h5,
-.markdown-view h6 {
-  font-size: 1em;
-}
+.markdown-view h6 { font-size: var(--md-scale-base); }
+
 .markdown-view p {
-  margin: 0.5em 0;
+  margin-top: 0;
+  margin-bottom: var(--md-sp3);
 }
-.markdown-view ul {
-  padding-left: 1.4em;
-  margin: 0.4em 0;
-  list-style-type: disc;
-  display: block;
+.markdown-view p:last-child {
+  margin-bottom: 0;
 }
+
+.markdown-view ul,
 .markdown-view ol {
-  padding-left: 1.4em;
-  margin: 0.4em 0;
-  list-style-type: decimal;
+  padding-left: var(--md-indent);
+  margin-top: 0;
+  margin-bottom: var(--md-sp3);
   display: block;
 }
+.markdown-view ul { list-style-type: disc; }
+.markdown-view ol { list-style-type: decimal; }
 .markdown-view li {
-  margin: 0.2em 0;
+  margin-bottom: var(--md-sp1);
   display: list-item;
+  line-height: var(--md-leading-body);
 }
+.markdown-view li:last-child { margin-bottom: 0; }
+.markdown-view li > ul,
+.markdown-view li > ol {
+  margin-top: var(--md-sp1);
+  margin-bottom: 0;
+}
+
 .markdown-view code {
-  font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
-  font-size: 0.88em;
+  font-family: var(--md-font-mono);
+  font-size: var(--md-code-size);
   background: var(--bg-highlight);
-  padding: 1px 4px;
-  border-radius: 3px;
+  padding: 0.1em 0.35em;
+  border-radius: var(--md-radius-sm);
+  line-height: 1;
 }
 .markdown-view pre {
   background: var(--bg-highlight);
   border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 10px 12px;
+  border-radius: var(--md-radius-md);
+  padding: var(--md-sp3) var(--md-sp3);
   overflow-x: auto;
-  margin: 0.6em 0;
+  margin-bottom: var(--md-sp3);
+  line-height: var(--md-leading-code);
 }
 .markdown-view pre code {
   background: none;
   padding: 0;
-  font-size: 0.85em;
+  font-size: var(--md-code-size);
+  border-radius: 0;
 }
+
 .markdown-view blockquote {
-  border-left: 3px solid var(--accent-soft);
-  padding-left: 10px;
+  border-left: 2px solid var(--accent-soft);
+  padding-left: var(--md-sp3);
   color: var(--text-muted);
-  margin: 0.6em 0;
+  margin: 0 0 var(--md-sp3) 0;
+  font-style: italic;
 }
+.markdown-view blockquote > *:last-child { margin-bottom: 0; }
+
 .markdown-view a {
   color: var(--accent);
   text-decoration: none;
@@ -1548,56 +1613,54 @@ textarea {
 .markdown-view a:hover {
   text-decoration: underline;
 }
+
 .markdown-view strong {
-  color: var(--text);
   font-weight: 600;
+  color: var(--text);
 }
 .markdown-view em {
   font-style: italic;
-  color: var(--text-muted);
 }
+
 .markdown-view hr {
   border: none;
   border-top: 1px solid var(--border);
-  margin: 0.8em 0;
+  margin: var(--md-sp5) 0;
 }
+
 .markdown-view table {
   border-collapse: collapse;
   width: 100%;
-  margin: 0.6em 0;
-  font-size: 0.9em;
+  margin-bottom: var(--md-sp3);
+  font-size: var(--md-scale-sm);
+  line-height: 1.5;
 }
 .markdown-view th,
 .markdown-view td {
   border: 1px solid var(--border);
-  padding: 5px 8px;
+  padding: var(--md-sp2) var(--md-sp3);
   text-align: left;
+  vertical-align: top;
 }
 .markdown-view th {
   background: var(--bg-highlight);
   font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
 }
 
-/* Narrow variant used inside the research panel */
+/* ── Markdown size variants ──────────────────────────────────────────── */
+/* Narrow variant: scale the container, em-based internals follow */
 .gap-markdown-narrow {
-  font-size: 12px;
-}
-.gap-markdown-narrow h1,
-.gap-markdown-narrow h2,
-.gap-markdown-narrow h3 {
-  margin-top: 0.7em;
+  font-size: var(--md-scale-sm);
 }
 
-/* Sidecar messages */
+/* Sidecar messages: slightly larger than narrow, trim outer whitespace */
 .sidecar-msg-markdown {
-  font-size: 13px;
+  font-size: 0.929rem; /* 13px */
 }
-.sidecar-msg-markdown > *:first-child {
-  margin-top: 0;
-}
-.sidecar-msg-markdown > *:last-child {
-  margin-bottom: 0;
-}
+.sidecar-msg-markdown > *:first-child { margin-top: 0; }
+.sidecar-msg-markdown > *:last-child  { margin-bottom: 0; }
 
 /* ── Gap expanded modal ───────────────────────────────────────────────── */
 .modal-gap-expanded {
