@@ -276,8 +276,6 @@ textarea {
   margin-bottom: 0.75em;
 }
 .tiptap li {
-  display: flex;
-  gap: 0.4rem;
   margin-bottom: 0.2em;
   line-height: 1.65;
 }

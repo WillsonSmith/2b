@@ -232,6 +232,12 @@ function App() {
               const parts = data.workspace.split("/");
               fileManager.setWorkspaceName(parts.at(-1) ?? data.workspace);
               fileManager.setNeedsWorkspace(false);
+              fetch("/api/chat-history")
+                .then((r) => r.json())
+                .then((rows: Array<{ role: "user" | "assistant"; text: string }>) => {
+                  setMessages(rows.map((r) => ({ role: r.role, text: r.text })));
+                })
+                .catch(() => {});
             } else {
               fileManager.setNeedsWorkspace(true);
             }
