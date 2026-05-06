@@ -153,7 +153,10 @@ function App() {
   const [dismissedLargeFile, setDismissedLargeFile] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [editorCounts, setEditorCounts] = useState({ words: 0, chars: 0 });
-  const [indexProgress, setIndexProgress] = useState<{ indexed: number; total: number } | null>(null);
+  const [indexProgress, setIndexProgress] = useState<{
+    indexed: number;
+    total: number;
+  } | null>(null);
 
   const ws = useWebSocket();
 
@@ -204,7 +207,11 @@ function App() {
       .then((r) => r.json())
       .then(
         (data: {
-          features?: { autocomplete?: boolean; autosave?: boolean; lint?: boolean };
+          features?: {
+            autocomplete?: boolean;
+            autosave?: boolean;
+            lint?: boolean;
+          };
         }) => {
           if (data.features?.autocomplete !== undefined)
             editorFeatures.setAutocompleteEnabled(data.features.autocomplete);
@@ -234,9 +241,15 @@ function App() {
               fileManager.setNeedsWorkspace(false);
               fetch("/api/chat-history")
                 .then((r) => r.json())
-                .then((rows: Array<{ role: "user" | "assistant"; text: string }>) => {
-                  setMessages(rows.map((r) => ({ role: r.role, text: r.text })));
-                })
+                .then(
+                  (
+                    rows: Array<{ role: "user" | "assistant"; text: string }>,
+                  ) => {
+                    setMessages(
+                      rows.map((r) => ({ role: r.role, text: r.text })),
+                    );
+                  },
+                )
                 .catch(() => {});
             } else {
               fileManager.setNeedsWorkspace(true);
@@ -258,7 +271,7 @@ function App() {
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (
-        e.key === "?" &&
+        e.key === "F1" &&
         !(e.target instanceof HTMLInputElement) &&
         !(e.target instanceof HTMLTextAreaElement)
       ) {
@@ -410,13 +423,21 @@ function App() {
       setMessages((prev) => [...prev, { role: "assistant", text: msg.text }]),
     );
     const unsubToolCall = ws.subscribe("tool_call", (msg) =>
-      setMessages((prev) => [...prev, { role: "tool", name: msg.name, status: "calling" }]),
+      setMessages((prev) => [
+        ...prev,
+        { role: "tool", name: msg.name, status: "calling" },
+      ]),
     );
     const unsubToolResult = ws.subscribe("tool_result", (msg) =>
       setMessages((prev) => {
         for (let i = prev.length - 1; i >= 0; i--) {
           const m = prev[i];
-          if (m && m.role === "tool" && m.name === msg.name && m.status === "calling") {
+          if (
+            m &&
+            m.role === "tool" &&
+            m.name === msg.name &&
+            m.status === "calling"
+          ) {
             const next = [...prev];
             next[i] = { role: "tool", name: msg.name, status: "done" };
             return next;
@@ -428,7 +449,10 @@ function App() {
     const unsubExplain = ws.subscribe("explain_code_result", (msg) => {
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", text: `**Code explanation:**\n\n${msg.explanation}` },
+        {
+          role: "assistant",
+          text: `**Code explanation:**\n\n${msg.explanation}`,
+        },
       ]);
       setSidecarCollapsed(false);
     });
@@ -453,13 +477,18 @@ function App() {
         ...prev,
         {
           role: "assistant",
-          text: msg.success ? `Ingestion started: ${msg.message}` : `Ingest failed: ${msg.message}`,
+          text: msg.success
+            ? `Ingestion started: ${msg.message}`
+            : `Ingest failed: ${msg.message}`,
         },
       ]);
       fileManager.refreshFiles();
     });
     const unsubError = ws.subscribe("error", (msg) => {
-      setMessages((prev) => [...prev, { role: "assistant", text: `[Error] ${msg.message}` }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", text: `[Error] ${msg.message}` },
+      ]);
       editorFeatures.setIsGeneratingMetadata(false);
       editorFeatures.setIsTocGenerating(false);
       research.setIsSearching(false);
@@ -496,7 +525,13 @@ function App() {
       unsubFileCreated();
       unsubIndex();
     };
-  }, [ws.subscribe, fileManager.refreshFiles, editorFeatures, research, conflictsGraph]);
+  }, [
+    ws.subscribe,
+    fileManager.refreshFiles,
+    editorFeatures,
+    research,
+    conflictsGraph,
+  ]);
 
   // ── Status indicator ──────────────────────────────────────────────────────────
 
@@ -612,7 +647,10 @@ function App() {
           <Settings size={16} />
         </button>
         {indexProgress && (
-          <span className="app-header-index-progress" title="Indexing workspace files">
+          <span
+            className="app-header-index-progress"
+            title="Indexing workspace files"
+          >
             Indexing {indexProgress.indexed}/{indexProgress.total}
           </span>
         )}
