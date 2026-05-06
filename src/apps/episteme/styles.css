@@ -303,21 +303,48 @@ textarea {
   margin-bottom: var(--md-sp3);
   display: block;
 }
-.tiptap ul { list-style-type: disc; }
-.tiptap ul ul { list-style-type: square; }
-.tiptap ol { list-style-type: decimal; }
+.tiptap ul {
+  list-style-type: disc;
+}
+.tiptap ul ul {
+  list-style-type: square;
+}
+.tiptap ol {
+  list-style-type: decimal;
+}
 .tiptap li {
   margin-bottom: 0.35rem;
   display: list-item;
   line-height: var(--md-leading-body);
 }
-.tiptap li:last-child { margin-bottom: 0; }
+.tiptap li:last-child {
+  margin-bottom: 0;
+}
 .tiptap li > ul > li,
-.tiptap li > ol > li { margin-bottom: var(--md-sp1); }
+.tiptap li > ol > li {
+  margin-bottom: var(--md-sp1);
+}
 .tiptap li > ul,
 .tiptap li > ol {
   margin-top: var(--md-sp1);
   margin-bottom: 0;
+}
+.tiptap ul[data-type="taskList"] {
+  padding-left: 0.25em;
+
+  li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4em;
+    list-style: none;
+    > label {
+      flex-shrink: 0;
+    }
+    > div {
+      flex: 1;
+      min-width: 0;
+    }
+  }
 }
 
 .tiptap blockquote {
@@ -327,7 +354,9 @@ textarea {
   margin: 0 0 var(--md-sp3) 0;
   font-style: italic;
 }
-.tiptap blockquote > *:last-child { margin-bottom: 0; }
+.tiptap blockquote > *:last-child {
+  margin-bottom: 0;
+}
 
 .tiptap code {
   font-family: var(--md-font-mono);
@@ -1566,16 +1595,16 @@ textarea {
     First heading in a container removes its top margin.
 */
 :root {
-  --md-scale-xs:   0.75rem;
-  --md-scale-sm:   0.857rem;
+  --md-scale-xs: 0.75rem;
+  --md-scale-sm: 0.857rem;
   --md-scale-base: 1rem;
-  --md-scale-h3:   1.125rem;
-  --md-scale-h2:   1.286rem;
-  --md-scale-h1:   1.5rem;
+  --md-scale-h3: 1.125rem;
+  --md-scale-h2: 1.286rem;
+  --md-scale-h1: 1.5rem;
 
   --md-leading-heading: 1.25;
-  --md-leading-body:    1.72;
-  --md-leading-code:    1.6;
+  --md-leading-body: 1.72;
+  --md-leading-code: 1.6;
 
   --md-sp1: 0.25rem;
   --md-sp2: 0.5rem;
@@ -1656,17 +1685,27 @@ textarea {
   margin-bottom: var(--md-sp3);
   display: block;
 }
-.markdown-view ul { list-style-type: disc; }
-.markdown-view ul ul { list-style-type: square; }
-.markdown-view ol { list-style-type: decimal; }
+.markdown-view ul {
+  list-style-type: disc;
+}
+.markdown-view ul ul {
+  list-style-type: square;
+}
+.markdown-view ol {
+  list-style-type: decimal;
+}
 .markdown-view li {
   margin-bottom: 0.35rem;
   display: list-item;
   line-height: var(--md-leading-body);
 }
-.markdown-view li:last-child { margin-bottom: 0; }
+.markdown-view li:last-child {
+  margin-bottom: 0;
+}
 .markdown-view li > ul > li,
-.markdown-view li > ol > li { margin-bottom: var(--md-sp1); }
+.markdown-view li > ol > li {
+  margin-bottom: var(--md-sp1);
+}
 .markdown-view li > ul,
 .markdown-view li > ol {
   margin-top: var(--md-sp1);
@@ -1704,7 +1743,9 @@ textarea {
   margin: 0 0 var(--md-sp3) 0;
   font-style: italic;
 }
-.markdown-view blockquote > *:last-child { margin-bottom: 0; }
+.markdown-view blockquote > *:last-child {
+  margin-bottom: 0;
+}
 
 .markdown-view a {
   color: var(--accent);
@@ -1763,8 +1804,12 @@ textarea {
 .sidecar-msg-markdown {
   font-size: 0.929rem; /* 13px */
 }
-.sidecar-msg-markdown > *:first-child { margin-top: 0; }
-.sidecar-msg-markdown > *:last-child  { margin-bottom: 0; }
+.sidecar-msg-markdown > *:first-child {
+  margin-top: 0;
+}
+.sidecar-msg-markdown > *:last-child {
+  margin-bottom: 0;
+}
 
 /* ── Gap expanded modal ───────────────────────────────────────────────── */
 .modal-gap-expanded {
