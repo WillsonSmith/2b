@@ -146,7 +146,7 @@ export function ResearchPanel({
     <div className="research-panel">
       <div className="research-panel-header">
         <span className="research-panel-title">Research</span>
-        <button className="research-panel-close" onClick={onClose} title="Close"><X size={13} /></button>
+        <button className="header-icon-btn" onClick={onClose} title="Close"><X size={13} /></button>
       </div>
 
       {/* Search form */}

@@ -104,8 +104,8 @@ export function KnowledgeGraph({
           <span className="kg-legend-dot" style={{ background: "#cc5555", marginLeft: 8 }} /> Conflicts
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <button className="knowledge-graph-btn" onClick={handleRefresh} title="Refresh graph"><RotateCw size={13} /></button>
-          <button className="knowledge-graph-btn" onClick={onClose} title="Close"><X size={13} /></button>
+          <button className="header-icon-btn" onClick={handleRefresh} title="Refresh graph"><RotateCw size={13} /></button>
+          <button className="header-icon-btn" onClick={onClose} title="Close"><X size={13} /></button>
         </div>
       </div>
 

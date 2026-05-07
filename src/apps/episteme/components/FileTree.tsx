@@ -152,14 +152,14 @@ export function FileTree({
         {activeTab === "files" && (
           <>
             <button
-              className="file-tree-refresh"
+              className="header-icon-btn"
               onClick={() => setIsCreating(true)}
               title="New file"
             >
               <Plus size={14} />
             </button>
             <button
-              className="file-tree-refresh"
+              className="header-icon-btn"
               onClick={onRefresh}
               title="Refresh file list"
             >

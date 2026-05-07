@@ -304,7 +304,7 @@ export function AISidecar({
           {!collapsed && <span className="sidecar-title">Episteme AI</span>}
           {!collapsed && (
             <button
-              className="sidecar-expand-btn"
+              className="header-icon-btn"
               onClick={() => setExpanded(true)}
               title="Open full-screen chat"
             >
@@ -312,7 +312,7 @@ export function AISidecar({
             </button>
           )}
           <button
-            className="sidecar-toggle"
+            className="header-icon-btn"
             onClick={onToggle}
             title={collapsed ? "Expand" : "Collapse"}
           >
