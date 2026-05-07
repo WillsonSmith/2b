@@ -193,7 +193,8 @@ textarea {
   overflow-x: auto;
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
-  padding: 4px 8px;
+  height: var(--header-h);
+  padding: 0 8px;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -512,11 +513,19 @@ textarea {
   overflow: hidden;
 }
 .sidecar-toggle {
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
   flex-shrink: 0;
 }
 .sidecar-toggle:hover {
+  background: var(--bg-highlight);
   color: var(--text);
 }
 
@@ -997,8 +1006,10 @@ textarea {
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--border);
+  height: var(--header-h);
   padding: 0 4px;
   gap: 0;
+  flex-shrink: 0;
 }
 .file-tree-tab {
   flex: 1;
@@ -1024,15 +1035,18 @@ textarea {
   border-bottom-color: var(--accent);
 }
 .file-tree-refresh {
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
-  padding: 2px 4px;
-  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
   background: none;
-  border: none;
   cursor: pointer;
 }
 .file-tree-refresh:hover {
+  background: var(--bg-highlight);
   color: var(--text);
 }
 
@@ -1350,7 +1364,8 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px 6px;
+  height: var(--header-h);
+  padding: 0 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -1905,7 +1920,8 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px 6px;
+  height: var(--header-h);
+  padding: 0 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -2208,7 +2224,8 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px 6px;
+  height: var(--header-h);
+  padding: 0 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -2344,13 +2361,19 @@ textarea {
 
 /* Sidecar expand button (⤢) in header */
 .sidecar-expand-btn {
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
-  padding: 0 3px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
   flex-shrink: 0;
-  line-height: 1;
 }
 .sidecar-expand-btn:hover {
+  background: var(--bg-highlight);
   color: var(--text);
 }
 
