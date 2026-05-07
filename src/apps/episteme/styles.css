@@ -1377,11 +1377,19 @@ textarea {
   text-transform: uppercase;
 }
 .research-panel-close {
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
-  padding: 0 2px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 .research-panel-close:hover {
+  background: var(--bg-highlight);
   color: var(--text);
 }
 
@@ -1934,13 +1942,21 @@ textarea {
 }
 .conflicts-refresh-btn,
 .conflicts-panel-close {
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
-  padding: 0 2px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 .conflicts-refresh-btn:hover,
 .conflicts-panel-close:hover {
   color: var(--text);
+  background: var(--bg-highlight);
 }
 
 .conflicts-content {
@@ -2251,11 +2267,19 @@ textarea {
   margin-right: 3px;
 }
 .knowledge-graph-btn {
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
-  padding: 0 2px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 .knowledge-graph-btn:hover {
+  background: var(--bg-highlight);
   color: var(--text);
 }
 .knowledge-graph-body {
