@@ -21,10 +21,10 @@ export function ConflictsPanel({
       <div className="conflicts-panel-header">
         <span className="conflicts-panel-title">Conflicts</span>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <button className="conflicts-refresh-btn" onClick={onRefresh} title="Re-scan for contradictions">
+          <button className="header-icon-btn" onClick={onRefresh} title="Re-scan for contradictions">
             <RotateCw size={13} />
           </button>
-          <button className="conflicts-panel-close" onClick={onClose} title="Close">
+          <button className="header-icon-btn" onClick={onClose} title="Close">
             <X size={13} />
           </button>
         </div>

@@ -32,6 +32,23 @@
   background: var(--bg);
 }
 
+.header-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.header-icon-btn:hover {
+  background: var(--bg-highlight);
+  color: var(--text);
+}
+
 body {
   height: 100vh;
   overflow: hidden;
@@ -512,22 +529,7 @@ textarea {
   white-space: nowrap;
   overflow: hidden;
 }
-.sidecar-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  padding: 4px 6px;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  background: none;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.sidecar-toggle:hover {
-  background: var(--bg-highlight);
-  color: var(--text);
-}
+
 
 .sidecar-messages {
   flex: 1;
@@ -1034,22 +1036,6 @@ textarea {
   color: var(--text);
   border-bottom-color: var(--accent);
 }
-.file-tree-refresh {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  padding: 4px 6px;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  background: none;
-  cursor: pointer;
-}
-.file-tree-refresh:hover {
-  background: var(--bg-highlight);
-  color: var(--text);
-}
-
 .file-tree-new-file {
   padding: 4px 6px;
 }
@@ -1940,24 +1926,7 @@ textarea {
   color: var(--text-muted);
   text-transform: uppercase;
 }
-.conflicts-refresh-btn,
-.conflicts-panel-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  padding: 4px 6px;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  background: none;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.conflicts-refresh-btn:hover,
-.conflicts-panel-close:hover {
-  color: var(--text);
-  background: var(--bg-highlight);
-}
+
 
 .conflicts-content {
   flex: 1;
@@ -2384,22 +2353,7 @@ textarea {
 }
 
 /* Sidecar expand button (⤢) in header */
-.sidecar-expand-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  padding: 4px 6px;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  background: none;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.sidecar-expand-btn:hover {
-  background: var(--bg-highlight);
-  color: var(--text);
-}
+
 
 /* Input area wrapper (contains quick-actions panel + input row) */
 .sidecar-input-area {
