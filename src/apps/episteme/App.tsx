@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Editor } from "./components/editor/Editor.tsx";
 import { FileTree } from "./components/FileTree.tsx";
 import { TocPanel } from "./components/TocPanel.tsx";
@@ -9,6 +9,7 @@ import { ResearchPanel } from "./components/ResearchPanel.tsx";
 import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
 import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
 import { ExportPanel } from "./components/ExportPanel.tsx";
+import { UnifiedSearch, type SearchCommand } from "./components/UnifiedSearch.tsx";
 import type { ExportFormat } from "./features/export.ts";
 import type { WikilinkSuggestion } from "./features/autolink.ts";
 import "./styles.css";
@@ -153,6 +154,7 @@ function App() {
   const [isExporting, setIsExporting] = useState(false);
   const [pandocAvailable, setPandocAvailable] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const [dismissedLargeFile, setDismissedLargeFile] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [editorCounts, setEditorCounts] = useState({ words: 0, chars: 0 });
@@ -282,6 +284,10 @@ function App() {
       ) {
         setShowHelp((v) => !v);
       }
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setShowSearch((v) => !v);
+      }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
@@ -322,6 +328,26 @@ function App() {
   const interrupt = useCallback(() => {
     ws.interrupt();
   }, [ws]);
+
+  const searchCommands = useMemo<SearchCommand[]>(
+    () => [
+      { id: "toc", label: "Table of Contents", description: "Toggle TOC panel", action: () => setShowToc((v) => !v) },
+      { id: "research", label: "Research Panel", description: "Search arXiv, Wikipedia & workspace", action: () => research.setShowResearch((v) => !v) },
+      { id: "conflicts", label: "Conflicts Panel", description: "Detect contradictions", action: () => conflictsGraph.showConflicts ? conflictsGraph.setShowConflicts(false) : conflictsGraph.handleOpenConflicts() },
+      { id: "graph", label: "Knowledge Graph", description: "Visualize note connections", action: () => conflictsGraph.showGraph ? conflictsGraph.setShowGraph(false) : conflictsGraph.handleOpenGraph() },
+      { id: "export", label: "Export Document", description: "Export to PDF or HTML", action: () => setShowExport(true) },
+      { id: "settings", label: "Settings", description: "Style guide & features", action: () => setShowSettings(true) },
+      { id: "help", label: "Keyboard Shortcuts", description: "View all shortcuts", action: () => setShowHelp(true) },
+      { id: "newfile", label: "New File", description: "Create a new note", action: () => fileManager.createFile("untitled.md") },
+      { id: "reindex", label: "Re-index Workspace", description: "Update search index", action: () => research.handleReindex() },
+      { id: "save", label: "Save File", description: "Save current document", action: () => fileManager.saveFile() },
+    ],
+    [
+      research,
+      conflictsGraph,
+      fileManager,
+    ],
+  );
 
   const handleAskAboutSelection = useCallback(
     (text: string) => {
@@ -621,79 +647,103 @@ function App() {
         <span className="app-header-workspace">
           {fileManager.workspaceName}
         </span>
-        <div className="app-header-spacer" />
         <button
-          className={`header-research-btn${showToc ? " active" : ""}`}
-          title="Table of contents"
-          onClick={() => setShowToc((v) => !v)}
+          className="header-search-trigger"
+          onClick={() => setShowSearch(true)}
+          title="Unified search (⌘K)"
         >
-          <AlignLeft size={16} />
+          <Search size={13} />
+          <span>Search…</span>
+          <kbd>⌘K</kbd>
         </button>
-        <button
-          className={`header-research-btn${research.showResearch ? " active" : ""}`}
-          title="Research panel"
-          onClick={() => research.setShowResearch((v) => !v)}
-        >
-          <Search size={16} />
-        </button>
-        <button
-          className={`header-research-btn${conflictsGraph.showConflicts ? " active" : ""}`}
-          title="Conflicts panel"
-          onClick={() =>
-            conflictsGraph.showConflicts
-              ? conflictsGraph.setShowConflicts(false)
-              : conflictsGraph.handleOpenConflicts()
-          }
-        >
-          <Zap size={16} />
-        </button>
-        <button
-          className={`header-research-btn${conflictsGraph.showGraph ? " active" : ""}`}
-          title="Knowledge graph"
-          onClick={() =>
-            conflictsGraph.showGraph
-              ? conflictsGraph.setShowGraph(false)
-              : conflictsGraph.handleOpenGraph()
-          }
-        >
-          <Network size={16} />
-        </button>
-        <button
-          className="header-research-btn"
-          title="Export document"
-          onClick={() => setShowExport(true)}
-        >
-          <Download size={16} />
-        </button>
-        <button
-          className="header-research-btn"
-          title="Keyboard shortcuts (?)"
-          onClick={() => setShowHelp(true)}
-        >
-          <HelpCircle size={16} />
-        </button>
-        <button
-          className="header-settings-btn"
-          title="Style Guide"
-          onClick={() => setShowSettings(true)}
-        >
-          <Settings size={16} />
-        </button>
-        {indexProgress && (
-          <span
-            className="app-header-index-progress"
-            title="Indexing workspace files"
+        <div className="app-header-actions">
+          <button
+            className={`header-research-btn${showToc ? " active" : ""}`}
+            title="Table of contents"
+            onClick={() => setShowToc((v) => !v)}
           >
-            Indexing {indexProgress.indexed}/{indexProgress.total}
+            <AlignLeft size={16} />
+          </button>
+          <button
+            className={`header-research-btn${research.showResearch ? " active" : ""}`}
+            title="Research panel"
+            onClick={() => research.setShowResearch((v) => !v)}
+          >
+            <Search size={16} />
+          </button>
+          <button
+            className={`header-research-btn${conflictsGraph.showConflicts ? " active" : ""}`}
+            title="Conflicts panel"
+            onClick={() =>
+              conflictsGraph.showConflicts
+                ? conflictsGraph.setShowConflicts(false)
+                : conflictsGraph.handleOpenConflicts()
+            }
+          >
+            <Zap size={16} />
+          </button>
+          <button
+            className={`header-research-btn${conflictsGraph.showGraph ? " active" : ""}`}
+            title="Knowledge graph"
+            onClick={() =>
+              conflictsGraph.showGraph
+                ? conflictsGraph.setShowGraph(false)
+                : conflictsGraph.handleOpenGraph()
+            }
+          >
+            <Network size={16} />
+          </button>
+          <button
+            className="header-research-btn"
+            title="Export document"
+            onClick={() => setShowExport(true)}
+          >
+            <Download size={16} />
+          </button>
+          <button
+            className="header-research-btn"
+            title="Keyboard shortcuts (?)"
+            onClick={() => setShowHelp(true)}
+          >
+            <HelpCircle size={16} />
+          </button>
+          <button
+            className="header-settings-btn"
+            title="Style Guide"
+            onClick={() => setShowSettings(true)}
+          >
+            <Settings size={16} />
+          </button>
+          {indexProgress && (
+            <span
+              className="app-header-index-progress"
+              title="Indexing workspace files"
+            >
+              Indexing {indexProgress.indexed}/{indexProgress.total}
+            </span>
+          )}
+          <span
+            className={`app-header-status${ws.agentState === "thinking" ? " thinking" : ws.agentState === "disconnected" ? " disconnected" : ""}`}
+          >
+            {statusLabel}
           </span>
-        )}
-        <span
-          className={`app-header-status${ws.agentState === "thinking" ? " thinking" : ws.agentState === "disconnected" ? " disconnected" : ""}`}
-        >
-          {statusLabel}
-        </span>
+        </div>
       </div>
 
+      <UnifiedSearch
+        open={showSearch}
+        onClose={() => setShowSearch(false)}
+        workspaceFiles={fileManager.workspaceFiles}
+        onFileSelect={(path) => { fileManager.openFile(path); setShowSearch(false); }}
+        onResearchSearch={(q) => {
+          research.handleSearch(q);
+          research.setShowResearch(true);
+          setShowSearch(false);
+        }}
+        researchResults={research.searchResults}
+        isResearching={research.isSearching}
+        commands={searchCommands}
+      />
       {showSettings && (
         <SettingsPanel
           onClose={() => setShowSettings(false)}
