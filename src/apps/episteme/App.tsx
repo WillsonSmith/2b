@@ -157,6 +157,7 @@ function App() {
     indexed: number;
     total: number;
   } | null>(null);
+  const [workspaceRoot, setWorkspaceRoot] = useState("");
 
   const ws = useWebSocket();
 
@@ -239,6 +240,7 @@ function App() {
               const parts = data.workspace.split("/");
               fileManager.setWorkspaceName(parts.at(-1) ?? data.workspace);
               fileManager.setNeedsWorkspace(false);
+              setWorkspaceRoot(data.workspace);
               fetch("/api/chat-history")
                 .then((r) => r.json())
                 .then(
@@ -732,6 +734,8 @@ function App() {
           onRefresh={fileManager.refreshFiles}
           onCreateFile={fileManager.createFile}
           onRenameFile={fileManager.renameFile}
+          onOpenInFinder={fileManager.openInFinder}
+          workspaceRoot={workspaceRoot}
           tocEntries={editorFeatures.tocEntries}
           isTocGenerating={editorFeatures.isTocGenerating}
           onGenerateToc={editorFeatures.handleGenerateToc}

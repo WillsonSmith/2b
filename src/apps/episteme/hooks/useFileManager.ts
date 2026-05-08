@@ -98,6 +98,10 @@ export function useFileManager(
     wsRef.current?.send(JSON.stringify({ type: "file_rename", oldPath, newPath }));
   }, [wsRef]);
 
+  const openInFinder = useCallback((path: string) => {
+    wsRef.current?.send(JSON.stringify({ type: "open_in_finder", path }));
+  }, [wsRef]);
+
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
@@ -185,6 +189,7 @@ export function useFileManager(
     createFile,
     renameFile,
     refreshFiles,
+    openInFinder,
     handleOpenWorkspace,
   };
 }

@@ -46,7 +46,8 @@ export type ClientMsg =
   | { type: "analyze_image"; base64: string; mimeType: string; filename: string }
   | { type: "explain_code"; code: string; language: string }
   | { type: "voice_data"; audioBase64: string; mimeType: string }
-  | { type: "lint_request"; content: string };
+  | { type: "lint_request"; content: string }
+  | { type: "open_in_finder"; path: string };
 
 export type ServerMsg =
   | { type: "speak"; text: string }
