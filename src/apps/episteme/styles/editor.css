@@ -1,0 +1,437 @@
+/* ── Editor pane ─────────────────────────────────────────────────────── */
+.editor-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.editor-toolbar {
+  overflow-x: auto;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  height: var(--header-h);
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+.toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 7px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid transparent;
+  line-height: 1.4;
+}
+.toolbar-btn:hover {
+  background: var(--bg-highlight);
+  color: var(--text);
+}
+.toolbar-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-soft);
+}
+.toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.editor-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px max(32px, calc(50% - 380px));
+}
+
+/* TipTap styles */
+.tiptap {
+  outline: none;
+  min-height: 100%;
+  font-size: var(--md-scale-base);
+  line-height: var(--md-leading-body);
+  color: var(--text);
+  word-break: break-word;
+}
+
+.tiptap h1,
+.tiptap h2,
+.tiptap h3,
+.tiptap h4,
+.tiptap h5,
+.tiptap h6 {
+  color: var(--text);
+  margin-top: var(--md-sp4);
+  margin-bottom: var(--md-sp2);
+}
+.tiptap :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
+}
+.tiptap h1 {
+  font-size: var(--md-scale-h1);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+.tiptap h2 {
+  font-size: var(--md-scale-h2);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.tiptap h3 {
+  font-size: var(--md-scale-h3);
+  font-weight: 600;
+  line-height: var(--md-leading-heading);
+}
+.tiptap h4,
+.tiptap h5,
+.tiptap h6 {
+  font-size: var(--md-scale-base);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.tiptap h2 + h3 {
+  margin-top: var(--md-sp2);
+}
+
+.tiptap p {
+  margin-top: 0;
+  margin-bottom: var(--md-sp3);
+}
+.tiptap p:last-child {
+  margin-bottom: 0;
+}
+
+.tiptap ul,
+.tiptap ol {
+  padding-left: var(--md-indent);
+  margin-top: 0;
+  margin-bottom: var(--md-sp3);
+  display: block;
+}
+.tiptap ul {
+  list-style-type: disc;
+}
+.tiptap ul ul {
+  list-style-type: square;
+}
+.tiptap ol {
+  list-style-type: decimal;
+}
+.tiptap li {
+  margin-bottom: 0.35rem;
+  display: list-item;
+  line-height: var(--md-leading-body);
+}
+.tiptap li:last-child {
+  margin-bottom: 0;
+}
+.tiptap li > ul > li,
+.tiptap li > ol > li {
+  margin-bottom: var(--md-sp1);
+}
+.tiptap li > ul,
+.tiptap li > ol {
+  margin-top: var(--md-sp1);
+  margin-bottom: 0;
+}
+.tiptap ul[data-type="taskList"] {
+  padding-left: 0.25em;
+
+  li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4em;
+    list-style: none;
+    > label {
+      flex-shrink: 0;
+    }
+    > div {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+}
+
+.tiptap blockquote {
+  border-left: 2px solid var(--accent-soft);
+  padding-left: var(--md-sp3);
+  color: var(--text-muted);
+  margin: 0 0 var(--md-sp3) 0;
+  font-style: italic;
+}
+.tiptap blockquote > *:last-child {
+  margin-bottom: 0;
+}
+
+.tiptap code {
+  font-family: var(--md-font-mono);
+  font-size: var(--md-code-size);
+  background: var(--bg-highlight);
+  padding: 0.1em 0.35em;
+  border-radius: var(--md-radius-sm);
+  line-height: 1;
+}
+.tiptap pre {
+  background: var(--bg-highlight);
+  border: 1px solid var(--border);
+  border-radius: var(--md-radius-md);
+  padding: var(--md-sp3);
+  overflow-x: auto;
+  margin-bottom: var(--md-sp3);
+  line-height: var(--md-leading-code);
+}
+.tiptap pre code {
+  background: none;
+  padding: 0;
+  font-size: var(--md-code-size);
+  border-radius: 0;
+}
+
+.tiptap hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--md-sp5) 0;
+}
+
+.tiptap strong {
+  font-weight: 600;
+  color: var(--text);
+}
+.tiptap em {
+  font-style: italic;
+}
+
+.tiptap a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.tiptap a:hover {
+  text-decoration: underline;
+}
+
+.tiptap .tableWrapper {
+  overflow-x: auto;
+  margin-bottom: var(--md-sp3);
+  -webkit-overflow-scrolling: touch;
+}
+.tiptap table {
+  border-collapse: collapse;
+  min-width: 100%;
+  font-size: var(--md-scale-sm);
+  line-height: 1.5;
+}
+.tiptap th,
+.tiptap td {
+  border: 1px solid var(--border);
+  padding: var(--md-sp2) var(--md-sp3);
+  text-align: left;
+  vertical-align: top;
+}
+.tiptap th {
+  background: var(--bg-highlight);
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--text-dim);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+/* ── Ghost text ──────────────────────────────────────────────────────── */
+.ghost-text {
+  color: var(--text-dim);
+  pointer-events: none;
+  user-select: none;
+  font-style: italic;
+}
+
+/* ── Autolink banner ─────────────────────────────────────────────────── */
+.autolink-banner {
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+.autolink-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.autolink-text strong {
+  color: var(--text);
+}
+.autolink-text code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent-soft);
+}
+.autolink-btn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.1s,
+    color 0.1s;
+}
+.autolink-btn:hover {
+  background: var(--bg-highlight);
+  color: var(--text);
+}
+.autolink-btn.accept {
+  border-color: var(--accent-soft);
+  color: var(--accent-soft);
+}
+.autolink-btn.accept:hover {
+  background: var(--accent-soft);
+  color: var(--bg);
+}
+
+/* ── Find bar ────────────────────────────────────────────────────────── */
+.find-bar {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  z-index: 12;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+.find-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 4px 8px;
+  outline: none;
+  width: 220px;
+}
+.find-input:focus {
+  border-color: var(--accent-soft);
+}
+.find-count {
+  color: var(--text-dim);
+  font-size: 11px;
+  min-width: 64px;
+  text-align: center;
+  white-space: nowrap;
+}
+.find-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  border-radius: 4px;
+  padding: 3px 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 0.1s,
+    color 0.1s;
+}
+.find-btn:hover:not(:disabled) {
+  background: var(--bg-highlight);
+  color: var(--text);
+}
+.find-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.find-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.find-match {
+  background: rgba(255, 200, 70, 0.25);
+  border-radius: 2px;
+}
+.find-match-active {
+  background: rgba(255, 200, 70, 0.65);
+  outline: 1px solid rgba(255, 200, 70, 0.95);
+}
+
+/* ── Mermaid diagram blocks ──────────────────────────────────────────── */
+.mermaid-block {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 8px 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.mermaid-block svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Markdown raw editing mode ───────────────────────────────────────── */
+.editor-raw {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  padding: 24px 32px;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  color: var(--text);
+  font-family: var(--font-mono, "JetBrains Mono", "Fira Code", monospace);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow: auto;
+}
+
+/* ── Markdown reveal decorations ─────────────────────────────────────── */
+.md-syntax {
+  color: var(--text-muted, #666);
+  font-family: var(--font-mono, "JetBrains Mono", "Fira Code", monospace);
+  font-size: 0.8em;
+  font-weight: normal;
+  font-style: normal;
+  user-select: none;
+  pointer-events: none;
+}
+.md-syntax-heading {
+  opacity: 0.5;
+}

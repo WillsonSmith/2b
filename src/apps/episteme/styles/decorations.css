@@ -1,0 +1,124 @@
+/* ── Lint decorations ────────────────────────────────────────────────── */
+.lint-clarity {
+  border-bottom: 2px solid #6699dd;
+  cursor: help;
+}
+.lint-conciseness {
+  border-bottom: 2px solid #cc9944;
+  cursor: help;
+}
+.lint-fluff {
+  border-bottom: 2px solid #cc5555;
+  cursor: help;
+}
+
+/* ── Wikilink decorations ────────────────────────────────────────────── */
+.wikilink {
+  color: var(--accent);
+  border-bottom: 1px solid var(--accent-soft);
+  cursor: pointer;
+}
+.wikilink:hover {
+  border-bottom-color: var(--accent);
+}
+.wikilink-broken {
+  color: var(--text-muted);
+  border-bottom: 1px dashed var(--text-dim);
+  cursor: pointer;
+}
+.wikilink-broken:hover {
+  color: var(--text);
+  border-bottom-color: var(--text-muted);
+}
+
+.wikilink-popup {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 4px;
+  min-width: 200px;
+  max-width: 360px;
+  max-height: 280px;
+  overflow-y: auto;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+}
+.wikilink-popup-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text);
+}
+.wikilink-popup-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.wikilink-popup-name {
+  flex: 0 0 auto;
+}
+.wikilink-popup-path {
+  flex: 1 1 auto;
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* ── Bubble menu ─────────────────────────────────────────────────────── */
+.bubble-menu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 3px 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.bubble-btn {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition:
+    background 0.1s,
+    color 0.1s;
+}
+.bubble-btn:hover {
+  background: var(--bg-highlight);
+  color: var(--text);
+}
+.bubble-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+
+/* ── Icons (lucide-react) ────────────────────────────────────────────── */
+button svg,
+a svg {
+  vertical-align: -0.15em;
+}
+.icon-spin {
+  animation: icon-spin 1s linear infinite;
+}
+@keyframes icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.icon-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

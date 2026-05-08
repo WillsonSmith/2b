@@ -1,0 +1,212 @@
+/* ── Unified Search (⌘K palette) ─────────────────────────────────────── */
+.header-search-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-highlight);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  width: 240px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  -webkit-app-region: no-drag;
+  transition: border-color 0.15s, color 0.15s;
+}
+.header-search-trigger:hover {
+  border-color: var(--accent-soft);
+  color: var(--text);
+}
+.header-search-trigger span {
+  flex: 1;
+  text-align: left;
+}
+.header-search-trigger kbd {
+  font-family: inherit;
+  font-size: 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: var(--text-dim);
+}
+
+.usearch-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 300;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 80px;
+}
+
+.usearch-container {
+  width: 560px;
+  max-width: calc(100vw - 40px);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.usearch-scopes {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 0 8px;
+  gap: 2px;
+}
+
+.usearch-scope-tab {
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: color 0.1s;
+}
+.usearch-scope-tab:hover {
+  color: var(--text);
+}
+.usearch-scope-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.usearch-scope-hint {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-dim);
+  padding-right: 4px;
+}
+
+.usearch-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.usearch-input-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.usearch-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 14px;
+}
+.usearch-input::placeholder {
+  color: var(--text-dim);
+}
+
+.usearch-results {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.usearch-empty {
+  padding: 20px 16px;
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: center;
+}
+
+.usearch-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  user-select: none;
+}
+.usearch-result:hover,
+.usearch-result.active {
+  background: var(--bg-highlight);
+}
+.usearch-result--block {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.usearch-result-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.usearch-result-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.usearch-result-sub {
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+  flex-shrink: 0;
+}
+
+.usearch-result-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.usearch-match-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 0 1px 21px;
+  font-size: 11px;
+}
+
+.usearch-match-line {
+  color: var(--text-dim);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  min-width: 32px;
+  text-align: right;
+}
+
+.usearch-match-text {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.usearch-footer {
+  display: flex;
+  gap: 16px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+}

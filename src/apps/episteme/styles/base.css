@@ -1,0 +1,119 @@
+/* ── Reset & base ─────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #181818;
+  --bg-raised: #202020;
+  --bg-highlight: #2a2a2a;
+  --bg-active: #2e3a50;
+  --border: #333333;
+  --border-light: #3d3d3d;
+  --text: #d4d4d4;
+  --text-muted: #888888;
+  --text-dim: #555555;
+  --accent: #6699dd;
+  --accent-soft: #3d5a90;
+  --green: #4caf70;
+  --red: #cc5555;
+  --sidebar-w: 220px;
+  --sidecar-w: 300px;
+  --header-h: 40px;
+  --statusbar-h: 28px;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.header-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.header-icon-btn:hover {
+  background: var(--bg-highlight);
+  color: var(--text);
+}
+
+body {
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+input {
+  font: inherit;
+}
+textarea {
+  font: inherit;
+  resize: none;
+}
+
+/* ── Markdown typography system ──────────────────────────────────────────── */
+/*
+  Scale: major second (×1.125) from a 14px base
+    xs   → 0.75rem  (10.5px) — meta / labels
+    sm   → 0.857rem (12px)   — code, captions
+    base → 1rem     (14px)   — body
+    h3   → 1.125rem (15.75px)
+    h2   → 1.286rem (18px)   — rounded from 1.125²
+    h1   → 1.5rem   (21px)   — one clean step above h2
+
+  Spacing: 4-point grid expressed in rem
+    sp1 → 0.25rem  (3.5px)  — list-item gap
+    sp2 → 0.5rem   (7px)    — tight block gap
+    sp3 → 0.875rem (12.25px) — standard block gap
+    sp4 → 1.25rem  (17.5px) — heading top margin
+    sp5 → 2rem     (28px)   — section break / hr
+
+  Heading rhythm rule:
+    margin-top = sp4 (pull away from previous content)
+    margin-bottom = sp2 (stay close to own content)
+    First heading in a container removes its top margin.
+*/
+:root {
+  --md-scale-xs: 0.75rem;
+  --md-scale-sm: 0.857rem;
+  --md-scale-base: 1rem;
+  --md-scale-h3: 1.125rem;
+  --md-scale-h2: 1.286rem;
+  --md-scale-h1: 1.5rem;
+
+  --md-leading-heading: 1.25;
+  --md-leading-body: 1.72;
+  --md-leading-code: 1.6;
+
+  --md-sp1: 0.25rem;
+  --md-sp2: 0.5rem;
+  --md-sp3: 0.875rem;
+  --md-sp4: 1.25rem;
+  --md-sp5: 2rem;
+
+  --md-indent: 1.5em;
+
+  --md-font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  --md-code-size: 0.857em;
+
+  --md-radius-sm: 3px;
+  --md-radius-md: 5px;
+}
