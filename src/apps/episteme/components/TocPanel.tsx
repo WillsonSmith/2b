@@ -1,6 +1,7 @@
-import { Loader2, Sparkles, X } from "lucide-react";
+import { Loader2, Sparkles, X, Clock } from "lucide-react";
 import { useDebounce } from "../hooks/useDebounce.ts";
 import type { TocEntry } from "../features/toc.ts";
+import { sectionHash } from "../features/tocHash.ts";
 
 interface TocPanelProps {
   content: string;
@@ -10,11 +11,40 @@ interface TocPanelProps {
   onClose: () => void;
 }
 
-function extractHeadings(markdown: string): Array<{ level: number; text: string }> {
-  return markdown.split("\n").flatMap((line) => {
+interface HeadingData {
+  level: number;
+  text: string;
+  contentHash: string;
+}
+
+function extractHeadingData(markdown: string): HeadingData[] {
+  const lines = markdown.split("\n");
+  const result: HeadingData[] = [];
+  let current: { level: number; text: string } | null = null;
+  let contentLines: string[] = [];
+
+  for (const line of lines) {
     const m = line.match(/^(#{1,6})\s+(.+)/);
-    return m ? [{ level: m[1]!.length, text: m[2]!.trim() }] : [];
-  });
+    if (m) {
+      if (current) {
+        result.push({
+          ...current,
+          contentHash: sectionHash(current.text, contentLines.join(" ")),
+        });
+      }
+      current = { level: m[1]!.length, text: m[2]!.trim() };
+      contentLines = [];
+    } else if (current && line.trim()) {
+      contentLines.push(line);
+    }
+  }
+  if (current) {
+    result.push({
+      ...current,
+      contentHash: sectionHash(current.text, contentLines.join(" ")),
+    });
+  }
+  return result;
 }
 
 function scrollToHeading(text: string): void {
@@ -37,8 +67,11 @@ export function TocPanel({
   onClose,
 }: TocPanelProps) {
   const debouncedContent = useDebounce(content, 600);
-  const headings = extractHeadings(debouncedContent);
-  const descMap = new Map(tocEntries.map((e) => [e.text, e.description]));
+  const headings = extractHeadingData(debouncedContent);
+
+  const storedMap = new Map(
+    tocEntries.map((e) => [e.text, { description: e.description, contentHash: e.contentHash }]),
+  );
 
   return (
     <div className="toc-panel">
@@ -70,16 +103,28 @@ export function TocPanel({
           </div>
         ) : (
           headings.map((h, i) => {
-            const desc = descMap.get(h.text);
+            const stored = storedMap.get(h.text);
+            const isStale =
+              stored?.contentHash !== undefined && stored.contentHash !== h.contentHash;
+
             return (
               <div
                 key={`${h.text}-${i}`}
                 className={`toc-entry toc-entry-h${Math.min(h.level, 3)}`}
                 onClick={() => scrollToHeading(h.text)}
-                title={desc || h.text}
+                title={stored?.description || h.text}
               >
                 <div className="toc-entry-heading">{h.text}</div>
-                {desc && <div className="toc-entry-desc">{desc}</div>}
+                {stored?.description && (
+                  <div className={`toc-entry-desc${isStale ? " stale" : ""}`}>
+                    {stored.description}
+                    {isStale && (
+                      <span className="toc-entry-stale-icon" title="Description may be outdated">
+                        <Clock size={10} />
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })

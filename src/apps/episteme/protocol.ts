@@ -31,7 +31,7 @@ export type ClientMsg =
   | { type: "tone_transform"; text: string; tone: Tone; from: number; to: number }
   | { type: "summarize_request"; text: string; insertPos: number }
   | { type: "metadata_request"; title: string; preview: string }
-  | { type: "toc_request"; markdown: string }
+  | { type: "toc_request"; markdown: string; file?: string }
   | { type: "autolink_request"; markdown: string; files: string[] }
   | { type: "diagram_request"; description: string; from: number; to: number }
   | { type: "table_request"; text: string; insertPos: number }
@@ -66,6 +66,7 @@ export type ServerMsg =
   | { type: "lint_result"; issues: LintIssue[] }
   | { type: "metadata_result"; yaml: string }
   | { type: "toc_result"; entries: TocEntry[] }
+  | { type: "toc_stored"; file: string; entries: TocEntry[] }
   | { type: "autolink_result"; suggestions: WikilinkSuggestion[] }
   | { type: "diagram_result"; code: string; from: number; to: number }
   | { type: "table_result"; text: string; insertPos: number }

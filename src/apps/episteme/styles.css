@@ -1201,6 +1201,17 @@ textarea {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.toc-entry-desc.stale {
+  opacity: 0.5;
+  font-style: italic;
+}
+.toc-entry-stale-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 3px;
+  vertical-align: middle;
+  opacity: 0.7;
+}
 
 /* ── Autolink banner ─────────────────────────────────────────────────── */
 .autolink-banner {

@@ -77,7 +77,7 @@ export function useEditorFeatures(
     const markdown = editorContentRef.current;
     if (!markdown.trim()) return;
     setIsTocGenerating(true);
-    wsRef.current.send(JSON.stringify({ type: "toc_request", markdown }));
+    wsRef.current.send(JSON.stringify({ type: "toc_request", markdown, file: activeFile ?? "" }));
   }, [agentState, isTocGenerating, wsRef, editorContentRef]);
 
   const handleAutolinkAccept = useCallback((suggestion: WikilinkSuggestion) => {
@@ -158,6 +158,9 @@ export function useEditorFeatures(
       setTocEntries(msg.entries);
       setIsTocGenerating(false);
     });
+    const unsubTocStored = subscribe("toc_stored", (msg) => {
+      setTocEntries(msg.entries);
+    });
     const unsubAutolink = subscribe("autolink_result", (msg) => setAutolinkSuggestions(msg.suggestions));
     const unsubDiagram = subscribe("diagram_result", (msg) =>
       setDiagramResult({ code: msg.code, from: msg.from, to: msg.to }),
@@ -172,6 +175,7 @@ export function useEditorFeatures(
       unsubSummarize();
       unsubMetadata();
       unsubToc();
+      unsubTocStored();
       unsubAutolink();
       unsubDiagram();
       unsubTable();

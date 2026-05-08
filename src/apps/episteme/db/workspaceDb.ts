@@ -64,6 +64,13 @@ export interface ChatMessageRow {
   createdAt: number;
 }
 
+export interface TocEntryRow {
+  filePath: string;
+  headingText: string;
+  description: string;
+  contentHash: string;
+}
+
 interface WsFileRecord {
   rel_path: string;
   content: string;
@@ -114,7 +121,14 @@ interface ChatMessageRecord {
   created_at: number;
 }
 
-const SCHEMA_VERSION = 4;
+interface TocEntryRecord {
+  file_path: string;
+  heading_text: string;
+  description: string;
+  content_hash: string;
+}
+
+const SCHEMA_VERSION = 5;
 
 /**
  * Structural data store for the Episteme workspace: files, link edges,
@@ -150,6 +164,9 @@ export class WorkspaceDb {
   private stmtSetMeta!: ReturnType<Database["prepare"]>;
   private stmtAppendChatMessage!: ReturnType<Database["prepare"]>;
   private stmtListChatMessages!: ReturnType<Database["prepare"]>;
+  private stmtSaveTocEntries!: ReturnType<Database["prepare"]>;
+  private stmtDeleteTocEntries!: ReturnType<Database["prepare"]>;
+  private stmtLoadTocEntries!: ReturnType<Database["prepare"]>;
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath, { create: true });
@@ -282,6 +299,16 @@ export class WorkspaceDb {
       )
     `);
 
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS toc_entries (
+        file_path    TEXT NOT NULL,
+        heading_text TEXT NOT NULL,
+        description  TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        PRIMARY KEY (file_path, heading_text)
+      )
+    `);
+
     if (previousVersion > 0 && previousVersion < 2) {
       this.db.run(`
         INSERT INTO ws_files_fts(rowid, rel_path, first_line, content)
@@ -393,6 +420,20 @@ export class WorkspaceDb {
     );
     this.stmtListChatMessages = this.db.prepare(
       "SELECT * FROM chat_messages ORDER BY id ASC LIMIT ?",
+    );
+
+    this.stmtSaveTocEntries = this.db.prepare(`
+      INSERT INTO toc_entries (file_path, heading_text, description, content_hash)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(file_path, heading_text) DO UPDATE SET
+        description  = excluded.description,
+        content_hash = excluded.content_hash
+    `);
+    this.stmtDeleteTocEntries = this.db.prepare(
+      "DELETE FROM toc_entries WHERE file_path = ?",
+    );
+    this.stmtLoadTocEntries = this.db.prepare(
+      "SELECT * FROM toc_entries WHERE file_path = ? ORDER BY rowid ASC",
     );
   }
 
@@ -573,6 +614,28 @@ export class WorkspaceDb {
       role: r.role as "user" | "assistant",
       text: r.text,
       createdAt: r.created_at,
+    }));
+  }
+
+  // ── TOC entries ──────────────────────────────────────────────────────────
+
+  saveTocEntries(filePath: string, entries: Pick<TocEntryRow, "headingText" | "description" | "contentHash">[]): void {
+    const tx = this.db.transaction(() => {
+      this.stmtDeleteTocEntries.run(filePath);
+      for (const e of entries) {
+        this.stmtSaveTocEntries.run(filePath, e.headingText, e.description, e.contentHash);
+      }
+    });
+    tx();
+  }
+
+  loadTocEntries(filePath: string): TocEntryRow[] {
+    const rows = this.stmtLoadTocEntries.all(filePath) as TocEntryRecord[];
+    return rows.map((r) => ({
+      filePath: r.file_path,
+      headingText: r.heading_text,
+      description: r.description,
+      contentHash: r.content_hash,
     }));
   }
 
