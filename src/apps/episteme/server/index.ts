@@ -258,6 +258,21 @@ export async function startEpistemServer(
       "/api/chat-history": {
         GET: () => json(workspaceDb.listChatMessages(200)),
       },
+      "/api/file-content": {
+        GET: async (req: Request) => {
+          const url = new URL(req.url);
+          const path = url.searchParams.get("path") ?? "";
+          if (!path) return json({ error: "path required" }, 400);
+          const absolute = resolveWorkspacePath(path);
+          if (!absolute) return json({ error: "Path escapes workspace boundary." }, 400);
+          try {
+            const content = await Bun.file(absolute).text();
+            return json({ content });
+          } catch {
+            return json({ error: "File not found" }, 404);
+          }
+        },
+      },
       "/api/export": {
         POST: async (req: Request) => {
           if (!pandocAvailable) {

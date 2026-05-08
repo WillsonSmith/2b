@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Copy, Check, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, ChevronLeft, ChevronRight, X, Square } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
 
@@ -17,6 +17,7 @@ interface AISidecarProps {
   onSend: (text: string) => void;
   onInterrupt: () => void;
   onNavigate?: (path: string) => void;
+  workspaceFiles?: string[];
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -149,23 +150,114 @@ function MessageList({ messages, isThinking, onSend, endRef, onNavigate }: Messa
   );
 }
 
+// ── Mention helpers ───────────────────────────────────────────────────────────
+
+function getMentionQuery(value: string, cursor: number): string | null {
+  const before = value.slice(0, cursor);
+  const match = before.match(/@([\w\-./ ]*)$/);
+  return match ? match[1] : null;
+}
+
+function insertMention(
+  value: string,
+  cursor: number,
+  filename: string,
+): { text: string; newCursor: number } {
+  const before = value.slice(0, cursor);
+  const after = value.slice(cursor);
+  const newBefore = before.replace(/@([\w\-./ ]*)$/, `@${filename} `);
+  return { text: newBefore + after, newCursor: newBefore.length };
+}
+
 // ── ChatInput ─────────────────────────────────────────────────────────────────
 
 interface ChatInputProps {
   isThinking: boolean;
   onSend: (text: string) => void;
   onInterrupt: () => void;
+  workspaceFiles?: string[];
 }
 
-function ChatInput({ isThinking, onSend, onInterrupt }: ChatInputProps) {
+function ChatInput({ isThinking, onSend, onInterrupt, workspaceFiles = [] }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [showQuickActions, setShowQuickActions] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const mentionMatches = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.toLowerCase();
+    return workspaceFiles
+      .filter((f) => f.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [mentionQuery, workspaceFiles]);
+
+  const closeMention = useCallback(() => {
+    setMentionQuery(null);
+    setMentionIndex(0);
+  }, []);
+
+  const selectMention = useCallback(
+    (filename: string) => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      const { text, newCursor } = insertMention(input, ta.selectionStart, filename);
+      setInput(text);
+      closeMention();
+      requestAnimationFrame(() => {
+        ta.focus();
+        ta.setSelectionRange(newCursor, newCursor);
+      });
+    },
+    [input, closeMention],
+  );
+
+  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value;
+    setInput(val);
+    const cursor = e.target.selectionStart ?? val.length;
+    const q = getMentionQuery(val, cursor);
+    setMentionQuery(q);
+    setMentionIndex(0);
+  }
 
   function submit() {
     const text = input.trim();
     if (!text || isThinking) return;
     onSend(text);
     setInput("");
+    closeMention();
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionMatches.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionIndex((i) => (i + 1) % mentionMatches.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        const chosen = mentionMatches[mentionIndex];
+        if (chosen) selectMention(chosen);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeMention();
+        return;
+      }
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submit();
+    }
   }
 
   return (
@@ -191,19 +283,39 @@ function ChatInput({ isThinking, onSend, onInterrupt }: ChatInputProps) {
         </div>
       )}
 
+      {mentionMatches.length > 0 && (
+        <div className="sidecar-mention-dropdown">
+          {mentionMatches.map((f, i) => {
+            const short = f.split("/").at(-1) ?? f;
+            const dir = f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "";
+            return (
+              <button
+                key={f}
+                className={`sidecar-mention-item${i === mentionIndex ? " active" : ""}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  selectMention(f);
+                }}
+                onMouseEnter={() => setMentionIndex(i)}
+              >
+                <span className="sidecar-mention-name">{short}</span>
+                {dir && <span className="sidecar-mention-dir">{dir}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="sidecar-input-box">
         <textarea
+          ref={textareaRef}
           className="sidecar-input"
           value={input}
-          placeholder="Ask or give a task…"
+          placeholder="Ask or give a task… (@ to reference a file)"
           rows={2}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onBlur={() => setTimeout(closeMention, 150)}
           disabled={isThinking}
           style={{ resize: "none" }}
         />
@@ -248,9 +360,10 @@ interface ChatModalProps {
   onInterrupt: () => void;
   onClose: () => void;
   onNavigate?: (path: string) => void;
+  workspaceFiles?: string[];
 }
 
-function ChatModal({ messages, isThinking, onSend, onInterrupt, onClose, onNavigate }: ChatModalProps) {
+function ChatModal({ messages, isThinking, onSend, onInterrupt, onClose, onNavigate, workspaceFiles }: ChatModalProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -273,7 +386,7 @@ function ChatModal({ messages, isThinking, onSend, onInterrupt, onClose, onNavig
             onNavigate={onNavigate}
           />
         </div>
-        <ChatInput isThinking={isThinking} onSend={onSend} onInterrupt={onInterrupt} />
+        <ChatInput isThinking={isThinking} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
       </div>
     </div>
   );
@@ -289,6 +402,7 @@ export function AISidecar({
   onSend,
   onInterrupt,
   onNavigate,
+  workspaceFiles,
 }: AISidecarProps) {
   const [expanded, setExpanded] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -329,7 +443,7 @@ export function AISidecar({
               endRef={endRef}
               onNavigate={onNavigate}
             />
-            <ChatInput isThinking={isThinking} onSend={onSend} onInterrupt={onInterrupt} />
+            <ChatInput isThinking={isThinking} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
           </>
         )}
       </div>
@@ -342,6 +456,7 @@ export function AISidecar({
           onInterrupt={onInterrupt}
           onClose={() => setExpanded(false)}
           onNavigate={onNavigate}
+          workspaceFiles={workspaceFiles}
         />
       )}
     </>

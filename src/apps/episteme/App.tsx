@@ -290,9 +290,30 @@ function App() {
   // ── AI sidecar wrappers ─────────────────────────────────────────────────────
 
   const sendToAgent = useCallback(
-    (text: string) => {
+    async (text: string) => {
       if (ws.agentState === "disconnected") return;
-      ws.sendToAgent(text);
+
+      const mentionPattern = /@([\w\-./ ]+\.md)/g;
+      const mentions = [...text.matchAll(mentionPattern)].map((m) => m[1].trim());
+
+      let fullText = text;
+      if (mentions.length > 0) {
+        const fetched = await Promise.all(
+          mentions.map((path) =>
+            fetch(`/api/file-content?path=${encodeURIComponent(path)}`)
+              .then((r) => r.json() as Promise<{ content?: string }>)
+              .then((d) => (d.content != null ? { path, content: d.content } : null))
+              .catch(() => null),
+          ),
+        );
+        const blocks = fetched
+          .filter((f): f is { path: string; content: string } => f !== null)
+          .map((f) => `[File: ${f.path}]\n\`\`\`\n${f.content}\n\`\`\``)
+          .join("\n\n");
+        if (blocks) fullText = `${blocks}\n\n---\n${text}`;
+      }
+
+      ws.sendToAgent(fullText);
       setMessages((prev) => [...prev, { role: "user", text }]);
     },
     [ws],
@@ -887,6 +908,7 @@ function App() {
           onSend={sendToAgent}
           onInterrupt={interrupt}
           onNavigate={fileManager.openFile}
+          workspaceFiles={fileManager.workspaceFiles}
         />
       </div>
     </div>

@@ -2491,6 +2491,44 @@ textarea {
   background: var(--accent-soft);
 }
 
+/* @ mention file dropdown */
+.sidecar-mention-dropdown {
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.sidecar-mention-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 10px;
+  text-align: left;
+  background: none;
+  border: none;
+  width: 100%;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.sidecar-mention-item:hover,
+.sidecar-mention-item.active {
+  background: var(--bg-active);
+}
+.sidecar-mention-name {
+  font-size: 12px;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.sidecar-mention-dir {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Stop / interrupt button */
 .sidecar-interrupt {
   display: inline-flex;
