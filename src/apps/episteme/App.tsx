@@ -893,6 +893,7 @@ function App() {
           <KnowledgeGraph
             onClose={() => conflictsGraph.setShowGraph(false)}
             onRefresh={conflictsGraph.handleRefreshGraph}
+            onReindex={conflictsGraph.handleReindex}
             onLoadMore={conflictsGraph.handleLoadMoreGraph}
             onNodeClick={conflictsGraph.handleGraphNodeClick}
             graphData={conflictsGraph.graphData}

@@ -94,6 +94,7 @@ async function dispatch(
     case "contradictions_request":
     case "contradiction_scan_request":
     case "graph_request":
+    case "reindex_request":
     case "check_citations_request":
     case "format_citation_request":
       return handleResearch(msg, ctx, ws);

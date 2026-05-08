@@ -12,7 +12,8 @@ import type { TocEntry } from "./features/toc.ts";
 import type { WikilinkSuggestion } from "./features/autolink.ts";
 import type { UnifiedSearchResponse } from "./plugins/ResearchPlugin.ts";
 import type { CitationCheckResult } from "./plugins/CitationPlugin.ts";
-import type { ContradictionRecord, GraphData } from "./plugins/ContradictionPlugin.ts";
+import type { ContradictionRecord } from "./plugins/ContradictionPlugin.ts";
+import type { GraphData } from "./plugins/WorkspacePlugin.ts";
 
 export type AgentRunState = "idle" | "thinking";
 
@@ -40,6 +41,7 @@ export type ClientMsg =
   | { type: "contradictions_request" }
   | { type: "contradiction_scan_request" }
   | { type: "graph_request"; limit?: number; offset?: number }
+  | { type: "reindex_request" }
   | { type: "check_citations_request" }
   | { type: "format_citation_request"; url: string }
   | { type: "analyze_image"; base64: string; mimeType: string; filename: string }
