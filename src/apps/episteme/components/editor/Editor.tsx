@@ -17,6 +17,7 @@ import { resolveWikilinkTarget, wikilinkCreatePath, rankFilesForWikilink } from 
 import { GhostTextExtension } from "./extensions/ghostText.ts";
 import { LintExtension, resolveIssuePositions, type ResolvedIssue } from "./extensions/lint.ts";
 import { FindExtension, resolveFindMatches, type FindMatch, type FindState } from "./extensions/find.ts";
+import { MarkdownRevealExtension } from "./extensions/markdownReveal.ts";
 import {
   WikilinkExtension,
   WikilinkPopupExtension,
@@ -137,31 +138,6 @@ function FindBar({
   );
 }
 
-function MermaidBlock({ code }: { code: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const mermaid = (await import("mermaid")).default;
-        mermaid.initialize({ startOnLoad: false, theme: "dark" });
-        const id = `mermaid-${Math.random().toString(36).slice(2)}`;
-        const { svg } = await mermaid.render(id, code);
-        if (!cancelled && ref.current) {
-          ref.current.innerHTML = svg;
-        }
-      } catch {
-        if (!cancelled && ref.current) {
-          ref.current.textContent = code;
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [code]);
-
-  return <div className="mermaid-block" ref={ref} />;
-}
 
 export function Editor({
   content,
@@ -210,7 +186,8 @@ export function Editor({
     onEscape: () => false,
   });
   const findStateRef = useRef<FindState>({ matches: [], activeIndex: 0 });
-  const [previewMode, setPreviewMode] = useState(false);
+  const [editorMode, setEditorMode] = useState<"formatted" | "markdown">("formatted");
+  const [rawContent, setRawContent] = useState("");
 
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -263,6 +240,7 @@ export function Editor({
       WikilinkExtension(wikilinkRef),
       WikilinkPopupExtension(popupKeysRef),
       FindExtension(findStateRef),
+      MarkdownRevealExtension,
     ],
     content,
     onUpdate({ editor }) {
@@ -639,27 +617,22 @@ export function Editor({
     return () => { editor.off("update", emit); };
   }, [editor]);
 
-  const renderPreview = () => {
-    if (!editor) return null;
-    const md = editor.storage.markdown.getMarkdown();
-    const parts = md.split(/(```mermaid\n[\s\S]*?\n```)/g);
+  const handleToggleMode = useCallback(() => {
+    if (!editor) return;
+    if (editorMode === "formatted") {
+      setRawContent(editor.storage.markdown.getMarkdown());
+      setEditorMode("markdown");
+    } else {
+      editor.commands.setContent(rawContent);
+      onUpdate(rawContent);
+      setEditorMode("formatted");
+    }
+  }, [editor, editorMode, rawContent, onUpdate]);
 
-    return (
-      <div className="editor-preview">
-        {parts.map((part: string, i: number) => {
-          const mermaidMatch = part.match(/^```mermaid\n([\s\S]*?)\n```$/);
-          if (mermaidMatch) {
-            return <MermaidBlock key={i} code={mermaidMatch[1] ?? ""} />;
-          }
-          return (
-            <pre key={i} className="editor-preview-text">
-              {part}
-            </pre>
-          );
-        })}
-      </div>
-    );
-  };
+  const handleRawChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setRawContent(e.target.value);
+    onUpdate(e.target.value);
+  }, [onUpdate]);
 
   return (
     <div className="editor-pane">
@@ -679,8 +652,8 @@ export function Editor({
       )}
       <MarkdownToolbar
         editor={editor}
-        previewMode={previewMode}
-        onTogglePreview={() => setPreviewMode((p) => !p)}
+        editorMode={editorMode}
+        onToggleMode={handleToggleMode}
         onMetadataRequest={onMetadataRequest}
         isGeneratingMetadata={isGeneratingMetadata}
         onToggleRecording={onToggleRecording}
@@ -698,7 +671,16 @@ export function Editor({
           />
         )}
 
-        {previewMode ? renderPreview() : <EditorContent editor={editor} />}
+        {editorMode === "markdown" ? (
+          <textarea
+            className="editor-raw"
+            value={rawContent}
+            onChange={handleRawChange}
+            spellCheck={false}
+          />
+        ) : (
+          <EditorContent editor={editor} />
+        )}
       </div>
 
       {wikiPopup && wikiMatches.length > 0 && (

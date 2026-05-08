@@ -32,8 +32,8 @@ function ToolbarButton({
 
 interface MarkdownToolbarProps {
   editor: Editor | null;
-  previewMode: boolean;
-  onTogglePreview: () => void;
+  editorMode: "formatted" | "markdown";
+  onToggleMode: () => void;
   onMetadataRequest?: () => void;
   isGeneratingMetadata?: boolean;
   onToggleRecording?: () => void;
@@ -42,8 +42,8 @@ interface MarkdownToolbarProps {
 
 export function MarkdownToolbar({
   editor,
-  previewMode,
-  onTogglePreview,
+  editorMode,
+  onToggleMode,
   onMetadataRequest,
   isGeneratingMetadata,
   onToggleRecording,
@@ -194,11 +194,11 @@ export function MarkdownToolbar({
       </ToolbarButton>
 
       <ToolbarButton
-        onClick={onTogglePreview}
-        title="Toggle preview (renders Mermaid diagrams)"
-        active={previewMode}
+        onClick={onToggleMode}
+        title="Toggle between Formatted and Markdown views"
+        active={editorMode === "markdown"}
       >
-        {previewMode ? "Edit" : "Preview"}
+        {editorMode === "formatted" ? "Markdown" : "Formatted"}
       </ToolbarButton>
 
       {onToggleRecording && (
