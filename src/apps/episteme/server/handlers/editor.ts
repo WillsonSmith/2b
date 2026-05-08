@@ -1,6 +1,5 @@
 import type { ServerWebSocket } from "bun";
 import type { ClientMsg } from "../../protocol.ts";
-import { generateOutline } from "../../features/outline.ts";
 import { transformTone } from "../../features/tone.ts";
 import { summarizeSection } from "../../features/summarize.ts";
 import { generateFrontmatter } from "../../features/metadata.ts";
@@ -15,7 +14,6 @@ export type EditorMsg = Extract<
     type:
       | "editor_context"
       | "autocomplete_request"
-      | "outline_request"
       | "tone_transform"
       | "summarize_request"
       | "metadata_request"
@@ -32,7 +30,7 @@ export async function handleEditor(
   ctx: WsContext,
   ws: ServerWebSocket<unknown>,
 ): Promise<void> {
-  const { send, broadcast, editorContext, autocomplete, diagram, linter, config } = ctx;
+  const { send, editorContext, autocomplete, diagram, linter, config } = ctx;
 
   switch (msg.type) {
     case "editor_context":
@@ -43,15 +41,6 @@ export async function handleEditor(
       if (!msg.context?.trim()) return;
       autocomplete.suggest(msg.context).then((text) => {
         if (text.trim()) send(ws, { type: "autocomplete_suggestion", text: text.trim() });
-      }).catch(() => {});
-      return;
-    }
-
-    case "outline_request": {
-      const topic = msg.topic?.trim();
-      if (!topic) return;
-      generateOutline(topic, config).then((outline) => {
-        broadcast({ type: "insert_text", text: outline });
       }).catch(() => {});
       return;
     }

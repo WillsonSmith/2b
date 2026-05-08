@@ -37,8 +37,6 @@ export function useEditorFeatures(
 
   const [lintIssues, setLintIssues] = useState<LintIssue[]>([]);
 
-  const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
-
   const handleAutocompleteRequest = useCallback((context: string) => {
     if (!autocompleteEnabled || !wsRef.current || agentState === "disconnected") return;
     if (context.length > 50_000) return;
@@ -47,15 +45,6 @@ export function useEditorFeatures(
 
   const handleGhostAccept = useCallback(() => setGhostText(""), []);
   const handleGhostDismiss = useCallback(() => setGhostText(""), []);
-
-  const handleGenerateOutline = useCallback(() => {
-    if (!wsRef.current || agentState === "disconnected" || isGeneratingOutline) return;
-    const topic = activeFile
-      ? activeFile.replace(/\.md$/i, "").split("/").at(-1) ?? "the current document"
-      : "the current document";
-    setIsGeneratingOutline(true);
-    wsRef.current.send(JSON.stringify({ type: "outline_request", topic }));
-  }, [agentState, activeFile, isGeneratingOutline, wsRef]);
 
   const handleToneRequest = useCallback(
     (text: string, tone: Tone, from: number, to: number) => {
@@ -90,16 +79,6 @@ export function useEditorFeatures(
     setIsTocGenerating(true);
     wsRef.current.send(JSON.stringify({ type: "toc_request", markdown }));
   }, [agentState, isTocGenerating, wsRef, editorContentRef]);
-
-  const handleHeadingClick = useCallback((_id: string, text: string) => {
-    const allHeadings = document.querySelectorAll(".tiptap h1, .tiptap h2, .tiptap h3, .tiptap h4, .tiptap h5, .tiptap h6");
-    for (const el of allHeadings) {
-      if (el.textContent?.trim() === text) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-        break;
-      }
-    }
-  }, []);
 
   const handleAutolinkAccept = useCallback((suggestion: WikilinkSuggestion) => {
     const linkName = suggestion.filename.split("/").at(-1)?.replace(/\.md$/i, "") ?? suggestion.filename;
@@ -145,6 +124,12 @@ export function useEditorFeatures(
     [agentState, wsRef],
   );
 
+  // Clear stale TOC annotations whenever the active file changes.
+  useEffect(() => {
+    setTocEntries([]);
+    setIsTocGenerating(false);
+  }, [activeFile]);
+
   // Idle-debounced lint — fires 5s after the user stops typing, decoupled
   // from autosave so the linter doesn't spin every 2s.
   const debouncedLintContent = useDebounce(editorContent, 5000);
@@ -158,13 +143,6 @@ export function useEditorFeatures(
   // Server → client subscriptions
   useEffect(() => {
     const unsubAuto = subscribe("autocomplete_suggestion", (msg) => setGhostText(msg.text));
-    const unsubInsert = subscribe("insert_text", (msg) => {
-      setEditorContent((prev) => {
-        const sep = prev.trim() ? "\n\n" : "";
-        return prev + sep + msg.text;
-      });
-      setIsGeneratingOutline(false);
-    });
     const unsubLint = subscribe("lint_result", (msg) => setLintIssues(msg.issues));
     const unsubTone = subscribe("tone_result", (msg) =>
       setToneReplacement({ text: msg.text, from: msg.from, to: msg.to }),
@@ -189,7 +167,6 @@ export function useEditorFeatures(
     );
     return () => {
       unsubAuto();
-      unsubInsert();
       unsubLint();
       unsubTone();
       unsubSummarize();
@@ -215,7 +192,6 @@ export function useEditorFeatures(
     diagramResult,
     tableResult,
     lintIssues,
-    isGeneratingOutline,
     setGhostText,
     setAutocompleteEnabled,
     setLintEnabled,
@@ -229,16 +205,13 @@ export function useEditorFeatures(
     setDiagramResult,
     setTableResult,
     setLintIssues,
-    setIsGeneratingOutline,
     handleAutocompleteRequest,
     handleGhostAccept,
     handleGhostDismiss,
-    handleGenerateOutline,
     handleToneRequest,
     handleSummarizeRequest,
     handleMetadataRequest,
     handleGenerateToc,
-    handleHeadingClick,
     handleAutolinkAccept,
     handleAutolinkDismiss,
     handleAutolinkDismissAll,

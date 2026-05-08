@@ -1,6 +1,6 @@
 import {
   Undo2, Redo2, Mic, Square, Quote, Code2, Minus, List, ListOrdered,
-  ListTree, FileCode, Loader2, Table, CheckSquare,
+  FileCode, Loader2, Table, CheckSquare,
 } from "lucide-react";
 import type { Editor } from "@tiptap/react";
 
@@ -34,8 +34,6 @@ interface MarkdownToolbarProps {
   editor: Editor | null;
   previewMode: boolean;
   onTogglePreview: () => void;
-  onGenerateOutline?: () => void;
-  isGeneratingOutline?: boolean;
   onMetadataRequest?: () => void;
   isGeneratingMetadata?: boolean;
   onToggleRecording?: () => void;
@@ -46,8 +44,6 @@ export function MarkdownToolbar({
   editor,
   previewMode,
   onTogglePreview,
-  onGenerateOutline,
-  isGeneratingOutline,
   onMetadataRequest,
   isGeneratingMetadata,
   onToggleRecording,
@@ -184,18 +180,6 @@ export function MarkdownToolbar({
       </ToolbarButton>
 
       <div className="toolbar-sep" />
-
-      <ToolbarButton
-        onClick={() => onGenerateOutline?.()}
-        title="Generate Outline (AI)"
-        disabled={isGeneratingOutline || !onGenerateOutline}
-        active={false}
-      >
-        <span className="icon-inline">
-          {isGeneratingOutline ? <Loader2 size={14} className="icon-spin" /> : <ListTree size={14} />}
-          Outline
-        </span>
-      </ToolbarButton>
 
       <ToolbarButton
         onClick={() => onMetadataRequest?.()}

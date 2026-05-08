@@ -36,8 +36,6 @@ interface EditorProps {
   ghostText?: string;
   onGhostAccept?: (text: string) => void;
   onGhostDismiss?: () => void;
-  onGenerateOutline?: () => void;
-  isGeneratingOutline?: boolean;
   onToneRequest?: (text: string, tone: Tone, from: number, to: number) => void;
   onSummarizeRequest?: (text: string, insertPos: number) => void;
   toneReplacement?: { text: string; from: number; to: number } | null;
@@ -172,8 +170,6 @@ export function Editor({
   ghostText = "",
   onGhostAccept,
   onGhostDismiss,
-  onGenerateOutline,
-  isGeneratingOutline,
   onToneRequest,
   onSummarizeRequest,
   toneReplacement,
@@ -685,8 +681,6 @@ export function Editor({
         editor={editor}
         previewMode={previewMode}
         onTogglePreview={() => setPreviewMode((p) => !p)}
-        onGenerateOutline={onGenerateOutline}
-        isGeneratingOutline={isGeneratingOutline}
         onMetadataRequest={onMetadataRequest}
         isGeneratingMetadata={isGeneratingMetadata}
         onToggleRecording={onToggleRecording}

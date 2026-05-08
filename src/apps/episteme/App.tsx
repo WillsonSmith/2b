@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Editor } from "./components/editor/Editor.tsx";
 import { FileTree } from "./components/FileTree.tsx";
+import { TocPanel } from "./components/TocPanel.tsx";
 import { AISidecar, type SidecarMessage } from "./components/AISidecar.tsx";
 import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { ResearchPanel } from "./components/ResearchPanel.tsx";
@@ -20,6 +21,7 @@ import {
   Download,
   Settings,
   HelpCircle,
+  AlignLeft,
   X,
   Circle,
   CircleDot,
@@ -146,6 +148,7 @@ function App() {
   const [messages, setMessages] = useState<SidecarMessage[]>([]);
   const [sidecarCollapsed, setSidecarCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showToc, setShowToc] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [pandocAvailable, setPandocAvailable] = useState(false);
@@ -599,6 +602,13 @@ function App() {
         </span>
         <div className="app-header-spacer" />
         <button
+          className={`header-research-btn${showToc ? " active" : ""}`}
+          title="Table of contents"
+          onClick={() => setShowToc((v) => !v)}
+        >
+          <AlignLeft size={16} />
+        </button>
+        <button
           className={`header-research-btn${research.showResearch ? " active" : ""}`}
           title="Research panel"
           onClick={() => research.setShowResearch((v) => !v)}
@@ -736,10 +746,6 @@ function App() {
           onRenameFile={fileManager.renameFile}
           onOpenInFinder={fileManager.openInFinder}
           workspaceRoot={workspaceRoot}
-          tocEntries={editorFeatures.tocEntries}
-          isTocGenerating={editorFeatures.isTocGenerating}
-          onGenerateToc={editorFeatures.handleGenerateToc}
-          onHeadingClick={editorFeatures.handleHeadingClick}
         />
 
         <div
@@ -757,8 +763,6 @@ function App() {
             ghostText={editorFeatures.ghostText}
             onGhostAccept={editorFeatures.handleGhostAccept}
             onGhostDismiss={editorFeatures.handleGhostDismiss}
-            onGenerateOutline={editorFeatures.handleGenerateOutline}
-            isGeneratingOutline={editorFeatures.isGeneratingOutline}
             onToneRequest={editorFeatures.handleToneRequest}
             onSummarizeRequest={editorFeatures.handleSummarizeRequest}
             toneReplacement={editorFeatures.toneReplacement}
@@ -830,6 +834,15 @@ function App() {
           </div>
         </div>
 
+        {showToc && (
+          <TocPanel
+            content={fileManager.editorContent}
+            tocEntries={editorFeatures.tocEntries}
+            isAnnotating={editorFeatures.isTocGenerating}
+            onAnnotate={editorFeatures.handleGenerateToc}
+            onClose={() => setShowToc(false)}
+          />
+        )}
         {research.showResearch && (
           <ResearchPanel
             onClose={() => research.setShowResearch(false)}

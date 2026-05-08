@@ -77,7 +77,6 @@ async function dispatch(
 
     case "editor_context":
     case "autocomplete_request":
-    case "outline_request":
     case "tone_transform":
     case "summarize_request":
     case "metadata_request":
