@@ -1078,6 +1078,34 @@ textarea {
 .file-tree-context-item:hover {
   background: var(--bg-highlight);
 }
+.file-tree-context-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 0;
+}
+.file-tree-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px 2px;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  user-select: none;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.file-tree-dir-row:hover {
+  color: var(--text-muted);
+  background: var(--bg-highlight);
+}
+.file-tree-dir-chevron {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
 
 /* ── Outline panel ───────────────────────────────────────────────────── */
 .outline-panel {

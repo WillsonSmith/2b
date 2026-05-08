@@ -72,6 +72,7 @@ async function dispatch(
     case "file_save":
     case "file_create":
     case "file_rename":
+    case "open_in_finder":
       return handleFile(msg, ctx, ws);
 
     case "editor_context":

@@ -1,5 +1,5 @@
 import type { ServerWebSocket } from "bun";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { rename as fsRename, mkdir } from "node:fs/promises";
 import type { ClientMsg } from "../../protocol.ts";
 import { detectAutolinkCandidates } from "../../features/autolink.ts";
@@ -8,7 +8,7 @@ import type { WsContext } from "../context.ts";
 
 export type FileMsg = Extract<
   ClientMsg,
-  { type: "list_workspace" | "file_open" | "file_save" | "file_create" | "file_rename" }
+  { type: "list_workspace" | "file_open" | "file_save" | "file_create" | "file_rename" | "open_in_finder" }
 >;
 
 export async function handleFile(
@@ -103,6 +103,16 @@ export async function handleFile(
         send(ws, { type: "workspace_files", files });
       } catch {
         send(ws, { type: "error", message: `Cannot rename: ${msg.oldPath}` });
+      }
+      return;
+    }
+
+    case "open_in_finder": {
+      const absolute = resolveWorkspacePath(msg.path) ?? join(absRoot, msg.path);
+      try {
+        await Bun.$`open -R ${absolute}`.quiet();
+      } catch {
+        // Silently fail on non-macOS or missing file
       }
       return;
     }
