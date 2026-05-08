@@ -16,7 +16,7 @@ export async function handleFile(
   ctx: WsContext,
   ws: ServerWebSocket<unknown>,
 ): Promise<void> {
-  const { send, absRoot, collectMarkdownFiles, resolveWorkspacePath } = ctx;
+  const { send, absRoot, collectMarkdownFiles, resolveWorkspacePath, workspaceDb } = ctx;
 
   switch (msg.type) {
     case "list_workspace": {
@@ -34,6 +34,20 @@ export async function handleFile(
       try {
         const content = await Bun.file(absolute).text();
         send(ws, { type: "file_content", path: msg.path, content });
+        const stored = workspaceDb.loadTocEntries(msg.path);
+        if (stored.length > 0) {
+          send(ws, {
+            type: "toc_stored",
+            file: msg.path,
+            entries: stored.map((e) => ({
+              level: 0,
+              text: e.headingText,
+              description: e.description,
+              id: "",
+              contentHash: e.contentHash,
+            })),
+          });
+        }
       } catch {
         send(ws, { type: "error", message: `Cannot open: ${msg.path}` });
       }

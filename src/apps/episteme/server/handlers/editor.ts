@@ -30,7 +30,7 @@ export async function handleEditor(
   ctx: WsContext,
   ws: ServerWebSocket<unknown>,
 ): Promise<void> {
-  const { send, editorContext, autocomplete, diagram, linter, config } = ctx;
+  const { send, editorContext, autocomplete, diagram, linter, config, workspaceDb } = ctx;
 
   switch (msg.type) {
     case "editor_context":
@@ -75,11 +75,18 @@ export async function handleEditor(
     }
 
     case "toc_request": {
-      const { markdown } = msg;
+      const { markdown, file } = msg;
       if (!markdown?.trim()) return;
       const sections = extractSectionsFromMarkdown(markdown);
       generateNarrativeToc(sections, config).then((entries) => {
         send(ws, { type: "toc_result", entries });
+        if (file) {
+          workspaceDb.saveTocEntries(file, entries.map((e) => ({
+            headingText: e.text,
+            description: e.description,
+            contentHash: e.contentHash ?? "",
+          })));
+        }
       }).catch(() => {
         send(ws, { type: "error", message: "Failed to generate TOC." });
       });

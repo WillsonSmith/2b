@@ -2,12 +2,14 @@ import { HeadlessAgent } from "../../../core/HeadlessAgent.ts";
 import { createProvider } from "../../../providers/llm/createProvider.ts";
 import type { EpistemeConfig } from "../config.ts";
 import { featureModel } from "../config.ts";
+import { sectionHash } from "./tocHash.ts";
 
 export interface TocEntry {
   level: number;
   text: string;
   description: string;
   id: string;
+  contentHash?: string;
 }
 
 export interface DocSection {
@@ -53,6 +55,7 @@ export async function generateNarrativeToc(
         text: s.heading,
         description: item?.description?.trim() ?? "",
         id: slugify(s.heading),
+        contentHash: sectionHash(s.heading, s.content),
       };
     });
   } catch {
@@ -66,6 +69,7 @@ function fallbackEntries(sections: DocSection[]): TocEntry[] {
     text: s.heading,
     description: "",
     id: slugify(s.heading),
+    contentHash: sectionHash(s.heading, s.content),
   }));
 }
 
