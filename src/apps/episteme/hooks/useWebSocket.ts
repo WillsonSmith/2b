@@ -62,7 +62,6 @@ export function useWebSocket(): UseWebSocketReturn {
       case "file_created":
       case "file_renamed":
       case "autocomplete_suggestion":
-      case "insert_text":
       case "ingest_result":
       case "tone_result":
       case "summarize_result":

@@ -26,7 +26,6 @@ export type ClientMsg =
   | { type: "file_rename"; oldPath: string; newPath: string }
   | { type: "list_workspace" }
   | { type: "autocomplete_request"; context: string }
-  | { type: "outline_request"; topic: string }
   | { type: "ingest_url"; url: string }
   | { type: "ingest_pdf"; path: string }
   | { type: "tone_transform"; text: string; tone: Tone; from: number; to: number }
@@ -61,7 +60,6 @@ export type ServerMsg =
   | { type: "file_created"; path: string }
   | { type: "file_renamed"; oldPath: string; newPath: string }
   | { type: "autocomplete_suggestion"; text: string }
-  | { type: "insert_text"; text: string }
   | { type: "ingest_result"; success: boolean; message: string }
   | { type: "tone_result"; text: string; from: number; to: number }
   | { type: "summarize_result"; text: string; insertPos: number }

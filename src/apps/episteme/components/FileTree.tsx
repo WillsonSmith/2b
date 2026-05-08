@@ -1,7 +1,5 @@
 import { useState, useRef, useEffect } from "react";
 import { FileText, Plus, RotateCw, ChevronDown, ChevronRight } from "lucide-react";
-import { OutlinePanel } from "./OutlinePanel.tsx";
-import type { TocEntry } from "../features/toc.ts";
 
 interface FileTreeProps {
   files: string[];
@@ -12,14 +10,7 @@ interface FileTreeProps {
   onRenameFile: (oldPath: string, newPath: string) => void;
   onOpenInFinder: (path: string) => void;
   workspaceRoot: string;
-  // Outline panel props
-  tocEntries: TocEntry[];
-  isTocGenerating: boolean;
-  onGenerateToc: () => void;
-  onHeadingClick: (id: string, text: string) => void;
 }
-
-type Tab = "files" | "outline";
 
 function basename(path: string): string {
   return path.split("/").at(-1) ?? path;
@@ -76,13 +67,7 @@ export function FileTree({
   onRenameFile,
   onOpenInFinder,
   workspaceRoot,
-  tocEntries,
-  isTocGenerating,
-  onGenerateToc,
-  onHeadingClick,
 }: FileTreeProps) {
-  const [activeTab, setActiveTab] = useState<Tab>("files");
-
   // New file creation state
   const [isCreating, setIsCreating] = useState(false);
   const [newFileName, setNewFileName] = useState("");
@@ -242,40 +227,24 @@ export function FileTree({
   return (
     <div className="file-tree">
       <div className="file-tree-tabs">
+        <span className="file-tree-tab active">Files</span>
         <button
-          className={`file-tree-tab${activeTab === "files" ? " active" : ""}`}
-          onClick={() => setActiveTab("files")}
+          className="header-icon-btn"
+          onClick={() => setIsCreating(true)}
+          title="New file"
         >
-          Files
+          <Plus size={14} />
         </button>
         <button
-          className={`file-tree-tab${activeTab === "outline" ? " active" : ""}`}
-          onClick={() => setActiveTab("outline")}
+          className="header-icon-btn"
+          onClick={onRefresh}
+          title="Refresh file list"
         >
-          Outline
+          <RotateCw size={13} />
         </button>
-        {activeTab === "files" && (
-          <>
-            <button
-              className="header-icon-btn"
-              onClick={() => setIsCreating(true)}
-              title="New file"
-            >
-              <Plus size={14} />
-            </button>
-            <button
-              className="header-icon-btn"
-              onClick={onRefresh}
-              title="Refresh file list"
-            >
-              <RotateCw size={13} />
-            </button>
-          </>
-        )}
       </div>
 
-      {activeTab === "files" ? (
-        <div className="file-tree-list">
+      <div className="file-tree-list">
           {/* New file inline input (root level) */}
           {isCreating && (
             <div className="file-tree-new-file">
@@ -378,14 +347,6 @@ export function FileTree({
             })
           )}
         </div>
-      ) : (
-        <OutlinePanel
-          entries={tocEntries}
-          isGenerating={isTocGenerating}
-          onGenerate={onGenerateToc}
-          onHeadingClick={onHeadingClick}
-        />
-      )}
 
       {/* Right-click context menu */}
       {contextMenu && (
