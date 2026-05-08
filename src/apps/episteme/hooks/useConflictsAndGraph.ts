@@ -51,6 +51,12 @@ export function useConflictsAndGraph(
     wsRef.current.send(JSON.stringify({ type: "graph_request" }));
   }, [agentState, wsRef]);
 
+  const handleReindex = useCallback(() => {
+    if (!wsRef.current || agentState === "disconnected") return;
+    setIsLoadingGraph(true);
+    wsRef.current.send(JSON.stringify({ type: "reindex_request" }));
+  }, [agentState, wsRef]);
+
   const handleLoadMoreGraph = useCallback(() => {
     if (!wsRef.current || agentState === "disconnected" || !graphPagination) return;
     const nextOffset = graphPagination.offset + graphPagination.limit;
@@ -115,6 +121,7 @@ export function useConflictsAndGraph(
     handleContradictionScan,
     handleOpenGraph,
     handleRefreshGraph,
+    handleReindex,
     handleLoadMoreGraph,
     handleGraphNodeClick,
   };

@@ -5,6 +5,28 @@ import { logger } from "../../../logger.ts";
 import type { WorkspaceDb, FileLinkRow, WorkspaceSearchHit } from "../db/workspaceDb.ts";
 import { findWikilinks, resolveWikilinkTarget } from "../features/wikilinks.ts";
 
+const DEFAULT_GRAPH_LIMIT = 500;
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  type: string;
+  file?: string;
+  color: string;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  linkType: string;
+  color: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+}
+
 /**
  * Provides workspace-level file access and indexing to the agent.
  *
@@ -98,11 +120,15 @@ export class WorkspacePlugin implements AgentPlugin {
   /**
    * Public entry point — called directly on startup and by the agent via executeTool.
    * Incremental: skips files whose (mtime, size) match the stored row.
+   * Pass `force: true` to re-extract all files regardless of mtime (needed when
+   * the link extraction schema is newer than the last index run).
    * Reads files in parallel batches of 16; calls onProgress after each batch.
    */
   async index(
     onProgress?: (indexed: number, total: number) => void,
+    options?: { force?: boolean },
   ): Promise<unknown> {
+    const force = options?.force ?? false;
     const BATCH_SIZE = 16;
     const glob = new Bun.Glob("**/*.md");
     const files: string[] = [];
@@ -125,7 +151,7 @@ export class WorkspacePlugin implements AgentPlugin {
 
     for (let i = 0; i < files.length; i += BATCH_SIZE) {
       const batch = files.slice(i, i + BATCH_SIZE);
-      const results = await Promise.all(batch.map((relPath) => this.indexFile(relPath, files)));
+      const results = await Promise.all(batch.map((relPath) => this.indexFile(relPath, files, force)));
       for (const r of results) {
         if (r === "indexed") indexed++;
         else if (r === "skipped") skipped++;
@@ -156,6 +182,7 @@ export class WorkspacePlugin implements AgentPlugin {
   private async indexFile(
     relPath: string,
     allFiles: string[],
+    force = false,
   ): Promise<"indexed" | "skipped" | "failed"> {
     try {
       const absPath = join(this.root, relPath);
@@ -164,7 +191,7 @@ export class WorkspacePlugin implements AgentPlugin {
       const size = fileStat.size;
 
       const existing = this.workspaceDb.getWorkspaceFile(relPath);
-      if (existing && existing.mtime === mtime && existing.size === size) {
+      if (!force && existing && existing.mtime === mtime && existing.size === size) {
         return "skipped";
       }
 
@@ -259,6 +286,35 @@ export class WorkspacePlugin implements AgentPlugin {
       words: r.wordCount ?? 0,
     }));
     return { files, total: files.length };
+  }
+
+  buildKnowledgeGraph(
+    limit: number = DEFAULT_GRAPH_LIMIT,
+    offset: number = 0,
+  ): GraphData & { pagination: { offset: number; limit: number; totalFiles: number } } {
+    const nodes: GraphNode[] = [];
+    const links: GraphLink[] = [];
+    const nodeIds = new Set<string>();
+
+    const totalFiles = this.workspaceDb.countWorkspaceFiles();
+    for (const row of this.workspaceDb.listWorkspaceFileSummaries(limit, offset)) {
+      const id = `file:${row.relPath}`;
+      const firstLine = row.firstLine?.trim() ?? null;
+      const label = firstLine?.startsWith("#")
+        ? firstLine.replace(/^#+\s*/, "").slice(0, 50)
+        : (row.relPath.split("/").at(-1)?.replace(/\.md$/i, "") ?? row.relPath).slice(0, 50);
+      nodes.push({ id, label, type: "workspace-file", file: row.relPath, color: "#5588cc" });
+      nodeIds.add(id);
+    }
+
+    for (const link of this.workspaceDb.getAllLinks()) {
+      const src = `file:${link.sourcePath}`;
+      const tgt = `file:${link.targetPath}`;
+      if (!nodeIds.has(src) || !nodeIds.has(tgt) || src === tgt) continue;
+      links.push({ source: src, target: tgt, linkType: "document-link", color: "#55cc88" });
+    }
+
+    return { nodes, links, pagination: { offset, limit, totalFiles } };
   }
 }
 

@@ -13,6 +13,7 @@ export type ResearchMsg = Extract<
       | "contradictions_request"
       | "contradiction_scan_request"
       | "graph_request"
+      | "reindex_request"
       | "check_citations_request"
       | "format_citation_request";
   }
@@ -88,8 +89,18 @@ export async function handleResearch(
     }
 
     case "graph_request": {
-      const { pagination, ...data } = contradiction.buildKnowledgeGraph(msg.limit, msg.offset);
+      const { pagination, ...data } = ctx.workspace.buildKnowledgeGraph(msg.limit, msg.offset);
       send(ws, { type: "graph_data", data, pagination });
+      return;
+    }
+
+    case "reindex_request": {
+      ctx.workspace.index(undefined, { force: true }).then(() => {
+        const { pagination, ...data } = ctx.workspace.buildKnowledgeGraph();
+        send(ws, { type: "graph_data", data, pagination });
+      }).catch(() => {
+        send(ws, { type: "error", message: "Re-index failed." });
+      });
       return;
     }
 

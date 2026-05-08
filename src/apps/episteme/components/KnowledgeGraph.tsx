@@ -1,12 +1,13 @@
 import { useRef, useEffect, useCallback } from "react";
-import { RotateCw, X } from "lucide-react";
-import type { GraphData, GraphNode, GraphLink } from "../plugins/ContradictionPlugin.ts";
+import { FolderSync, RotateCw, X } from "lucide-react";
+import type { GraphData, GraphNode, GraphLink } from "../plugins/WorkspacePlugin.ts";
 
 export type { GraphData, GraphNode, GraphLink };
 
 interface KnowledgeGraphProps {
   onClose: () => void;
   onRefresh: () => void;
+  onReindex: () => void;
   onLoadMore?: () => void;
   onNodeClick: (file: string) => void;
   graphData: GraphData | null;
@@ -17,6 +18,7 @@ interface KnowledgeGraphProps {
 export function KnowledgeGraph({
   onClose,
   onRefresh,
+  onReindex,
   onLoadMore,
   onNodeClick,
   graphData,
@@ -50,11 +52,14 @@ export function KnowledgeGraph({
         .nodeColor((node: GraphNode) => node.color ?? "#5588cc")
         .nodeLabel((node: GraphNode) => node.label ?? "")
         .linkColor((link: GraphLink) => link.color ?? "#555555")
-        .linkWidth(1.5)
+        .linkWidth(2)
+        .linkDirectionalParticles(2)
+        .linkDirectionalParticleWidth(2)
+        .linkDirectionalParticleColor((link: GraphLink) => link.color ?? "#555555")
         .nodeCanvasObjectMode(() => "after")
         .nodeCanvasObject((node: GraphNode & { x?: number; y?: number }, ctx: CanvasRenderingContext2D, globalScale: number) => {
           if (node.x == null || node.y == null) return;
-          const label = (node.label ?? "").slice(0, 20);
+          const label = (node.label ?? "").slice(0, 30);
           const fontSize = Math.max(8, 12 / globalScale);
           ctx.font = `${fontSize}px sans-serif`;
           ctx.fillStyle = "#d4d4d4";
@@ -100,10 +105,10 @@ export function KnowledgeGraph({
         <span className="knowledge-graph-title">Knowledge Graph</span>
         <div className="knowledge-graph-legend">
           <span className="kg-legend-dot" style={{ background: "#5588cc" }} /> Files
-          <span className="kg-legend-dot" style={{ background: "#666680", marginLeft: 8 }} /> Notes
-          <span className="kg-legend-dot" style={{ background: "#cc5555", marginLeft: 8 }} /> Conflicts
+          <span className="kg-legend-dot" style={{ background: "#55cc88", marginLeft: 8, borderRadius: 0, width: 16, height: 2, display: "inline-block", verticalAlign: "middle" }} /> Wikilinks
         </div>
         <div style={{ display: "flex", gap: 6 }}>
+          <button className="header-icon-btn" onClick={onReindex} disabled={isLoading} title="Re-index workspace files"><FolderSync size={13} /></button>
           <button className="header-icon-btn" onClick={handleRefresh} title="Refresh graph"><RotateCw size={13} /></button>
           <button className="header-icon-btn" onClick={onClose} title="Close"><X size={13} /></button>
         </div>

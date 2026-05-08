@@ -30,6 +30,14 @@ import { WikilinkPopup } from "./SlashCommand.tsx";
 import { MarkdownToolbar } from "./MarkdownToolbar.tsx";
 import { useImagePaste } from "./imagePaste.ts";
 
+// prosemirror-markdown's esc() escapes every [ and ] in text nodes, turning
+// [[wikilink]] into \[\[wikilink\]\] on save. Unescape double-bracket patterns
+// after serialization so wikilinks are stored correctly on disk.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getMarkdown(ed: any): string {
+  return (ed.storage.markdown.getMarkdown() as string).replace(/\\\[\\\[([^\n]*?)\\\]\\\]/g, "[[$1]]");
+}
+
 interface EditorProps {
   content: string;
   onUpdate: (markdown: string) => void;
@@ -244,7 +252,7 @@ export function Editor({
     ],
     content,
     onUpdate({ editor }) {
-      onUpdate(editor.storage.markdown.getMarkdown());
+      onUpdate(getMarkdown(editor));
     },
     editorProps: {
       attributes: { class: "tiptap" },
@@ -261,7 +269,7 @@ export function Editor({
 
   useEffect(() => {
     if (!editor) return;
-    const current = editor.storage.markdown.getMarkdown();
+    const current = getMarkdown(editor);
     if (current !== content) {
       editor.commands.setContent(content);
     }
@@ -294,7 +302,7 @@ export function Editor({
 
   useEffect(() => {
     if (!editor || !metadataResult) return;
-    const md = editor.storage.markdown.getMarkdown();
+    const md = getMarkdown(editor);
     const hasFrontmatter = md.startsWith("---\n");
     if (hasFrontmatter) {
       const endOfFm = md.indexOf("\n---\n", 4);
@@ -402,7 +410,7 @@ export function Editor({
     autocompleteTimer.current = setTimeout(() => {
       const { from, to } = editor.state.selection;
       if (from !== to) return;
-      const md = editor.storage.markdown.getMarkdown();
+      const md = getMarkdown(editor);
       if (md.trim().length > 10) onAutocompleteRequest(md);
     }, 800);
   }, [onAutocompleteRequest, editor]);
@@ -620,7 +628,7 @@ export function Editor({
   const handleToggleMode = useCallback(() => {
     if (!editor) return;
     if (editorMode === "formatted") {
-      setRawContent(editor.storage.markdown.getMarkdown());
+      setRawContent(getMarkdown(editor));
       setEditorMode("markdown");
     } else {
       editor.commands.setContent(rawContent);
