@@ -274,6 +274,37 @@ export async function startEpistemServer(
           }
         },
       },
+      "/api/search-text": {
+        GET: async (req: Request) => {
+          const url = new URL(req.url);
+          const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
+          if (q.length < 2) return json({ results: [] });
+          const files = await collectMarkdownFiles(absRoot);
+          const results: Array<{ path: string; matches: Array<{ line: number; text: string }> }> = [];
+          for (const relPath of files) {
+            const absolute = resolve(join(absRoot, relPath));
+            try {
+              const content = await Bun.file(absolute).text();
+              const lines = content.split("\n");
+              const matches: Array<{ line: number; text: string }> = [];
+              for (let i = 0; i < lines.length; i++) {
+                const line = lines[i] ?? "";
+                if (line.toLowerCase().includes(q)) {
+                  matches.push({ line: i + 1, text: line.trim().slice(0, 200) });
+                  if (matches.length >= 3) break;
+                }
+              }
+              if (matches.length > 0) {
+                results.push({ path: relPath, matches });
+                if (results.length >= 30) break;
+              }
+            } catch {
+              // skip unreadable files
+            }
+          }
+          return json({ results });
+        },
+      },
       "/api/export": {
         POST: async (req: Request) => {
           if (!pandocAvailable) {
