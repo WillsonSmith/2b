@@ -381,6 +381,11 @@ export async function startEpistemStubServer(port: number): Promise<void> {
         },
       },
     },
+    websocket: {
+      open() {},
+      message() {},
+      close() {},
+    },
     fetch(req, server) {
       if (server.upgrade(req)) return;
       return new Response("Not found", { status: 404 });
