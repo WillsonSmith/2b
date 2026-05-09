@@ -14,8 +14,9 @@
  *   PROVIDER     "lmstudio" (default) or "ollama"
  *   PORT         HTTP port (default: 4000; overridden by --port)
  */
-import { resolve } from "node:path";
-import { existsSync } from "node:fs";
+import { resolve, join } from "node:path";
+import { existsSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
 import { createEpistemAgent } from "./src/agent.ts";
 import { startEpistemServer, startEpistemStubServer } from "./src/server/index.ts";
 import { loadConfig } from "./src/config.ts";
@@ -52,12 +53,14 @@ if (!workspaceArg) {
   const workspaceRoot = resolve(workspaceArg);
 
   if (!existsSync(workspaceRoot)) {
-    console.error(`Workspace directory not found: ${workspaceRoot}`);
-    process.exit(1);
+    console.warn(`Workspace directory not found: ${workspaceRoot} — falling back to folder picker`);
+    // Clear the stale path so the next launch also starts in stub mode
+    try { rmSync(join(homedir(), ".config", "episteme", "last-workspace")); } catch {}
+    await startEpistemStubServer(port);
+  } else {
+    const config = await loadConfig(workspaceRoot);
+    const bundle = createEpistemAgent(workspaceRoot, config);
+
+    await startEpistemServer(bundle, workspaceRoot, config, port);
   }
-
-  const config = await loadConfig(workspaceRoot);
-  const bundle = createEpistemAgent(workspaceRoot, config);
-
-  await startEpistemServer(bundle, workspaceRoot, config, port);
 }
