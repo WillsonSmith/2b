@@ -16,6 +16,7 @@ export function useFileManager(
   const [isDirty, setIsDirty] = useState(false);
 
   const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
+  const [workspaceFolders, setWorkspaceFolders] = useState<string[]>([]);
   const [workspaceName, setWorkspaceName] = useState("workspace");
   const [needsWorkspace, setNeedsWorkspace] = useState(false);
   const [isPickingWorkspace, setIsPickingWorkspace] = useState(false);
@@ -94,6 +95,10 @@ export function useFileManager(
     wsRef.current?.send(JSON.stringify({ type: "file_create", path }));
   }, [wsRef]);
 
+  const createFolder = useCallback((path: string) => {
+    wsRef.current?.send(JSON.stringify({ type: "folder_create", path }));
+  }, [wsRef]);
+
   const renameFile = useCallback((oldPath: string, newPath: string) => {
     wsRef.current?.send(JSON.stringify({ type: "file_rename", oldPath, newPath }));
   }, [wsRef]);
@@ -115,7 +120,10 @@ export function useFileManager(
 
   // Server → client subscriptions
   useEffect(() => {
-    const unsubFiles = subscribe("workspace_files", (msg) => setWorkspaceFiles(msg.files));
+    const unsubFiles = subscribe("workspace_files", (msg) => {
+      setWorkspaceFiles(msg.files);
+      setWorkspaceFolders(msg.folders ?? []);
+    });
     const unsubContent = subscribe("file_content", (msg) => {
       setEditorContent(msg.content);
       setSavedContent(msg.content);
@@ -170,6 +178,7 @@ export function useFileManager(
     savedContent,
     isDirty,
     workspaceFiles,
+    workspaceFolders,
     workspaceName,
     needsWorkspace,
     isPickingWorkspace,
@@ -187,6 +196,7 @@ export function useFileManager(
     openFile,
     saveFile,
     createFile,
+    createFolder,
     renameFile,
     refreshFiles,
     openInFinder,

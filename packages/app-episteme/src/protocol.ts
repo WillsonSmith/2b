@@ -24,6 +24,7 @@ export type ClientMsg =
   | { type: "file_open"; path: string }
   | { type: "file_save"; path: string; content: string }
   | { type: "file_create"; path: string }
+  | { type: "folder_create"; path: string }
   | { type: "file_rename"; oldPath: string; newPath: string }
   | { type: "list_workspace" }
   | { type: "autocomplete_request"; context: string }
@@ -56,7 +57,7 @@ export type ServerMsg =
   | { type: "tool_call"; name: string; args: Record<string, unknown> }
   | { type: "tool_result"; name: string }
   | { type: "file_content"; path: string; content: string }
-  | { type: "workspace_files"; files: string[] }
+  | { type: "workspace_files"; files: string[]; folders: string[] }
   | { type: "index_progress"; indexed: number; total: number }
   | { type: "file_saved" }
   | { type: "file_created"; path: string }

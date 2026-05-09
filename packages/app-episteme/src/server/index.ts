@@ -15,7 +15,7 @@
 import type { ServerWebSocket } from "bun";
 import { resolve, join } from "node:path";
 import { tmpdir, homedir } from "node:os";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import type { EpistemeAgentBundle } from "../agent.ts";
 import type { EpistemeConfig } from "../config.ts";
 import { saveConfig } from "../config.ts";
@@ -50,6 +50,20 @@ async function collectMarkdownFiles(dir: string): Promise<string[]> {
   return results.sort();
 }
 
+async function collectSubdirectories(root: string, rel = ""): Promise<string[]> {
+  const results: string[] = [];
+  try {
+    const entries = await readdir(join(root, rel || "."), { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+      const relPath = rel ? `${rel}/${entry.name}` : entry.name;
+      results.push(relPath);
+      results.push(...await collectSubdirectories(root, relPath));
+    }
+  } catch {}
+  return results.sort();
+}
+
 async function dispatch(
   msg: ClientMsg,
   ctx: WsContext,
@@ -71,6 +85,7 @@ async function dispatch(
     case "file_open":
     case "file_save":
     case "file_create":
+    case "folder_create":
     case "file_rename":
     case "open_in_finder":
       return handleFile(msg, ctx, ws);
@@ -149,8 +164,8 @@ export async function startEpistemServer(
   function scheduleWorkspaceRefresh(): void {
     if (workspaceRefreshTimer) clearTimeout(workspaceRefreshTimer);
     workspaceRefreshTimer = setTimeout(() => {
-      collectMarkdownFiles(absRoot).then((files) =>
-        broadcast({ type: "workspace_files", files }),
+      Promise.all([collectMarkdownFiles(absRoot), collectSubdirectories(absRoot)]).then(([files, folders]) =>
+        broadcast({ type: "workspace_files", files, folders }),
       );
     }, 200);
   }
@@ -177,6 +192,7 @@ export async function startEpistemServer(
     broadcast,
     send,
     collectMarkdownFiles: () => collectMarkdownFiles(absRoot),
+    collectSubdirectories: () => collectSubdirectories(absRoot),
     resolveWorkspacePath,
     scheduleWorkspaceRefresh,
   };
