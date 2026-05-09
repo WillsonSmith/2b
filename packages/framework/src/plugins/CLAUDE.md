@@ -1,6 +1,6 @@
 # Plugins
 
-Modular agent capabilities. Each plugin implements `AgentPlugin` from `../core/Plugin.ts` and is injected into a `BaseAgent` via `agent.registerPlugin(plugin)`.
+Modular agent capabilities. Each plugin implements `AgentPlugin` from `@2b/framework/core/Plugin.ts` and is injected into a `BaseAgent` via `agent.registerPlugin(plugin)`.
 
 ## Plugin Lifecycle
 

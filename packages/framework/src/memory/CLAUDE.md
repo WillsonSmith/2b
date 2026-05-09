@@ -1,12 +1,12 @@
 # Memory
 
-This directory contains low-level conversation history abstractions. These are **not** the long-term semantic memory system — see `src/plugins/CortexMemoryPlugin.ts` for that.
+This directory contains low-level conversation history abstractions. These are **not** the long-term semantic memory system — see `packages/framework/src/plugins/CortexMemoryPlugin.ts` for that.
 
 ## Current State
 
 `MemoryProvider.ts` defines a legacy interface (`MemoryProvider`, `MemoryItem`, `MemoryQuery`) that is **not currently used** by any plugin or agent. It is retained as a reference for future backends.
 
-Short-term conversation history is handled directly by `MemoryPlugin` (`src/plugins/MemoryPlugin.ts`), which stores messages in an in-memory array and auto-summarises when the count exceeds 15. It does not use the `MemoryProvider` interface.
+Short-term conversation history is handled directly by `MemoryPlugin` (`packages/framework/src/plugins/MemoryPlugin.ts`), which stores messages in an in-memory array and auto-summarises when the count exceeds 15. It does not use the `MemoryProvider` interface.
 
 ## Interface (MemoryProvider.ts)
 
@@ -21,7 +21,7 @@ Short-term conversation history is handled directly by `MemoryPlugin` (`src/plug
 
 `MemoryPlugin` handles **short-term** conversation history (what was said recently, max 15 messages, auto-summarised).
 
-`CortexMemoryPlugin` (in `src/plugins/`) handles **long-term** semantic memory — embedding-based search, factual/thought/behavior types, and cross-session recall. It uses `IMemoryDatabase` / `CortexMemoryDatabase` as its backend.
+`CortexMemoryPlugin` (in `packages/framework/src/plugins/`) handles **long-term** semantic memory — embedding-based search, factual/thought/behavior types, and cross-session recall. It uses `IMemoryDatabase` / `CortexMemoryDatabase` as its backend.
 
 ## Adding a Persistent Backend
 

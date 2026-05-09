@@ -1,6 +1,6 @@
 # CLI
 
-Command-line subcommands for managing the agent outside of a chat session. Wired into the main entry point (`index.ts`) so they're accessible as `bun run index.ts <command> <subcommand>`.
+Command-line subcommands for managing the agent outside of a chat session. Wired into the main entry point (`packages/app-2b/2b.ts`) so they're accessible via `bun run 2b -- <command> <subcommand>`.
 
 ## Files
 
@@ -16,9 +16,9 @@ Exports `runMemoryCommand(args: string[])`. Operates directly on `data/2b.cortex
 
 | Command | Description |
 |---|---|
-| `2b memory list` | Shows up to 100 most recent memories (id, type, timestamp, truncated text) |
-| `2b memory search <query>` | Full-text search on `memories_fts` (SQLite FTS5); query is passed directly to `MATCH` |
-| `2b memory clear [--force]` | Deletes all rows from `memories`, `memory_links`, `memories_fts`; prompts for confirmation without `--force` |
+| `bun run 2b -- memory list` | Shows up to 100 most recent memories (id, type, timestamp, truncated text) |
+| `bun run 2b -- memory search <query>` | Full-text search on `memories_fts` (SQLite FTS5); query is passed directly to `MATCH` |
+| `bun run 2b -- memory clear [--force]` | Deletes all rows from `memories`, `memory_links`, `memories_fts`; prompts for confirmation without `--force` |
 
 The database must exist before running any subcommand — it is created by running the agent at least once.
 

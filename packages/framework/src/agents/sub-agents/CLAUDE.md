@@ -20,7 +20,7 @@ The factory handles all plugin construction. Callers just pass `llm` and optiona
 
 | Factory | Agent Name | Plugins | Used by |
 |---------|-----------|---------|---------|
-| `createCodebaseExplainerAgent` | `CodebaseExplainerAgent` | `SourceReaderPlugin` | Static `SubAgentPlugin` (`explore_codebase`) in `2b.ts` |
+| `createCodebaseExplainerAgent` | `CodebaseExplainerAgent` | `SourceReaderPlugin` | Static `SubAgentPlugin` (`explore_codebase`) in `packages/app-2b/2b.ts` |
 
 > **Note:** Domain sub-agent functionality is handled by `DynamicAgentPlugin` using the capability registry. Add new domain agents as capability entries in `DynamicAgentPlugin`'s `CAPABILITY_REGISTRY` rather than new factory files here.
 

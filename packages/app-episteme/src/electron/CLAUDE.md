@@ -1,6 +1,6 @@
-# Electron Shell
+# Electron Shell (`@2b/electron-shell`)
 
-Thin Electron wrapper for the Episteme desktop app. All AI and file logic lives in the Bun server (`episteme.ts` + `src/apps/episteme/`). This directory is solely responsible for native OS integration.
+Thin Electron wrapper for the Episteme desktop app. All AI and file logic lives in the Bun server (`packages/app-episteme/episteme.ts` + `packages/app-episteme/src/`). This directory is solely responsible for native OS integration.
 
 ## Files
 
@@ -9,14 +9,14 @@ Thin Electron wrapper for the Episteme desktop app. All AI and file logic lives 
 | `main.ts` | Electron main process — spawns the Bun server, manages the BrowserWindow, native menus, IPC handlers |
 | `preload.ts` | Runs in the renderer sandbox — exposes `window.__electronShell` via `contextBridge` |
 | `tsconfig.json` | CommonJS target required by Electron's Node.js context |
-| `package.json` | Electron entry point + `electron-builder` distribution config |
+| `package.json` | Electron entry point (`@2b/electron-shell`) + `electron-builder` distribution config |
 | `scripts/afterPack.js` | `electron-builder` hook — downloads the Bun binary into `Contents/Resources/bin/` at build time |
 
 ## Architecture
 
 ```
 Electron main process (main.ts)
-  └─ spawns: bun episteme.ts --port=PORT [--workspace=PATH]
+  └─ spawns: bun packages/app-episteme/episteme.ts --port=PORT [--workspace=PATH]
               ↑
               Bun HTTP + WebSocket server (unchanged from browser mode)
               ↑
@@ -51,16 +51,21 @@ Both are `ipcMain.handle` / `ipcRenderer.invoke` (promise-based). Add new channe
 
 ## Running in Development
 
+From the repo root:
 ```sh
-cd src/apps/episteme/electron
-npm install       # first time only
-npm start         # tsc → dist/, then electron .
+bun run electron
 ```
 
-`npm start` compiles `main.ts` and `preload.ts` to `dist/` (CommonJS) before launching. The Bun server is spawned from `repoRoot()` which resolves to the repo root in dev mode.
+This runs `npm --prefix packages/app-episteme/src/electron start`, which compiles `main.ts` and `preload.ts` to `dist/` (CommonJS) and launches `electron .`.
+
+The Bun server is spawned from `repoRoot()` in `main.ts`, which resolves 5 `..` from `dist/` to the monorepo root. It then runs:
+```
+bun packages/app-episteme/episteme.ts --port=PORT [--workspace=PATH]
+```
 
 ## Building for Distribution
 
+From the electron directory (`packages/app-episteme/src/electron/`):
 ```sh
 npm run build:mac   # produces dist-app/*.dmg (universal)
 npm run build       # all platforms
@@ -68,15 +73,15 @@ npm run build       # all platforms
 
 `electron-builder` runs `scripts/afterPack.js` automatically after packing. That script downloads the Bun binary for the target platform from GitHub releases and places it at `Contents/Resources/bin/bun`. In the packaged app, `bunBin()` in `main.ts` resolves to that path instead of the system `bun`.
 
-The repo source (`src/`, `episteme.ts`, `package.json`, `bun.lockb`) is copied into `Contents/Resources/app/` via `extraResources` in `package.json`.
+The monorepo source (`packages/**`, `package.json`, `bun.lock`) is copied into `Contents/Resources/app/` via `extraResources` in `package.json`.
 
 ## Adding Native Features
 
 1. Add an `ipcMain.handle('channel-name', ...)` handler in `main.ts`
 2. Expose it in `preload.ts` via `contextBridge.exposeInMainWorld('__electronShell', { ... })`
-3. Add the method signature to `shell/IShell.ts`
-4. Implement it in `shell/ElectronShell.ts` (calls `window.__electronShell.channelName()`)
-5. Add a no-op fallback in `shell/BrowserShell.ts`
+3. Add the method signature to `packages/app-episteme/src/shell/IShell.ts`
+4. Implement it in `packages/app-episteme/src/shell/ElectronShell.ts` (calls `window.__electronShell.channelName()`)
+5. Add a no-op fallback in `packages/app-episteme/src/shell/BrowserShell.ts`
 
 ## Key Constraints
 
@@ -84,3 +89,4 @@ The repo source (`src/`, `episteme.ts`, `package.json`, `bun.lockb`) is copied i
 - `contextIsolation: true` and `nodeIntegration: false` are required for security. Never disable them.
 - The preload only exposes what's needed — don't widen the `__electronShell` surface without a concrete use case.
 - The Bun server port is dynamic (`findFreePort` starting at 4000) so multiple Episteme instances can coexist.
+- This package is a Bun workspace member (`@2b/electron-shell`) but uses its own `node_modules/` and `npm` for its dependencies — Bun does not manage `electron` or `electron-builder`.
