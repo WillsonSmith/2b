@@ -71,6 +71,7 @@ interface EditorProps {
   onCreateFile?: (path: string) => void;
   workspaceFiles?: string[];
   onCountsChange?: (words: number, chars: number) => void;
+  editorMode?: "formatted" | "markdown";
 }
 
 interface FindBarProps {
@@ -180,6 +181,7 @@ export function Editor({
   onCreateFile,
   workspaceFiles = [],
   onCountsChange,
+  editorMode: editorModeProp = "formatted",
 }: EditorProps) {
   const ghostRef = useRef(ghostText);
   const lintRef = useRef<ResolvedIssue[]>([]);
@@ -194,7 +196,8 @@ export function Editor({
     onEscape: () => false,
   });
   const findStateRef = useRef<FindState>({ matches: [], activeIndex: 0 });
-  const [editorMode, setEditorMode] = useState<"formatted" | "markdown">("formatted");
+  const editorMode = editorModeProp;
+  const prevEditorMode = useRef(editorModeProp);
   const [rawContent, setRawContent] = useState("");
 
   const [findOpen, setFindOpen] = useState(false);
@@ -625,16 +628,16 @@ export function Editor({
     return () => { editor.off("update", emit); };
   }, [editor]);
 
-  const handleToggleMode = useCallback(() => {
+  useEffect(() => {
     if (!editor) return;
-    if (editorMode === "formatted") {
+    if (prevEditorMode.current === editorMode) return;
+    if (editorMode === "markdown") {
       setRawContent(getMarkdown(editor));
-      setEditorMode("markdown");
     } else {
       editor.commands.setContent(rawContent);
       onUpdate(rawContent);
-      setEditorMode("formatted");
     }
+    prevEditorMode.current = editorMode;
   }, [editor, editorMode, rawContent, onUpdate]);
 
   const handleRawChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -660,8 +663,6 @@ export function Editor({
       )}
       <MarkdownToolbar
         editor={editor}
-        editorMode={editorMode}
-        onToggleMode={handleToggleMode}
         onMetadataRequest={onMetadataRequest}
         isGeneratingMetadata={isGeneratingMetadata}
         onToggleRecording={onToggleRecording}

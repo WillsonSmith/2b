@@ -32,8 +32,6 @@ function ToolbarButton({
 
 interface MarkdownToolbarProps {
   editor: Editor | null;
-  editorMode: "formatted" | "markdown";
-  onToggleMode: () => void;
   onMetadataRequest?: () => void;
   isGeneratingMetadata?: boolean;
   onToggleRecording?: () => void;
@@ -42,8 +40,6 @@ interface MarkdownToolbarProps {
 
 export function MarkdownToolbar({
   editor,
-  editorMode,
-  onToggleMode,
   onMetadataRequest,
   isGeneratingMetadata,
   onToggleRecording,
@@ -191,14 +187,6 @@ export function MarkdownToolbar({
           {isGeneratingMetadata ? <Loader2 size={14} className="icon-spin" /> : <FileCode size={14} />}
           Frontmatter
         </span>
-      </ToolbarButton>
-
-      <ToolbarButton
-        onClick={onToggleMode}
-        title="Toggle between Formatted and Markdown views"
-        active={editorMode === "markdown"}
-      >
-        {editorMode === "formatted" ? "Markdown" : "Formatted"}
       </ToolbarButton>
 
       {onToggleRecording && (
