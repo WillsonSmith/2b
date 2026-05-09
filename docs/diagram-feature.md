@@ -173,7 +173,7 @@ NodeViewWrapper.mermaid-block
 
 **Re-render:** The `useEffect` depends on `[language, code]`. Whenever the user edits the source (via the visible source panel), `code` changes → mermaid re-renders → SVG updates.
 
-**Mermaid initialisation:** `mermaid.initialize()` is called once via a module-level flag (`mermaidReady`). It is not called on each component mount.
+**Mermaid initialisation:** `mermaid.initialize()` is called once via a module-level flag (`mermaidReady`). It is not called on each component mount. The theme is `"base"` with custom `themeVariables` derived from the app's CSS colour tokens (see `ensureMermaid()` in `mermaid.tsx`).
 
 ### MermaidDiagram (React component)
 
@@ -233,7 +233,7 @@ newPan.x = cursor.x - (cursor.x - pan.x) * (newScale / oldScale)
 newPan.y = cursor.y - (cursor.y - pan.y) * (newScale / oldScale)
 ```
 
-**Mermaid theme is hardcoded to `"default"`.** The `ensureMermaid()` function passes `{ theme: "default" }`. To support dark mode, pass `theme: "dark"` (or `"base"` with `themeVariables`) and re-initialise when the app theme changes. Note that `mermaid.initialize()` is currently only called once.
+**Mermaid theme uses `"base"` with custom `themeVariables`.** The `ensureMermaid()` function sets colours that match the app's CSS tokens (`--bg`, `--bg-raised`, `--bg-active`, `--accent`, `--accent-soft`, `--text`, `--text-muted`, etc.) hardcoded as hex values, since CSS variables are not accessible in JS. To adjust a colour, update both `base.css` and the corresponding entry in `themeVariables` inside `ensureMermaid()`. Because `mermaid.initialize()` is called only once, changes take effect after a page reload.
 
 **The LLM model for diagram generation** is `featureModel(config, "default")`. To use a different model, change the key passed to `featureModel` or add a dedicated `"diagram"` model entry to `EpistemeConfig`.
 
