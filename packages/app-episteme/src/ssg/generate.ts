@@ -35,6 +35,10 @@ interface FileInfo {
   edges: string[]; // htmlRelPaths of wikilink targets
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 function slugify(tag: string): string {
   return tag.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
@@ -85,7 +89,7 @@ function resolveWikilinksInBody(body: string, allRelPaths: string[], currentRelP
     }
     const targetHtmlPath = resolved.replace(/\.md$/, ".html");
     const href = relativeHref(currentRelPath, targetHtmlPath);
-    return `[${display}](${href})`;
+    return `<a href="${href}">${escapeHtml(display)}</a>`;
   });
 }
 
