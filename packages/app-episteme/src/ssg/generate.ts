@@ -32,6 +32,7 @@ interface FileInfo {
   summary: string | null;
   html: string;
   depth: number;
+  edges: string[]; // htmlRelPaths of wikilink targets
 }
 
 function slugify(tag: string): string {
@@ -55,6 +56,24 @@ function titleFromMarkdown(body: string): string | null {
 function relativeHref(fromRelPath: string, toRelPath: string): string {
   const fromDir = path.dirname(fromRelPath);
   return path.relative(fromDir === "." ? "" : fromDir, toRelPath).replace(/\\/g, "/");
+}
+
+function extractEdgesForFile(body: string, allRelPaths: string[], currentHtmlRelPath: string): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const match of body.matchAll(new RegExp(WIKILINK_RE.source, "g"))) {
+    const target = match[1];
+    if (!target) continue;
+    const resolved = resolveWikilinkTarget(target, allRelPaths);
+    if (resolved) {
+      const htmlPath = resolved.replace(/\.md$/, ".html");
+      if (!seen.has(htmlPath) && htmlPath !== currentHtmlRelPath) {
+        seen.add(htmlPath);
+        result.push(htmlPath);
+      }
+    }
+  }
+  return result;
 }
 
 function resolveWikilinksInBody(body: string, allRelPaths: string[], currentRelPath: string): string {
@@ -454,7 +473,7 @@ ${MERMAID_SCRIPT}
 <body>
 <nav>
   <div class="nav-links">
-    <a href="${opts.root}index.html">← Home</a>${opts.navExtra ? ` · ${opts.navExtra}` : ""}
+    <a href="${opts.root}index.html">← Home</a> · <a href="${opts.root}graph.html">Graph</a>${opts.navExtra ? ` · ${opts.navExtra}` : ""}
   </div>
   <button id="ssg-theme-btn" onclick="ssgToggleTheme()" title="Toggle light/dark mode">☀</button>
 </nav>
@@ -580,6 +599,121 @@ function tagPage(tag: string, files: FileInfo[]): string {
   });
 }
 
+function graphPage(files: FileInfo[]): string {
+  const nodes = files.map((f) => ({ id: f.htmlRelPath, title: f.title, tags: f.tags }));
+
+  const linkSet = new Set<string>();
+  const links: { source: string; target: string }[] = [];
+  for (const f of files) {
+    for (const target of f.edges) {
+      const key = `${f.htmlRelPath}\0${target}`;
+      if (!linkSet.has(key)) {
+        linkSet.add(key);
+        links.push({ source: f.htmlRelPath, target });
+      }
+    }
+  }
+
+  const summary = `${files.length} note${files.length !== 1 ? "s" : ""} · ${links.length} connection${links.length !== 1 ? "s" : ""}`;
+
+  const graphScript = `<script>
+const GRAPH_NODES = ${JSON.stringify(nodes)};
+const GRAPH_LINKS = ${JSON.stringify(links)};
+</script>
+<script type="module">
+import * as d3 from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
+
+const wrap = document.getElementById('graph-wrap');
+const svg = d3.select('#graph-svg');
+let W = wrap.clientWidth, H = wrap.clientHeight;
+
+const degree = new Map(GRAPH_NODES.map(n => [n.id, 0]));
+for (const l of GRAPH_LINKS) {
+  degree.set(l.source, (degree.get(l.source) ?? 0) + 1);
+  degree.set(l.target, (degree.get(l.target) ?? 0) + 1);
+}
+const nodeR = d => Math.max(4, Math.min(12, 4 + (degree.get(d.id) ?? 0)));
+
+const nodes = GRAPH_NODES.map(d => ({ ...d }));
+const links = GRAPH_LINKS.map(d => ({ ...d }));
+
+const sim = d3.forceSimulation(nodes)
+  .force('link', d3.forceLink(links).id(d => d.id).distance(80))
+  .force('charge', d3.forceManyBody().strength(-220))
+  .force('center', d3.forceCenter(W / 2, H / 2))
+  .force('collide', d3.forceCollide().radius(d => nodeR(d) + 5));
+
+const zoom = d3.zoom().scaleExtent([0.05, 10]).on('zoom', e => g.attr('transform', e.transform));
+svg.call(zoom);
+svg.on('dblclick.zoom', () => svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity));
+
+const g = svg.append('g');
+
+const link = g.append('g')
+  .selectAll('line')
+  .data(links)
+  .join('line')
+  .style('stroke', 'var(--border-light)')
+  .style('stroke-opacity', '0.55')
+  .style('stroke-width', '1');
+
+const node = g.append('g')
+  .selectAll('g')
+  .data(nodes)
+  .join('g')
+  .style('cursor', 'pointer')
+  .call(d3.drag()
+    .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+    .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
+    .on('end',   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }))
+  .on('click', (e, d) => { window.location.href = d.id; });
+
+node.append('circle')
+  .attr('r', nodeR)
+  .style('fill', 'var(--bg-raised)')
+  .style('stroke', 'var(--accent)')
+  .style('stroke-width', '1.5');
+
+node.append('text')
+  .text(d => d.title)
+  .attr('dy', '0.35em')
+  .style('font-size', '10px')
+  .style('fill', 'var(--text-muted)')
+  .style('pointer-events', 'none')
+  .style('user-select', 'none')
+  .each(function(d) { this.setAttribute('dx', String(nodeR(d) + 4)); });
+
+node.append('title').text(d => d.title + (d.tags.length ? '\\n' + d.tags.join(', ') : ''));
+
+sim.on('tick', () => {
+  link
+    .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+    .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+  node.attr('transform', d => \`translate(\${d.x},\${d.y})\`);
+});
+
+new ResizeObserver(() => {
+  W = wrap.clientWidth; H = wrap.clientHeight;
+  svg.attr('width', W).attr('height', H);
+  sim.force('center', d3.forceCenter(W / 2, H / 2)).alpha(0.3).restart();
+}).observe(wrap);
+</script>`;
+
+  return pageShell({
+    title: "Knowledge Graph",
+    root: "",
+    body: `<header>
+<h1>Knowledge Graph</h1>
+<p class="summary">${summary}</p>
+</header>
+<div id="graph-wrap" style="width:100%;height:72vh;background:var(--bg-raised);border:1px solid var(--border);border-radius:var(--md-radius-md);overflow:hidden;position:relative">
+  <svg id="graph-svg" style="width:100%;height:100%"></svg>
+</div>
+<p style="font-size:var(--md-scale-xs);color:var(--text-dim);margin-top:var(--md-sp2)">Click a node to navigate · Scroll to zoom · Drag to pan · Double-click to reset view</p>
+${graphScript}`,
+  });
+}
+
 async function generate(workspace: string, output: string): Promise<void> {
   console.log("Generating static site...");
 
@@ -626,7 +760,8 @@ async function generate(workspace: string, output: string): Promise<void> {
     const html = await marked(resolvedBody);
     const depth = raw.relPath.split("/").length - 1;
     const htmlRelPath = raw.relPath.replace(/\.md$/, ".html");
-    files.push({ ...raw, html, depth, htmlRelPath });
+    const edges = extractEdgesForFile(raw.body, allRelPaths, htmlRelPath);
+    files.push({ ...raw, html, depth, htmlRelPath, edges });
   }
 
   // Write individual pages
@@ -644,6 +779,10 @@ async function generate(workspace: string, output: string): Promise<void> {
     await writeFile(indexPath, autoIndexPage(files), "utf8");
     console.log("Writing index.html (auto-generated)");
   }
+
+  // Knowledge graph
+  await writeFile(path.join(output, "graph.html"), graphPage(files), "utf8");
+  console.log("Writing graph.html");
 
   // Tag pages
   const tagMap = new Map<string, FileInfo[]>();
@@ -668,7 +807,7 @@ async function generate(workspace: string, output: string): Promise<void> {
     }
   }
 
-  const total = files.length + (hasIndexMd ? 0 : 1) + (tagMap.size > 0 ? tagMap.size + 1 : 0);
+  const total = files.length + (hasIndexMd ? 0 : 1) + 1 + (tagMap.size > 0 ? tagMap.size + 1 : 0);
   console.log(`Done. ${total} pages written.`);
 }
 
