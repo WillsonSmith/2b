@@ -206,22 +206,76 @@
 }
 
 .tiptap .mermaid-diagram {
-  display: flex;
-  justify-content: center;
-  padding: var(--md-sp3);
+  position: relative;
+  height: 320px;
   background: var(--bg-highlight);
   border: 1px solid var(--border);
   border-radius: var(--md-radius-md) var(--md-radius-md) 0 0;
-  overflow-x: auto;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
 }
 
-.tiptap .mermaid-diagram svg {
-  max-width: 100%;
-  height: auto;
+.tiptap .mermaid-diagram:active {
+  cursor: grabbing;
+}
+
+.tiptap .mermaid-diagram-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tiptap .mermaid-diagram-inner svg {
+  display: block;
+}
+
+.tiptap .mermaid-reset {
+  position: absolute;
+  bottom: var(--md-sp2);
+  right: var(--md-sp2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--md-radius-sm);
+  padding: 2px 6px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.tiptap .mermaid-reset:hover {
+  opacity: 1;
+}
+
+.tiptap .mermaid-footer {
+  display: flex;
+  justify-content: flex-start;
+  background: var(--bg-highlight);
+  border: 1px solid var(--border);
+  border-top: none;
+  padding: 2px var(--md-sp2);
+}
+
+.tiptap .mermaid-toggle {
+  background: none;
+  border: none;
+  font-size: 11px;
+  color: var(--text-muted, var(--text));
+  cursor: pointer;
+  padding: 2px 4px;
+  opacity: 0.7;
+}
+
+.tiptap .mermaid-toggle:hover {
+  opacity: 1;
 }
 
 .tiptap .mermaid-source {
   margin: 0;
+  text-align: left;
   border-radius: 0 0 var(--md-radius-md) var(--md-radius-md);
   border-top: none;
 }
