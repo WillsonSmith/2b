@@ -25,6 +25,7 @@ export type ClientMsg =
   | { type: "file_save"; path: string; content: string }
   | { type: "file_create"; path: string }
   | { type: "folder_create"; path: string }
+  | { type: "folder_rename"; oldPath: string; newPath: string }
   | { type: "file_rename"; oldPath: string; newPath: string }
   | { type: "list_workspace" }
   | { type: "autocomplete_request"; context: string }

@@ -820,6 +820,7 @@ function App() {
           onCreateFile={fileManager.createFile}
           onCreateFolder={fileManager.createFolder}
           onRenameFile={fileManager.renameFile}
+          onRenameFolder={fileManager.renameFolder}
           onOpenInFinder={fileManager.openInFinder}
           workspaceRoot={workspaceRoot}
         />

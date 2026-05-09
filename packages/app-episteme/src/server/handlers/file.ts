@@ -8,7 +8,7 @@ import type { WsContext } from "../context.ts";
 
 export type FileMsg = Extract<
   ClientMsg,
-  { type: "list_workspace" | "file_open" | "file_save" | "file_create" | "folder_create" | "file_rename" | "open_in_finder" }
+  { type: "list_workspace" | "file_open" | "file_save" | "file_create" | "folder_create" | "folder_rename" | "file_rename" | "open_in_finder" }
 >;
 
 export async function handleFile(
@@ -114,6 +114,23 @@ export async function handleFile(
         await sendWorkspaceFiles();
       } catch {
         send(ws, { type: "error", message: `Cannot create folder: ${msg.path}` });
+      }
+      return;
+    }
+
+    case "folder_rename": {
+      const absOld = resolveWorkspacePath(msg.oldPath);
+      const absNew = resolveWorkspacePath(msg.newPath);
+      if (!absOld || !absNew) {
+        send(ws, { type: "error", message: "Path escapes workspace boundary." });
+        return;
+      }
+      try {
+        await mkdir(dirname(absNew), { recursive: true });
+        await fsRename(absOld, absNew);
+        await sendWorkspaceFiles();
+      } catch {
+        send(ws, { type: "error", message: `Cannot move folder: ${msg.oldPath}` });
       }
       return;
     }
