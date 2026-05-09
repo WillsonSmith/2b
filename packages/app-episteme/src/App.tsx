@@ -15,10 +15,8 @@ import { getShell } from "./shell/index.ts";
 import { useWebSocket } from "./hooks/useWebSocket.ts";
 import {
   Search,
-  Zap,
   Network,
   Settings,
-  HelpCircle,
   AlignLeft,
   Circle,
   CircleDot,
@@ -469,6 +467,22 @@ function App() {
       if (msg.total === 0 || msg.indexed >= msg.total) setIndexProgress(null);
       else setIndexProgress({ indexed: msg.indexed, total: msg.total });
     });
+    const unsubContradictionNotif = ws.subscribe("contradiction_notification", (msg) => {
+      const label = msg.count === 1 ? "1 contradiction" : `${msg.count} contradictions`;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "notification",
+          text: `Background scan found ${label}.`,
+          actionLabel: "View",
+          onAction: () => {
+            conflictsGraph.handleOpenConflicts();
+            setSidecarCollapsed(false);
+          },
+        },
+      ]);
+      setSidecarCollapsed(false);
+    });
     return () => {
       unsubSpeak();
       unsubToolCall();
@@ -481,6 +495,7 @@ function App() {
       unsubFileContent();
       unsubFileCreated();
       unsubIndex();
+      unsubContradictionNotif();
     };
   }, [
     ws.subscribe,
@@ -577,17 +592,6 @@ function App() {
             <Search size={16} />
           </button>
           <button
-            className={`header-research-btn${conflictsGraph.showConflicts ? " active" : ""}`}
-            title="Conflicts panel"
-            onClick={() =>
-              conflictsGraph.showConflicts
-                ? conflictsGraph.setShowConflicts(false)
-                : conflictsGraph.handleOpenConflicts()
-            }
-          >
-            <Zap size={16} />
-          </button>
-          <button
             className={`header-research-btn${conflictsGraph.showGraph ? " active" : ""}`}
             title="Knowledge graph"
             onClick={() =>
@@ -598,16 +602,10 @@ function App() {
           >
             <Network size={16} />
           </button>
+
           <button
             className="header-research-btn"
-            title="Keyboard shortcuts (F1)"
-            onClick={() => { setSettingsInitialTab("help"); setShowSettings(true); }}
-          >
-            <HelpCircle size={16} />
-          </button>
-          <button
-            className="header-settings-btn"
-            title="Style Guide"
+            title="Settings"
             onClick={() => { setSettingsInitialTab("style"); setShowSettings(true); }}
           >
             <Settings size={16} />
