@@ -1,13 +1,60 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CodeBlock } from "@tiptap/extension-code-block";
-import { NodeViewWrapper, NodeViewContent, ReactNodeViewRenderer } from "@tiptap/react";
+import {
+  NodeViewWrapper,
+  NodeViewContent,
+  ReactNodeViewRenderer,
+} from "@tiptap/react";
 import mermaid from "mermaid";
 import type { NodeViewProps } from "@tiptap/core";
 
 let mermaidReady = false;
 function ensureMermaid() {
   if (!mermaidReady) {
-    mermaid.initialize({ startOnLoad: false, theme: "default" });
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      themeVariables: {
+        // Backgrounds — match --bg / --bg-raised / --bg-highlight / --bg-active
+        background: "#181818",
+        mainBkg: "#2e3a50",
+        secondaryColor: "#202020",
+        tertiaryColor: "#2a2a2a",
+        // Text — match --text / --text-muted
+        primaryTextColor: "#d4d4d4",
+        secondaryTextColor: "#d4d4d4",
+        tertiaryTextColor: "#d4d4d4",
+        titleColor: "#d4d4d4",
+        // Borders & lines — match --accent-soft / --border / --text-muted
+        primaryBorderColor: "#3d5a90",
+        primaryColor: "#2e3a50",
+        nodeBorder: "#3d5a90",
+        lineColor: "#888888",
+        clusterBkg: "#202020",
+        clusterBorder: "#333333",
+        // Edge labels
+        edgeLabelBackground: "#202020",
+        // Sequence diagrams
+        actorBkg: "#2e3a50",
+        actorBorder: "#3d5a90",
+        actorTextColor: "#d4d4d4",
+        actorLineColor: "#555555",
+        signalColor: "#888888",
+        signalTextColor: "#d4d4d4",
+        labelBoxBkgColor: "#2a2a2a",
+        labelBoxBorderColor: "#333333",
+        labelTextColor: "#d4d4d4",
+        loopTextColor: "#d4d4d4",
+        noteBorderColor: "#3d5a90",
+        noteBkgColor: "#202020",
+        noteTextColor: "#d4d4d4",
+        activationBorderColor: "#6699dd",
+        activationBkgColor: "#2e3a50",
+        // Font
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+      },
+    });
     mermaidReady = true;
   }
 }
@@ -33,12 +80,15 @@ function MermaidDiagram({ svg }: { svg: string }) {
     return () => el.removeEventListener("wheel", handler);
   }, []);
 
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    dragging.current = true;
-    origin.current = { x: e.clientX, y: e.clientY };
-    panStart.current = pan;
-  }, [pan]);
+  const onMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0) return;
+      dragging.current = true;
+      origin.current = { x: e.clientX, y: e.clientY };
+      panStart.current = pan;
+    },
+    [pan],
+  );
 
   const onMouseMove = useCallback((e: React.MouseEvent) => {
     if (!dragging.current) return;
@@ -48,9 +98,14 @@ function MermaidDiagram({ svg }: { svg: string }) {
     });
   }, []);
 
-  const stopDrag = useCallback(() => { dragging.current = false; }, []);
+  const stopDrag = useCallback(() => {
+    dragging.current = false;
+  }, []);
 
-  const reset = useCallback(() => { setScale(1); setPan({ x: 0, y: 0 }); }, []);
+  const reset = useCallback(() => {
+    setScale(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
 
   return (
     <div
@@ -64,7 +119,11 @@ function MermaidDiagram({ svg }: { svg: string }) {
     >
       <div className="mermaid-diagram-inner">
         <div
-          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`, transformOrigin: "center center" }}
+          style={{
+            width: "98%",
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
+            transformOrigin: "center center",
+          }}
           dangerouslySetInnerHTML={{ __html: svg }}
         />
       </div>
@@ -115,7 +174,9 @@ function MermaidNodeView({ node }: NodeViewProps) {
           </button>
         </div>
         {(showSource || !hasDiagram) && (
-          <pre className={`mermaid-source${errored ? " mermaid-source--error" : ""}`}>
+          <pre
+            className={`mermaid-source${errored ? " mermaid-source--error" : ""}`}
+          >
             <NodeViewContent<"code"> as="code" />
           </pre>
         )}
@@ -125,7 +186,10 @@ function MermaidNodeView({ node }: NodeViewProps) {
 
   return (
     <NodeViewWrapper as="pre">
-      <NodeViewContent<"code"> as="code" className={language ? `language-${language}` : undefined} />
+      <NodeViewContent<"code">
+        as="code"
+        className={language ? `language-${language}` : undefined}
+      />
     </NodeViewWrapper>
   );
 }
