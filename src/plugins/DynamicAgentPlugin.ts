@@ -74,8 +74,10 @@ interface PluginBuildOptions {
 
 const CAPABILITY_REGISTRY: Record<string, CapabilityDef> = {
   web: {
-    description: "Web search (DuckDuckGo) and full webpage reading.",
-    build: () => [new WebSearchPlugin(), new WebReaderPlugin()],
+    // description: "Web search (DuckDuckGo) and full webpage reading.",
+    // build: () => [new WebSearchPlugin(), new WebReaderPlugin()],
+    description: "Full webpage reading.",
+    build: () => [new WebReaderPlugin()],
   },
   files: {
     description:
@@ -524,7 +526,10 @@ export class DynamicAgentPlugin implements AgentPlugin {
         systemPrompt,
         permissionManager: this.permissionManager,
       },
-      { permissionManager: this.permissionManager, timeoutMs: this.subAgentTimeoutMs },
+      {
+        permissionManager: this.permissionManager,
+        timeoutMs: this.subAgentTimeoutMs,
+      },
     );
     if (this.parentMemory) {
       agent.registerPlugin(

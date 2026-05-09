@@ -1,0 +1,30 @@
+/* ── Scrollbars ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* ── Header settings button ──────────────────────────────────────────── */
+.header-settings-btn {
+  font-size: 15px;
+  color: var(--text-dim);
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition:
+    color 0.1s,
+    background 0.1s;
+}
+.header-settings-btn:hover {
+  color: var(--text-muted);
+  background: var(--bg-highlight);
+}
