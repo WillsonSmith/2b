@@ -23,7 +23,6 @@ import {
   Settings,
   HelpCircle,
   AlignLeft,
-  X,
   Circle,
   CircleDot,
   CircleDashed,
@@ -77,50 +76,6 @@ function AutolinkBanner({
   );
 }
 
-// ── Keyboard shortcut help panel ──────────────────────────────────────────────
-
-function HelpPanel({ onClose }: { onClose: () => void }) {
-  const shortcuts = [
-    { key: "⌘S", desc: "Save file" },
-    { key: "⌘F", desc: "Find in document" },
-    { key: "⌘Z / ⌘⇧Z", desc: "Undo / Redo" },
-    { key: "⌘B", desc: "Bold" },
-    { key: "⌘I", desc: "Italic" },
-    { key: "Tab", desc: "Accept ghost-text autocomplete" },
-    { key: "Esc", desc: "Dismiss autocomplete" },
-    { key: "Enter after /diagram: …", desc: "Generate Mermaid diagram" },
-    { key: "?", desc: "Show this help" },
-    { key: "Select text → bubble menu", desc: "Tone rewrite, TL;DR, Table" },
-    { key: "Paste/drop image", desc: "Insert image with AI alt text" },
-    { key: "Hover code block", desc: "Explain code with AI" },
-  ];
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <span className="modal-title">Keyboard Shortcuts</span>
-          <button className="modal-close" onClick={onClose}>
-            <X size={14} />
-          </button>
-        </div>
-        <table className="help-table">
-          <tbody>
-            {shortcuts.map(({ key, desc }) => (
-              <tr key={key} className="help-row">
-                <td className="help-key">
-                  <kbd>{key}</kbd>
-                </td>
-                <td className="help-desc">{desc}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 // ── Large file warning ────────────────────────────────────────────────────────
 
 function LargeFileBanner({
@@ -149,11 +104,11 @@ function App() {
   const [messages, setMessages] = useState<SidecarMessage[]>([]);
   const [sidecarCollapsed, setSidecarCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<"style" | "models" | "help">("style");
   const [showToc, setShowToc] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [pandocAvailable, setPandocAvailable] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [dismissedLargeFile, setDismissedLargeFile] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -283,7 +238,8 @@ function App() {
         !(e.target instanceof HTMLInputElement) &&
         !(e.target instanceof HTMLTextAreaElement)
       ) {
-        setShowHelp((v) => !v);
+        setSettingsInitialTab("help");
+        setShowSettings(true);
       }
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
@@ -338,7 +294,7 @@ function App() {
       { id: "graph", label: "Knowledge Graph", description: "Visualize note connections", action: () => conflictsGraph.showGraph ? conflictsGraph.setShowGraph(false) : conflictsGraph.handleOpenGraph() },
       { id: "export", label: "Export Document", description: "Export to PDF or HTML", action: () => setShowExport(true) },
       { id: "settings", label: "Settings", description: "Style guide & features", action: () => setShowSettings(true) },
-      { id: "help", label: "Keyboard Shortcuts", description: "View all shortcuts", action: () => setShowHelp(true) },
+      { id: "help", label: "Keyboard Shortcuts", description: "View all shortcuts", action: () => { setSettingsInitialTab("help"); setShowSettings(true); } },
       { id: "newfile", label: "New File", description: "Create a new note", action: () => fileManager.createFile("untitled.md") },
       { id: "reindex", label: "Re-index Workspace", description: "Update search index", action: () => research.handleReindex() },
       { id: "save", label: "Save File", description: "Save current document", action: () => fileManager.saveFile() },
@@ -705,15 +661,15 @@ function App() {
           </button>
           <button
             className="header-research-btn"
-            title="Keyboard shortcuts (?)"
-            onClick={() => setShowHelp(true)}
+            title="Keyboard shortcuts (F1)"
+            onClick={() => { setSettingsInitialTab("help"); setShowSettings(true); }}
           >
             <HelpCircle size={16} />
           </button>
           <button
             className="header-settings-btn"
             title="Style Guide"
-            onClick={() => setShowSettings(true)}
+            onClick={() => { setSettingsInitialTab("style"); setShowSettings(true); }}
           >
             <Settings size={16} />
           </button>
@@ -753,9 +709,9 @@ function App() {
           onAutocompleteEnabledChange={editorFeatures.setAutocompleteEnabled}
           onAutosaveEnabledChange={fileManager.setAutosaveEnabled}
           onLintEnabledChange={editorFeatures.setLintEnabled}
+          initialTab={settingsInitialTab}
         />
       )}
-      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
       {showExport && (
         <ExportPanel
           onClose={() => setShowExport(false)}

@@ -14,7 +14,23 @@ interface SettingsPanelProps {
   onAutocompleteEnabledChange?: (enabled: boolean) => void;
   onAutosaveEnabledChange?: (enabled: boolean) => void;
   onLintEnabledChange?: (enabled: boolean) => void;
+  initialTab?: "style" | "models" | "help";
 }
+
+const SHORTCUTS = [
+  { key: "⌘S", desc: "Save file" },
+  { key: "⌘F", desc: "Find in document" },
+  { key: "⌘Z / ⌘⇧Z", desc: "Undo / Redo" },
+  { key: "⌘B", desc: "Bold" },
+  { key: "⌘I", desc: "Italic" },
+  { key: "Tab", desc: "Accept ghost-text autocomplete" },
+  { key: "Esc", desc: "Dismiss autocomplete" },
+  { key: "Enter after /diagram: …", desc: "Generate Mermaid diagram" },
+  { key: "F1", desc: "Show keyboard shortcuts" },
+  { key: "Select text → bubble menu", desc: "Tone rewrite, TL;DR, Table" },
+  { key: "Paste/drop image", desc: "Insert image with AI alt text" },
+  { key: "Hover code block", desc: "Explain code with AI" },
+];
 
 const FEATURE_LABELS: Array<{ key: keyof ModelConfig; label: string; desc: string }> = [
   { key: "default", label: "Default", desc: "General chat and structural tasks" },
@@ -23,7 +39,7 @@ const FEATURE_LABELS: Array<{ key: keyof ModelConfig; label: string; desc: strin
   { key: "research", label: "Research", desc: "Gap detection and deep research synthesis" },
 ];
 
-export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosaveEnabledChange, onLintEnabledChange }: SettingsPanelProps) {
+export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosaveEnabledChange, onLintEnabledChange, initialTab }: SettingsPanelProps) {
   // Style guide state
   const [content, setContent] = useState("");
   const [styleStatus, setStyleStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -36,7 +52,7 @@ export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosave
   const [lintEnabled, setLintEnabled] = useState(true);
   const [modelStatus, setModelStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
-  const [activeTab, setActiveTab] = useState<"style" | "models">("style");
+  const [activeTab, setActiveTab] = useState<"style" | "models" | "help">(initialTab ?? "style");
 
   useEffect(() => {
     fetch("/api/style-guide")
@@ -130,9 +146,26 @@ export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosave
           >
             Models
           </button>
+          <button
+            className={`settings-tab${activeTab === "help" ? " active" : ""}`}
+            onClick={() => setActiveTab("help")}
+          >
+            Shortcuts
+          </button>
         </div>
 
-        {activeTab === "style" ? (
+        {activeTab === "help" ? (
+          <table className="help-table">
+            <tbody>
+              {SHORTCUTS.map(({ key, desc }) => (
+                <tr key={key} className="help-row">
+                  <td className="help-key"><kbd>{key}</kbd></td>
+                  <td className="help-desc">{desc}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : activeTab === "style" ? (
           <>
             <p className="modal-desc">
               Write style rules in Markdown. Episteme injects them into every editing and generation prompt.
