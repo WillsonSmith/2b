@@ -25,6 +25,8 @@ import {
   type ResolvedWikilink,
   type WikilinkPopupKeyHandlers,
 } from "./extensions/wikilinks.ts";
+import { DiagramCommandExtension } from "./extensions/diagramCommand.ts";
+import { MermaidCodeBlock } from "./extensions/mermaid.tsx";
 import { EditorBubbleMenu } from "./BubbleMenu.tsx";
 import { WikilinkPopup } from "./SlashCommand.tsx";
 import { MarkdownToolbar } from "./MarkdownToolbar.tsx";
@@ -237,15 +239,18 @@ export function Editor({
   const dismissRef = useRef(onGhostDismiss);
   acceptRef.current = onGhostAccept;
   dismissRef.current = onGhostDismiss;
+  const diagramCallbackRef = useRef<((description: string, from: number, to: number) => void) | undefined>(undefined);
+  diagramCallbackRef.current = onDiagramRequest;
 
   const handleAccept = useCallback((t: string) => acceptRef.current?.(t), []);
   const handleDismiss = useCallback(() => dismissRef.current?.(), []);
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ link: { openOnClick: false } }),
+      StarterKit.configure({ link: { openOnClick: false }, codeBlock: false }),
+      MermaidCodeBlock,
       Markdown.configure({ transformPastedText: true }),
-      Placeholder.configure({ placeholder: "Start writing… (type /diagram: <description> to insert a diagram)" }),
+      Placeholder.configure({ placeholder: "Start writing… (type /diagram <description> to insert a diagram)" }),
       CharacterCount,
       TaskList,
       TaskItem.configure({ nested: true }),
@@ -259,6 +264,7 @@ export function Editor({
       WikilinkPopupExtension(popupKeysRef),
       FindExtension(findStateRef),
       MarkdownRevealExtension,
+      DiagramCommandExtension(diagramCallbackRef),
     ],
     content: parseFrontmatter(content).body.trimStart(),
     onUpdate({ editor }) {
@@ -520,35 +526,6 @@ export function Editor({
       },
     };
   }, [wikiPopup, wikiMatches, wikiSelectedIndex, acceptWikiSuggestion]);
-
-  const handleDiagramCommand = useCallback(() => {
-    if (!editor || !onDiagramRequest) return false;
-    const { from } = editor.state.selection;
-
-    const textBefore = editor.state.doc.textBetween(0, from, "\n");
-    const lines = textBefore.split("\n");
-    const currentLine = lines.at(-1) ?? "";
-    const diagramMatch = currentLine.match(/^\/diagram:\s*(.+)/i);
-    if (!diagramMatch) return false;
-
-    const description = diagramMatch[1]?.trim() ?? "";
-    if (!description) return false;
-
-    const lineStart = from - currentLine.length;
-    onDiagramRequest(description, lineStart, from);
-    return true;
-  }, [editor, onDiagramRequest]);
-
-  useEffect(() => {
-    if (!editor) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        if (handleDiagramCommand()) e.preventDefault();
-      }
-    };
-    editor.view.dom.addEventListener("keydown", handleKeyDown);
-    return () => editor.view.dom.removeEventListener("keydown", handleKeyDown);
-  }, [editor, handleDiagramCommand]);
 
   useImagePaste(editor, onImagePaste);
 

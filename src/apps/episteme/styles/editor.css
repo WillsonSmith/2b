@@ -201,6 +201,40 @@
   border-radius: 0;
 }
 
+.tiptap .mermaid-block {
+  margin-bottom: var(--md-sp3);
+}
+
+.tiptap .mermaid-diagram {
+  display: flex;
+  justify-content: center;
+  padding: var(--md-sp3);
+  background: var(--bg-highlight);
+  border: 1px solid var(--border);
+  border-radius: var(--md-radius-md) var(--md-radius-md) 0 0;
+  overflow-x: auto;
+}
+
+.tiptap .mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.tiptap .mermaid-source {
+  margin: 0;
+  border-radius: 0 0 var(--md-radius-md) var(--md-radius-md);
+  border-top: none;
+}
+
+.tiptap .mermaid-block > .mermaid-source:first-child {
+  border-radius: var(--md-radius-md);
+  border-top: 1px solid var(--border);
+}
+
+.tiptap .mermaid-source--error {
+  border-color: var(--color-error, #e53e3e);
+}
+
 .tiptap hr {
   border: none;
   border-top: 1px solid var(--border);
