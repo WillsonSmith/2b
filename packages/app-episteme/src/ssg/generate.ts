@@ -1,7 +1,27 @@
 import { parseFrontmatter, parseYamlFields } from "../features/frontmatter";
+import { WIKILINK_RE, resolveWikilinkTarget } from "../features/wikilinks";
 import { marked } from "marked";
 import * as path from "path";
 import { mkdir, writeFile } from "fs/promises";
+
+// Render mermaid fenced blocks as <div class="mermaid"> instead of <pre><code>
+marked.use({
+  renderer: {
+    code({ text, lang }) {
+      if (lang === "mermaid") return `<div class="mermaid">${text}</div>\n`;
+      return false;
+    },
+  },
+});
+
+interface RawFile {
+  relPath: string;
+  body: string;
+  title: string;
+  tags: string[];
+  date: string | null;
+  summary: string | null;
+}
 
 interface FileInfo {
   relPath: string;
@@ -31,6 +51,29 @@ function titleFromMarkdown(body: string): string | null {
   const match = body.match(/^#\s+(.+)$/m);
   return match?.[1]?.trim() ?? null;
 }
+
+function relativeHref(fromRelPath: string, toRelPath: string): string {
+  const fromDir = path.dirname(fromRelPath);
+  return path.relative(fromDir === "." ? "" : fromDir, toRelPath).replace(/\\/g, "/");
+}
+
+function resolveWikilinksInBody(body: string, allRelPaths: string[], currentRelPath: string): string {
+  return body.replace(WIKILINK_RE, (_, target: string, alias: string | undefined) => {
+    const display = alias?.trim() ?? target.trim();
+    const resolved = resolveWikilinkTarget(target, allRelPaths);
+    if (!resolved) {
+      return `<span class="wikilink-broken" title="Broken link: ${target}">${display}</span>`;
+    }
+    const targetHtmlPath = resolved.replace(/\.md$/, ".html");
+    const href = relativeHref(currentRelPath, targetHtmlPath);
+    return `[${display}](${href})`;
+  });
+}
+
+const MERMAID_SCRIPT = `<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>`;
 
 const CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -85,13 +128,14 @@ const CSS = `
   .tag-cloud a { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--tag-bg); color: var(--tag-fg); border-radius: 9999px; padding: 0.3rem 0.8rem; font-size: 0.875rem; text-decoration: none; }
   .tag-cloud a:hover { background: var(--accent); color: #fff; }
   .tag-count { opacity: 0.65; font-size: 0.75em; }
+  .mermaid { overflow-x: auto; margin-bottom: 1rem; text-align: center; }
+  .wikilink-broken { color: var(--muted); border-bottom: 1px dashed currentColor; cursor: help; }
 `.trim();
 
 function pageShell(opts: {
   title: string;
   root: string;
   navExtra?: string;
-  head?: string;
   body: string;
 }): string {
   return `<!DOCTYPE html>
@@ -100,7 +144,7 @@ function pageShell(opts: {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${opts.title}</title>
-${opts.head ?? ""}
+${MERMAID_SCRIPT}
 <style>${CSS}</style>
 </head>
 <body>
@@ -230,9 +274,10 @@ async function generate(workspace: string, output: string): Promise<void> {
   console.log("Generating static site...");
 
   const glob = new Bun.Glob("**/*.md");
-  const files: FileInfo[] = [];
+  const rawFiles: RawFile[] = [];
   let hasIndexMd = false;
 
+  // Pass 1: collect raw data (all paths must be known before resolving wikilinks)
   for await (const relPath of glob.scan({ cwd: workspace, dot: false })) {
     if (relPath.startsWith(".episteme/")) continue;
 
@@ -257,13 +302,21 @@ async function generate(workspace: string, output: string): Promise<void> {
       titleFromMarkdown(body) ??
       titleFromPath(relPath);
 
-    const html = await marked(body);
-    const depth = relPath.split("/").length - 1;
-    const htmlRelPath = relPath.replace(/\.md$/, ".html");
-
     if (relPath === "index.md") hasIndexMd = true;
 
-    files.push({ relPath, htmlRelPath, title, tags, date, summary, html, depth });
+    rawFiles.push({ relPath, body, title, tags, date, summary });
+  }
+
+  const allRelPaths = rawFiles.map((f) => f.relPath);
+
+  // Pass 2: resolve wikilinks, render markdown, build FileInfo
+  const files: FileInfo[] = [];
+  for (const raw of rawFiles) {
+    const resolvedBody = resolveWikilinksInBody(raw.body, allRelPaths, raw.relPath);
+    const html = await marked(resolvedBody);
+    const depth = raw.relPath.split("/").length - 1;
+    const htmlRelPath = raw.relPath.replace(/\.md$/, ".html");
+    files.push({ ...raw, html, depth, htmlRelPath });
   }
 
   // Write individual pages
