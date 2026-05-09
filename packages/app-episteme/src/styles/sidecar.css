@@ -137,6 +137,16 @@
   justify-content: space-between;
   padding: 4px 6px 6px;
 }
+.sidecar-status {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.sidecar-status.thinking {
+  color: var(--accent);
+}
+.sidecar-status.disconnected {
+  color: var(--red);
+}
 .sidecar-send {
   display: inline-flex;
   align-items: center;

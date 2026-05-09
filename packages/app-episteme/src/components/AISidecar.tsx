@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { Copy, Check, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, ChevronLeft, ChevronRight, X, Square } from "lucide-react";
+import { Copy, Check, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, ChevronLeft, ChevronRight, X, Square, Circle, CircleDashed, CircleDot } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -13,6 +13,7 @@ export type SidecarMessage =
 interface AISidecarProps {
   messages: SidecarMessage[];
   isThinking: boolean;
+  agentState: "idle" | "thinking" | "disconnected";
   collapsed: boolean;
   onToggle: () => void;
   onSend: (text: string) => void;
@@ -183,12 +184,13 @@ function insertMention(
 
 interface ChatInputProps {
   isThinking: boolean;
+  agentState: "idle" | "thinking" | "disconnected";
   onSend: (text: string) => void;
   onInterrupt: () => void;
   workspaceFiles?: string[];
 }
 
-function ChatInput({ isThinking, onSend, onInterrupt, workspaceFiles = [] }: ChatInputProps) {
+function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles = [] }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -337,6 +339,15 @@ function ChatInput({ isThinking, onSend, onInterrupt, workspaceFiles = [] }: Cha
           >
             <Zap size={14} />
           </button>
+          <span className={`sidecar-status${agentState === "thinking" ? " thinking" : agentState === "disconnected" ? " disconnected" : ""}`}>
+            {agentState === "disconnected" ? (
+              <span className="icon-inline"><Circle size={8} /> offline</span>
+            ) : agentState === "thinking" ? (
+              <span className="icon-inline"><CircleDashed size={8} /> thinking</span>
+            ) : (
+              <span className="icon-inline"><CircleDot size={8} /> ready</span>
+            )}
+          </span>
           {isThinking ? (
             <button
               className="sidecar-interrupt"
@@ -366,6 +377,7 @@ function ChatInput({ isThinking, onSend, onInterrupt, workspaceFiles = [] }: Cha
 interface ChatModalProps {
   messages: SidecarMessage[];
   isThinking: boolean;
+  agentState: "idle" | "thinking" | "disconnected";
   onSend: (text: string) => void;
   onInterrupt: () => void;
   onClose: () => void;
@@ -373,7 +385,7 @@ interface ChatModalProps {
   workspaceFiles?: string[];
 }
 
-function ChatModal({ messages, isThinking, onSend, onInterrupt, onClose, onNavigate, workspaceFiles }: ChatModalProps) {
+function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles }: ChatModalProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -396,7 +408,7 @@ function ChatModal({ messages, isThinking, onSend, onInterrupt, onClose, onNavig
             onNavigate={onNavigate}
           />
         </div>
-        <ChatInput isThinking={isThinking} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
+        <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
       </div>
     </div>
   );
@@ -407,6 +419,7 @@ function ChatModal({ messages, isThinking, onSend, onInterrupt, onClose, onNavig
 export function AISidecar({
   messages,
   isThinking,
+  agentState,
   collapsed,
   onToggle,
   onSend,
@@ -453,7 +466,7 @@ export function AISidecar({
               endRef={endRef}
               onNavigate={onNavigate}
             />
-            <ChatInput isThinking={isThinking} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
+            <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
           </>
         )}
       </div>
@@ -462,6 +475,7 @@ export function AISidecar({
         <ChatModal
           messages={messages}
           isThinking={isThinking}
+          agentState={agentState}
           onSend={onSend}
           onInterrupt={onInterrupt}
           onClose={() => setExpanded(false)}
