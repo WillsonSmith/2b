@@ -379,6 +379,8 @@ function App() {
   // ── Drag-drop ─────────────────────────────────────────────────────────────────
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
+    const isExternal = e.dataTransfer.types.includes("Files") || e.dataTransfer.types.includes("text/uri-list");
+    if (!isExternal) return;
     e.preventDefault();
     setIsDragOver(true);
   }, []);
