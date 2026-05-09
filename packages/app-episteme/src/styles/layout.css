@@ -1,0 +1,155 @@
+/* ── App layout ──────────────────────────────────────────────────────── */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-header {
+  height: var(--header-h);
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-app-region: drag;
+  position: relative;
+}
+.app-header button,
+.app-header input,
+.app-header select {
+  -webkit-app-region: no-drag;
+}
+/* Space for macOS traffic-light buttons when running in Electron */
+.is-electron .app-header {
+  padding-left: 78px;
+}
+.app-header-title {
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 15px;
+}
+.app-header-workspace {
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.app-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+
+/* ── Status bar ──────────────────────────────────────────────────────── */
+.status-bar {
+  height: var(--statusbar-h);
+  background: var(--bg-raised);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.status-bar-file {
+  color: var(--text);
+  font-weight: 500;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-bar-spacer {
+  flex: 1;
+}
+.status-bar-save {
+  padding: 2px 10px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 500;
+}
+.status-bar-save:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.status-bar-mode-label {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+/* ── Offline / large-file banners ───────────────────────────────────────── */
+.offline-banner {
+  background: #2a1a1a;
+  border-bottom: 1px solid #664444;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--red);
+  text-align: center;
+  flex-shrink: 0;
+}
+.large-file-banner {
+  background: #2a2210;
+  border-bottom: 1px solid #554422;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: #cc9944;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* ── Empty workspace state ──────────────────────────────────────────────── */
+.empty-workspace {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  background: var(--bg-raised);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px 16px;
+  text-align: center;
+}
+.empty-workspace-icon {
+  font-size: 28px;
+  line-height: 1;
+}
+.empty-workspace-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.empty-workspace-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.empty-workspace-desc code {
+  color: var(--accent);
+  font-size: 11px;
+}

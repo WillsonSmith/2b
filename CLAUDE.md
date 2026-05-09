@@ -1,16 +1,37 @@
 
+## Project Structure
+
+This is a Bun workspace monorepo. Source is split across four packages:
+
+| Package | Path | Description |
+|---------|------|-------------|
+| `@2b/framework` | `packages/framework/` | Shared AI framework — agents, plugins, providers, memory |
+| `@2b/app` | `packages/app-2b/` | 2b chat agent — CLI, web UI, entry point |
+| `@2b/episteme` | `packages/app-episteme/` | Episteme editor — server, frontend, plugins |
+| `@2b/electron-shell` | `packages/app-episteme/src/electron/` | Electron desktop wrapper for Episteme |
+
 ## Codebase Documentation
 
 | Directory | CLAUDE.md |
 |-----------|-----------|
-| `src/core/` | BaseAgent, CortexAgent, CortexSubAgent, HeadlessAgent, Plugin interface, PermissionManager, types, AgentEventMap |
-| `src/providers/llm/` | LLMProvider interface, LMStudioProvider, StructuredToolCaller |
-| `src/agents/` | Dynamic agent pattern, orchestrator setup (`2b.ts`) |
-| `src/agents/sub-agents/` | `createCodebaseExplainerAgent` — the one static sub-agent used by the orchestrator |
-| `src/plugins/` | Full plugin catalog (incl. DynamicAgentPlugin, InMemoryDatabasePlugin), lifecycle, writing new plugins |
-| `src/memory/` | MemoryProvider interface (legacy) |
-| `src/utils/` | deviceSelector, stream-tts |
-| `src/cli/` | memory-cmd |
+| `packages/framework/src/core/` | BaseAgent, CortexAgent, CortexSubAgent, HeadlessAgent, Plugin interface, PermissionManager, types, AgentEventMap |
+| `packages/framework/src/providers/llm/` | LLMProvider interface, LMStudioProvider, OllamaProvider, StructuredToolCaller |
+| `packages/framework/src/agents/` | Dynamic agent pattern, orchestrator setup (`packages/app-2b/2b.ts`) |
+| `packages/framework/src/agents/sub-agents/` | `createCodebaseExplainerAgent` — the one static sub-agent used by the orchestrator |
+| `packages/framework/src/plugins/` | Full plugin catalog (incl. DynamicAgentPlugin, InMemoryDatabasePlugin), lifecycle, writing new plugins |
+| `packages/framework/src/memory/` | MemoryProvider interface (legacy) |
+| `packages/framework/src/utils/` | deviceSelector, stream-tts |
+| `packages/app-2b/src/cli/` | memory-cmd |
+| `packages/app-episteme/src/electron/` | Electron main process, preload, build config |
+
+## Running
+
+```bash
+bun run 2b          # 2b chat agent (terminal UI)
+bun run episteme    # Episteme server
+bun run electron    # Episteme desktop app (Electron)
+bun test            # all tests across all packages
+```
 
 ---
 
