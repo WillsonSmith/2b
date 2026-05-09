@@ -289,6 +289,50 @@
   border-color: var(--color-error, #e53e3e);
 }
 
+.tiptap .diagram-generating {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-highlight);
+  border: 1px dashed var(--border);
+  border-radius: var(--md-radius-md);
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-bottom: var(--md-sp3);
+  user-select: none;
+}
+
+/* ── Diagram prompt bar ──────────────────────────────────────────────── */
+.diagram-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.diagram-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+
+  &:focus {
+    border-color: var(--accent);
+  }
+}
+
+.diagram-submit-btn {
+  white-space: nowrap;
+}
+
 .tiptap hr {
   border: none;
   border-top: 1px solid var(--border);

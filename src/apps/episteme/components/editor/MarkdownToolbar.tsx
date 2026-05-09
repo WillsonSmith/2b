@@ -1,6 +1,6 @@
 import {
   Undo2, Redo2, Mic, Square, Quote, Code2, Minus, List, ListOrdered,
-  FileCode, Loader2, Table, CheckSquare,
+  FileCode, Loader2, Table, CheckSquare, Network,
 } from "lucide-react";
 import type { Editor } from "@tiptap/react";
 
@@ -36,6 +36,7 @@ interface MarkdownToolbarProps {
   isGeneratingMetadata?: boolean;
   onToggleRecording?: () => void;
   isRecording?: boolean;
+  onOpenDiagramBar?: () => void;
 }
 
 export function MarkdownToolbar({
@@ -44,6 +45,7 @@ export function MarkdownToolbar({
   isGeneratingMetadata,
   onToggleRecording,
   isRecording,
+  onOpenDiagramBar,
 }: MarkdownToolbarProps) {
   return (
     <div className="editor-toolbar">
@@ -188,6 +190,18 @@ export function MarkdownToolbar({
           Frontmatter
         </span>
       </ToolbarButton>
+      {onOpenDiagramBar && (
+        <ToolbarButton
+          onClick={onOpenDiagramBar}
+          title="Insert diagram (AI)"
+          active={false}
+        >
+          <span className="icon-inline">
+            <Network size={14} />
+            Diagram
+          </span>
+        </ToolbarButton>
+      )}
 
       {onToggleRecording && (
         <>
