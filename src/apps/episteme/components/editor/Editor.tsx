@@ -28,7 +28,9 @@ import {
 import { EditorBubbleMenu } from "./BubbleMenu.tsx";
 import { WikilinkPopup } from "./SlashCommand.tsx";
 import { MarkdownToolbar } from "./MarkdownToolbar.tsx";
+import { FrontmatterPanel } from "./FrontmatterPanel.tsx";
 import { useImagePaste } from "./imagePaste.ts";
+import { parseFrontmatter } from "../../features/frontmatter.ts";
 
 // prosemirror-markdown's esc() escapes every [ and ] in text nodes, turning
 // [[wikilink]] into \[\[wikilink\]\] on save. Unescape double-bracket patterns
@@ -196,6 +198,11 @@ export function Editor({
     onEscape: () => false,
   });
   const findStateRef = useRef<FindState>({ matches: [], activeIndex: 0 });
+  const [frontmatter, setFrontmatter] = useState<string | null>(
+    () => parseFrontmatter(content).yaml,
+  );
+  const frontmatterRef = useRef(frontmatter);
+  frontmatterRef.current = frontmatter;
   const editorMode = editorModeProp;
   const prevEditorMode = useRef(editorModeProp);
   const [rawContent, setRawContent] = useState("");
@@ -253,9 +260,11 @@ export function Editor({
       FindExtension(findStateRef),
       MarkdownRevealExtension,
     ],
-    content,
+    content: parseFrontmatter(content).body.trimStart(),
     onUpdate({ editor }) {
-      onUpdate(getMarkdown(editor));
+      const body = getMarkdown(editor);
+      const fm = frontmatterRef.current;
+      onUpdate(fm != null ? `---\n${fm}\n---\n\n${body.trimStart()}` : body);
     },
     editorProps: {
       attributes: { class: "tiptap" },
@@ -272,9 +281,12 @@ export function Editor({
 
   useEffect(() => {
     if (!editor) return;
+    const { yaml, body } = parseFrontmatter(content);
+    setFrontmatter(yaml);
+    const trimmedBody = body.trimStart();
     const current = getMarkdown(editor);
-    if (current !== content) {
-      editor.commands.setContent(content);
+    if (current !== trimmedBody) {
+      editor.commands.setContent(trimmedBody);
     }
   }, [content]);
 
@@ -305,23 +317,25 @@ export function Editor({
 
   useEffect(() => {
     if (!editor || !metadataResult) return;
-    const md = getMarkdown(editor);
-    const hasFrontmatter = md.startsWith("---\n");
-    if (hasFrontmatter) {
-      const endOfFm = md.indexOf("\n---\n", 4);
-      if (endOfFm !== -1) {
-        const newMd = `---\n${metadataResult}\n---\n` + md.slice(endOfFm + 5);
-        editor.commands.setContent(newMd);
-        onUpdate(newMd);
-        onMetadataApplied?.();
-        return;
-      }
-    }
-    const newMd = `---\n${metadataResult}\n---\n\n${md.trimStart()}`;
-    editor.commands.setContent(newMd);
-    onUpdate(newMd);
+    setFrontmatter(metadataResult);
+    const body = getMarkdown(editor);
+    onUpdate(`---\n${metadataResult}\n---\n\n${body.trimStart()}`);
     onMetadataApplied?.();
   }, [metadataResult]);
+
+  const handleFrontmatterChange = useCallback(
+    (newYaml: string | null) => {
+      setFrontmatter(newYaml);
+      if (!editor) return;
+      const body = getMarkdown(editor);
+      onUpdate(
+        newYaml != null
+          ? `---\n${newYaml}\n---\n\n${body.trimStart()}`
+          : body,
+      );
+    },
+    [editor, onUpdate],
+  );
 
   useEffect(() => {
     if (!editor || !tableResult) return;
@@ -632,13 +646,18 @@ export function Editor({
     if (!editor) return;
     if (prevEditorMode.current === editorMode) return;
     if (editorMode === "markdown") {
-      setRawContent(getMarkdown(editor));
-    } else {
-      editor.commands.setContent(rawContent);
-      onUpdate(rawContent);
+      const body = getMarkdown(editor);
+      const fm = frontmatterRef.current;
+      setRawContent(
+        fm != null ? `---\n${fm}\n---\n\n${body.trimStart()}` : body,
+      );
     }
     prevEditorMode.current = editorMode;
-  }, [editor, editorMode, rawContent, onUpdate]);
+  }, [editor, editorMode]);
+
+  useEffect(() => {
+    if (editorMode === "markdown") setRawContent(content);
+  }, [content, editorMode]);
 
   const handleRawChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setRawContent(e.target.value);
@@ -688,7 +707,13 @@ export function Editor({
             spellCheck={false}
           />
         ) : (
-          <EditorContent editor={editor} />
+          <>
+            <FrontmatterPanel
+              yaml={frontmatter}
+              onChange={handleFrontmatterChange}
+            />
+            <EditorContent editor={editor} />
+          </>
         )}
       </div>
 
