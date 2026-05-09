@@ -32,7 +32,7 @@ export function useEditorFeatures(
 
   const [autolinkSuggestions, setAutolinkSuggestions] = useState<WikilinkSuggestion[]>([]);
 
-  const [diagramResult, setDiagramResult] = useState<{ code: string; from: number; to: number } | null>(null);
+  const [diagramResult, setDiagramResult] = useState<{ code: string; placeholderId: string } | null>(null);
   const [tableResult, setTableResult] = useState<{ text: string; insertPos: number } | null>(null);
 
   const [lintIssues, setLintIssues] = useState<LintIssue[]>([]);
@@ -109,9 +109,9 @@ export function useEditorFeatures(
   }, []);
 
   const handleDiagramRequest = useCallback(
-    (description: string, from: number, to: number) => {
+    (description: string, placeholderId: string) => {
       if (!wsRef.current || agentState === "disconnected") return;
-      wsRef.current.send(JSON.stringify({ type: "diagram_request", description, from, to }));
+      wsRef.current.send(JSON.stringify({ type: "diagram_request", description, placeholderId }));
     },
     [agentState, wsRef],
   );
@@ -161,7 +161,7 @@ export function useEditorFeatures(
     });
     const unsubAutolink = subscribe("autolink_result", (msg) => setAutolinkSuggestions(msg.suggestions));
     const unsubDiagram = subscribe("diagram_result", (msg) =>
-      setDiagramResult({ code: msg.code, from: msg.from, to: msg.to }),
+      setDiagramResult({ code: msg.code, placeholderId: msg.placeholderId }),
     );
     const unsubTable = subscribe("table_result", (msg) =>
       setTableResult({ text: msg.text, insertPos: msg.insertPos }),
