@@ -282,11 +282,12 @@ export function Editor({
   useEffect(() => {
     if (!editor) return;
     const { yaml, body } = parseFrontmatter(content);
+    frontmatterRef.current = yaml;
     setFrontmatter(yaml);
     const trimmedBody = body.trimStart();
     const current = getMarkdown(editor);
     if (current !== trimmedBody) {
-      editor.commands.setContent(trimmedBody);
+      editor.commands.setContent(trimmedBody, { emitUpdate: false });
     }
   }, [content]);
 
