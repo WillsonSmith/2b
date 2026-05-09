@@ -41,16 +41,6 @@
   white-space: nowrap;
   max-width: 300px;
 }
-.app-header-status {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.app-header-status.thinking {
-  color: var(--accent);
-}
-.app-header-status.disconnected {
-  color: var(--red);
-}
 
 .app-body {
   display: flex;

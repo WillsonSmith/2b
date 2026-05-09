@@ -19,8 +19,6 @@ import {
   Settings,
   AlignLeft,
   Circle,
-  CircleDot,
-  CircleDashed,
 } from "lucide-react";
 import { useFileManager } from "./hooks/useFileManager.ts";
 import { useEditorFeatures } from "./hooks/useEditorFeatures.ts";
@@ -505,23 +503,6 @@ function App() {
     conflictsGraph,
   ]);
 
-  // ── Status indicator ──────────────────────────────────────────────────────────
-
-  const statusLabel =
-    ws.agentState === "disconnected" ? (
-      <span className="icon-inline">
-        <Circle size={10} /> offline
-      </span>
-    ) : ws.agentState === "thinking" ? (
-      <span className="icon-inline">
-        <CircleDashed size={10} /> thinking
-      </span>
-    ) : (
-      <span className="icon-inline">
-        <CircleDot size={10} /> ready
-      </span>
-    );
-
   const charCount = fileManager.editorContent.length;
   const showLargeFileWarning = charCount > 50_000 && !dismissedLargeFile;
 
@@ -618,11 +599,6 @@ function App() {
               Indexing {indexProgress.indexed}/{indexProgress.total}
             </span>
           )}
-          <span
-            className={`app-header-status${ws.agentState === "thinking" ? " thinking" : ws.agentState === "disconnected" ? " disconnected" : ""}`}
-          >
-            {statusLabel}
-          </span>
         </div>
       </div>
 
@@ -855,6 +831,7 @@ function App() {
         <AISidecar
           messages={messages}
           isThinking={ws.agentState === "thinking"}
+          agentState={ws.agentState}
           collapsed={sidecarCollapsed}
           onToggle={() => setSidecarCollapsed((c) => !c)}
           onSend={sendToAgent}
