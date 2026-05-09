@@ -9,12 +9,10 @@ let serverProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let currentPort = 4000;
 
-const LAST_WORKSPACE_FILE = path.join(
-  os.homedir(),
-  ".config",
-  "episteme",
-  "last-workspace",
-);
+const CONFIG_DIR = path.join(os.homedir(), ".config", "episteme");
+const LAST_WORKSPACE_FILE = path.join(CONFIG_DIR, "last-workspace");
+const RECENT_WORKSPACES_FILE = path.join(CONFIG_DIR, "recent-workspaces.json");
+const MAX_RECENT = 10;
 
 function readLastWorkspace(): string | undefined {
   try {
@@ -25,9 +23,29 @@ function readLastWorkspace(): string | undefined {
 }
 
 function saveLastWorkspace(workspacePath: string): void {
-  const dir = path.dirname(LAST_WORKSPACE_FILE);
-  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
   fs.writeFileSync(LAST_WORKSPACE_FILE, workspacePath, "utf8");
+}
+
+function readRecentWorkspaces(): string[] {
+  try {
+    const data = fs.readFileSync(RECENT_WORKSPACES_FILE, "utf8");
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function addRecentWorkspace(workspacePath: string): void {
+  const recents = readRecentWorkspaces().filter((p) => p !== workspacePath);
+  recents.unshift(workspacePath);
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  fs.writeFileSync(
+    RECENT_WORKSPACES_FILE,
+    JSON.stringify(recents.slice(0, MAX_RECENT)),
+    "utf8",
+  );
 }
 
 function findFreePort(start = 4000): Promise<number> {
@@ -120,6 +138,31 @@ function createWindow(port: number): void {
 }
 
 function buildMenu(port: number): void {
+  const recents = readRecentWorkspaces();
+
+  const openRecentSubmenu: Electron.MenuItemConstructorOptions[] =
+    recents.length > 0
+      ? [
+          ...recents.map((p) => ({
+            label: path.basename(p),
+            sublabel: p,
+            click: async () => {
+              saveLastWorkspace(p);
+              addRecentWorkspace(p);
+              await restartWithWorkspace(p, port);
+            },
+          })),
+          { type: "separator" as const },
+          {
+            label: "Clear Recents",
+            click: () => {
+              fs.writeFileSync(RECENT_WORKSPACES_FILE, "[]", "utf8");
+              buildMenu(port);
+            },
+          },
+        ]
+      : [{ label: "No Recent Projects", enabled: false }];
+
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: "Episteme",
@@ -139,6 +182,24 @@ function buildMenu(port: number): void {
       label: "File",
       submenu: [
         {
+          label: "New Project…",
+          accelerator: "CmdOrCtrl+Shift+N",
+          click: async () => {
+            const result = await dialog.showSaveDialog(mainWindow!, {
+              title: "Create New Project",
+              buttonLabel: "Create",
+              nameFieldLabel: "Project name:",
+              showsTagField: false,
+            });
+            if (!result.canceled && result.filePath) {
+              fs.mkdirSync(result.filePath, { recursive: true });
+              saveLastWorkspace(result.filePath);
+              addRecentWorkspace(result.filePath);
+              await restartWithWorkspace(result.filePath, port);
+            }
+          },
+        },
+        {
           label: "Open Folder…",
           accelerator: "CmdOrCtrl+Shift+O",
           click: async () => {
@@ -149,9 +210,14 @@ function buildMenu(port: number): void {
             if (!result.canceled && result.filePaths[0]) {
               const selectedPath = result.filePaths[0];
               saveLastWorkspace(selectedPath);
+              addRecentWorkspace(selectedPath);
               await restartWithWorkspace(selectedPath, port);
             }
           },
+        },
+        {
+          label: "Open Recent",
+          submenu: openRecentSubmenu,
         },
         { type: "separator" },
         { role: "close" },
@@ -200,6 +266,7 @@ async function restartWithWorkspace(
   await startServer(port, workspacePath);
   await waitForServer(port);
   mainWindow?.loadURL(`http://localhost:${port}`);
+  buildMenu(port);
 }
 
 // IPC handlers
@@ -211,8 +278,25 @@ ipcMain.handle("open-folder", async () => {
   if (result.canceled || !result.filePaths[0]) return null;
   const selectedPath = result.filePaths[0];
   saveLastWorkspace(selectedPath);
+  addRecentWorkspace(selectedPath);
   return selectedPath;
 });
+
+ipcMain.handle("create-project", async () => {
+  const result = await dialog.showSaveDialog(mainWindow!, {
+    title: "Create New Project",
+    buttonLabel: "Create",
+    nameFieldLabel: "Project name:",
+    showsTagField: false,
+  });
+  if (result.canceled || !result.filePath) return null;
+  fs.mkdirSync(result.filePath, { recursive: true });
+  saveLastWorkspace(result.filePath);
+  addRecentWorkspace(result.filePath);
+  return result.filePath;
+});
+
+ipcMain.handle("get-recent-folders", () => readRecentWorkspaces());
 
 ipcMain.handle("get-app-version", () => app.getVersion());
 
