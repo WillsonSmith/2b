@@ -192,6 +192,10 @@ export async function startEpistemServer(
   workspace.setIndexProgressListener((indexed, total) => {
     broadcast({ type: "index_progress", indexed, total });
   });
+
+  contradiction.onBackgroundFindings = (count) => {
+    broadcast({ type: "contradiction_notification", count });
+  };
   // Initial index after the listener is wired so connected clients see progress.
   await workspace.index();
 

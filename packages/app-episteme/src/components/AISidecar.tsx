@@ -7,7 +7,8 @@ import { MarkdownView } from "./MarkdownView.tsx";
 export type SidecarMessage =
   | { role: "user"; text: string }
   | { role: "assistant"; text: string }
-  | { role: "tool"; name: string; status: "calling" | "done" };
+  | { role: "tool"; name: string; status: "calling" | "done" }
+  | { role: "notification"; text: string; actionLabel: string; onAction: () => void };
 
 interface AISidecarProps {
   messages: SidecarMessage[];
@@ -102,6 +103,15 @@ function MessageList({ messages, isThinking, onSend, endRef, onNavigate }: Messa
               <span className="sidecar-tool-status">
                 {m.status === "calling" ? <Loader2 size={11} className="icon-spin" /> : <Check size={11} />}
               </span>
+            </div>
+          );
+        }
+
+        if (m.role === "notification") {
+          return (
+            <div key={i} className="sidecar-msg notification">
+              <span className="sidecar-notification-text">{m.text}</span>
+              <button className="sidecar-action-btn" onClick={m.onAction}>{m.actionLabel}</button>
             </div>
           );
         }

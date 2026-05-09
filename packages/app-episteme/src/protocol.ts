@@ -77,6 +77,7 @@ export type ServerMsg =
   | { type: "search_result"; results: UnifiedSearchResponse }
   | { type: "detect_gaps_result"; markdown: string }
   | { type: "contradictions_data"; contradictions: ContradictionRecord[] }
+  | { type: "contradiction_notification"; count: number }
   | { type: "graph_data"; data: GraphData; pagination: { offset: number; limit: number; totalFiles: number } }
   | { type: "check_citations_result"; result: CitationCheckResult }
   | { type: "format_citation_result"; bibtex: string }

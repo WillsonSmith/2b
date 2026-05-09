@@ -48,6 +48,8 @@ export interface ContradictionRecord {
 export class ContradictionPlugin implements AgentPlugin {
   name = "Contradiction";
 
+  onBackgroundFindings?: (count: number) => void;
+
   private readonly memory: CortexMemoryPlugin;
   private readonly config: EpistemeConfig;
   private readonly workspaceDb: WorkspaceDb;
@@ -69,6 +71,7 @@ export class ContradictionPlugin implements AgentPlugin {
       this.runScan().then((found) => {
         if (found.length > 0) {
           logger.info("Episteme", `Background scan found ${found.length} new contradiction(s)`);
+          this.onBackgroundFindings?.(found.length);
         }
       }).catch((err) => {
         logger.warn("Episteme", `Background contradiction scan failed: ${err}`);

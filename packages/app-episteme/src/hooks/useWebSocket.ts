@@ -75,6 +75,7 @@ export function useWebSocket(): UseWebSocketReturn {
       case "search_result":
       case "detect_gaps_result":
       case "contradictions_data":
+      case "contradiction_notification":
       case "graph_data":
       case "check_citations_result":
       case "format_citation_result":
