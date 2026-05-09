@@ -60,7 +60,10 @@ export class DiagramPlugin implements AgentPlugin {
   }
 
   async generate(description: string): Promise<string> {
-    const mermaid = await this.getAgent().ask(description);
-    return mermaid.trim();
+    const raw = await this.getAgent().ask(description);
+    return raw.trim()
+      .replace(/^```(?:mermaid)?\s*\n?/, "")
+      .replace(/\n?```\s*$/, "")
+      .trim();
   }
 }
