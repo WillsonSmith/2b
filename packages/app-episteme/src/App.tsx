@@ -813,10 +813,12 @@ function App() {
       <div className="app-body">
         <FileTree
           files={fileManager.workspaceFiles}
+          folders={fileManager.workspaceFolders}
           activeFile={fileManager.activeFile}
           onFileSelect={fileManager.openFile}
           onRefresh={fileManager.refreshFiles}
           onCreateFile={fileManager.createFile}
+          onCreateFolder={fileManager.createFolder}
           onRenameFile={fileManager.renameFile}
           onOpenInFinder={fileManager.openInFinder}
           workspaceRoot={workspaceRoot}
