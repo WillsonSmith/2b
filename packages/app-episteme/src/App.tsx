@@ -8,9 +8,7 @@ import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { ResearchPanel } from "./components/ResearchPanel.tsx";
 import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
 import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
-import { ExportPanel } from "./components/ExportPanel.tsx";
 import { UnifiedSearch, type SearchCommand } from "./components/UnifiedSearch.tsx";
-import type { ExportFormat } from "./features/export.ts";
 import type { WikilinkSuggestion } from "./features/autolink.ts";
 import "./styles.css";
 import { getShell } from "./shell/index.ts";
@@ -19,7 +17,6 @@ import {
   Search,
   Zap,
   Network,
-  Download,
   Settings,
   HelpCircle,
   AlignLeft,
@@ -106,9 +103,6 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<"style" | "models" | "help">("style");
   const [showToc, setShowToc] = useState(false);
-  const [showExport, setShowExport] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [pandocAvailable, setPandocAvailable] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [dismissedLargeFile, setDismissedLargeFile] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -196,7 +190,7 @@ function App() {
       fetch("/api/health")
         .then((r) => r.json())
         .then(
-          (data: { workspace?: string | null; pandocAvailable?: boolean }) => {
+          (data: { workspace?: string | null }) => {
             if (data.workspace) {
               const parts = data.workspace.split("/");
               fileManager.setWorkspaceName(parts.at(-1) ?? data.workspace);
@@ -217,7 +211,6 @@ function App() {
             } else {
               fileManager.setNeedsWorkspace(true);
             }
-            setPandocAvailable(data.pandocAvailable ?? false);
           },
         )
         .catch(() => {});
@@ -292,7 +285,6 @@ function App() {
       { id: "research", label: "Research Panel", description: "Search arXiv, Wikipedia & workspace", action: () => research.setShowResearch((v) => !v) },
       { id: "conflicts", label: "Conflicts Panel", description: "Detect contradictions", action: () => conflictsGraph.showConflicts ? conflictsGraph.setShowConflicts(false) : conflictsGraph.handleOpenConflicts() },
       { id: "graph", label: "Knowledge Graph", description: "Visualize note connections", action: () => conflictsGraph.showGraph ? conflictsGraph.setShowGraph(false) : conflictsGraph.handleOpenGraph() },
-      { id: "export", label: "Export Document", description: "Export to PDF or HTML", action: () => setShowExport(true) },
       { id: "settings", label: "Settings", description: "Style guide & features", action: () => setShowSettings(true) },
       { id: "help", label: "Keyboard Shortcuts", description: "View all shortcuts", action: () => { setSettingsInitialTab("help"); setShowSettings(true); } },
       { id: "newfile", label: "New File", description: "Create a new note", action: () => fileManager.createFile("untitled.md") },
@@ -379,52 +371,6 @@ function App() {
       }
     },
     [ws.agentState, ws.wsRef, voice],
-  );
-
-  // ── Export ─────────────────────────────────────────────────────────────────
-
-  const handleExport = useCallback(
-    async (format: ExportFormat, includeFrontmatter: boolean) => {
-      if (!fileManager.activeFile || isExporting) return;
-      setIsExporting(true);
-      try {
-        const res = await fetch("/api/export", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filePath: fileManager.activeFile,
-            format,
-            includeFrontmatter,
-          }),
-        });
-        const data = (await res.json()) as { url?: string; error?: string };
-        if (data.url) {
-          const a = document.createElement("a");
-          a.href = data.url;
-          a.download = data.url.split("/").at(-1) ?? "export";
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setShowExport(false);
-        } else {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              text: `[Export error] ${data.error ?? "Unknown error"}`,
-            },
-          ]);
-        }
-      } catch {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", text: "[Export error] Request failed." },
-        ]);
-      } finally {
-        setIsExporting(false);
-      }
-    },
-    [fileManager.activeFile, isExporting],
   );
 
   // ── Cross-cutting WebSocket subscriptions ───────────────────────────────────
@@ -654,13 +600,6 @@ function App() {
           </button>
           <button
             className="header-research-btn"
-            title="Export document"
-            onClick={() => setShowExport(true)}
-          >
-            <Download size={16} />
-          </button>
-          <button
-            className="header-research-btn"
             title="Keyboard shortcuts (F1)"
             onClick={() => { setSettingsInitialTab("help"); setShowSettings(true); }}
           >
@@ -712,16 +651,6 @@ function App() {
           initialTab={settingsInitialTab}
         />
       )}
-      {showExport && (
-        <ExportPanel
-          onClose={() => setShowExport(false)}
-          onExport={handleExport}
-          isExporting={isExporting}
-          pandocAvailable={pandocAvailable}
-          activeFile={fileManager.activeFile}
-        />
-      )}
-
       {/* Drag-over overlay */}
       {isDragOver && (
         <div
