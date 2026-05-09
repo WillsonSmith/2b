@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from "electron";
 import { spawn, type ChildProcess } from "child_process";
 import * as net from "net";
 import * as path from "path";
@@ -218,6 +218,52 @@ function buildMenu(port: number): void {
         {
           label: "Open Recent",
           submenu: openRecentSubmenu,
+        },
+        { type: "separator" },
+        {
+          label: "Generate Static Site…",
+          accelerator: "CmdOrCtrl+Shift+G",
+          click: async () => {
+            const workspace = readLastWorkspace();
+            if (!workspace) {
+              dialog.showMessageBox(mainWindow!, {
+                type: "info",
+                message: "No workspace is open.",
+                detail: "Open a folder first, then generate the static site.",
+              });
+              return;
+            }
+
+            const result = await dialog.showOpenDialog(mainWindow!, {
+              properties: ["openDirectory", "createDirectory"],
+              title: "Choose Output Folder",
+              buttonLabel: "Generate Here",
+            });
+            if (result.canceled || !result.filePaths[0]) return;
+            const outputDir = result.filePaths[0];
+
+            const proc = spawn(bunBin(), [
+              path.join("packages", "app-episteme", "src", "ssg", "generate.ts"),
+              `--workspace=${workspace}`,
+              `--output=${outputDir}`,
+            ], { cwd: repoRoot(), stdio: ["ignore", "pipe", "pipe"] });
+
+            proc.stderr?.on("data", (d: Buffer) => process.stderr.write(d));
+
+            proc.on("exit", async (code) => {
+              if (code === 0) {
+                const { response } = await dialog.showMessageBox(mainWindow!, {
+                  type: "info",
+                  message: "Static site generated!",
+                  buttons: ["Open in Finder", "OK"],
+                  defaultId: 1,
+                });
+                if (response === 0) shell.openPath(outputDir);
+              } else {
+                dialog.showErrorBox("Generation failed", "Check the console for details.");
+              }
+            });
+          },
         },
         { type: "separator" },
         { role: "close" },
