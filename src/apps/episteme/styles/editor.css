@@ -422,6 +422,247 @@
   overflow: auto;
 }
 
+/* ── Frontmatter panel ───────────────────────────────────────────────── */
+.frontmatter-panel {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 24px;
+  font-size: 13px;
+}
+.frontmatter-panel-empty {
+  background: none;
+  border: none;
+  margin-bottom: 16px;
+}
+.fm-add-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fm-add-empty:hover {
+  color: var(--text-muted);
+  border-color: var(--text-muted);
+}
+.fm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 6px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.frontmatter-panel:has(.fm-fields):not(:has(.fm-row)) .fm-header,
+.frontmatter-panel:not(:has(.fm-fields)):not(:has(.fm-raw)) .fm-header {
+  border-bottom: none;
+}
+.fm-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.fm-toggle:hover {
+  background: var(--bg-highlight);
+  color: var(--text);
+}
+.fm-count {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-left: 2px;
+}
+.fm-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.fm-mode-toggle,
+.fm-add {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.fm-mode-toggle:hover:not(:disabled),
+.fm-add:hover {
+  background: var(--bg-highlight);
+  color: var(--text-muted);
+}
+.fm-mode-toggle:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.fm-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px;
+}
+.fm-row {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.fm-row:hover {
+  background: var(--bg-highlight);
+}
+.fm-key {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  padding: 4px 6px;
+  border-radius: 3px;
+  outline: none;
+}
+.fm-key:focus {
+  background: var(--bg);
+  color: var(--text);
+}
+.fm-value {
+  min-width: 0;
+}
+.fm-input,
+.fm-textarea {
+  width: 100%;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text);
+  font-size: 13px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  outline: none;
+  font-family: inherit;
+}
+.fm-input:hover,
+.fm-textarea:hover {
+  border-color: var(--border);
+}
+.fm-input:focus,
+.fm-textarea:focus {
+  background: var(--bg);
+  border-color: var(--accent-soft);
+}
+.fm-textarea {
+  resize: vertical;
+  line-height: 1.4;
+  min-height: 26px;
+}
+.fm-input[type="date"] {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color-scheme: dark;
+}
+.fm-delete {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  padding: 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.fm-row:hover .fm-delete {
+  opacity: 1;
+}
+.fm-delete:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+.fm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  min-height: 26px;
+}
+.fm-chips:focus-within {
+  background: var(--bg);
+  border-color: var(--accent-soft);
+}
+.fm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 1px 4px 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.fm-chip-remove {
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 2px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.6;
+}
+.fm-chip-remove:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.2);
+}
+.fm-chip-input {
+  flex: 1;
+  min-width: 60px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 12px;
+  padding: 2px 4px;
+  outline: none;
+}
+.fm-chip-input::placeholder {
+  color: var(--text-dim);
+}
+.fm-raw {
+  width: 100%;
+  background: var(--bg);
+  border: none;
+  color: var(--text);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  outline: none;
+  resize: vertical;
+  border-radius: 0 0 6px 6px;
+}
+
 /* ── Markdown reveal decorations ─────────────────────────────────────── */
 .md-syntax {
   color: var(--text-muted, #666);

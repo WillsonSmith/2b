@@ -3,19 +3,23 @@ import { createProvider } from "../../../providers/llm/createProvider.ts";
 import type { EpistemeConfig } from "../config.ts";
 import { featureModel } from "../config.ts";
 
-const SYSTEM = `You are a document metadata generator. Given a document title and its opening content, generate YAML frontmatter fields.
+const SYSTEM = `You are a document metadata generator. Given a document title and its opening content, return a JSON object with exactly these keys:
+- title: the document title (string)
+- tags: array of 3-6 relevant topic tags (lowercase, hyphenated strings)
+- date: today's ISO date as a string (YYYY-MM-DD)
+- summary: one sentence describing the document's purpose (string)
 
-Return ONLY the raw YAML field lines — no --- delimiters, no code fences, no explanation:
-- title: the document title (quoted string)
-- tags: array of 3-6 relevant topic tags (lowercase, hyphenated)
-- date: today's ISO date (YYYY-MM-DD)
-- summary: one sentence describing the document's purpose
+Return ONLY the raw JSON object — no markdown, no code fences, no explanation.
 
 Example output:
-title: "Research on Cognitive Biases"
-tags: ["psychology", "cognitive-biases", "decision-making"]
-date: "2024-01-15"
-summary: "An exploration of common cognitive biases and their effects on decision-making."`;
+{"title":"Research on Cognitive Biases","tags":["psychology","cognitive-biases","decision-making"],"date":"2024-01-15","summary":"An exploration of common cognitive biases and their effects on decision-making."}`;
+
+interface FrontmatterData {
+  title: string;
+  tags: string[];
+  date: string;
+  summary: string;
+}
 
 export async function generateFrontmatter(
   title: string,
@@ -28,25 +32,22 @@ export async function generateFrontmatter(
   const raw = await agent.ask(
     `Title: ${title}\nToday's date: ${today}\n\nDocument preview:\n${preview.slice(0, 500)}`,
   );
-  // Strip stray markdown fences or --- delimiters the model sometimes adds despite instructions
-  return raw
-    .split("\n")
-    .filter((line) => !/^```/.test(line) && line.trim() !== "---")
-    .join("\n")
-    .trim();
-}
 
-/** Parse existing YAML frontmatter block. Returns yaml content and the body after it. */
-export function parseFrontmatter(markdown: string): { yaml: string | null; body: string } {
-  const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  if (match) {
-    return { yaml: match[1] ?? null, body: match[2] ?? "" };
+  // Extract JSON — strip any accidental fences or surrounding text
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("Model did not return a JSON object");
+  const data: FrontmatterData = JSON.parse(jsonMatch[0]);
+
+  if (!data.title || !Array.isArray(data.tags) || !data.date || !data.summary) {
+    throw new Error("Model returned incomplete frontmatter fields");
   }
-  return { yaml: null, body: markdown };
+
+  return [
+    `title: ${JSON.stringify(String(data.title))}`,
+    `tags: [${data.tags.map((t) => JSON.stringify(String(t))).join(", ")}]`,
+    `date: ${JSON.stringify(String(data.date))}`,
+    `summary: ${JSON.stringify(String(data.summary))}`,
+  ].join("\n");
 }
 
-/** Insert or replace YAML frontmatter at the top of a Markdown document. */
-export function injectFrontmatter(markdown: string, yamlContent: string): string {
-  const { body } = parseFrontmatter(markdown);
-  return `---\n${yamlContent}\n---\n\n${body.trimStart()}`;
-}
+export { parseFrontmatter, injectFrontmatter } from "./frontmatter.ts";
