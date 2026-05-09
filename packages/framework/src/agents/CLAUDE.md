@@ -1,10 +1,10 @@
 # Agents
 
-This directory contains the sub-agent factory used by `2b.ts` and supporting utilities. The core agent classes (`BaseAgent`, `CortexAgent`, `Plugin`) live in `src/core/`.
+This directory contains the sub-agent factory used by `packages/app-2b/2b.ts` and supporting utilities. The core agent classes (`BaseAgent`, `CortexAgent`, `Plugin`) live in `packages/framework/src/core/`.
 
 ## Architecture
 
-**BaseAgent** (`src/core/BaseAgent.ts`) is the central orchestrator. It manages:
+**BaseAgent** (`packages/framework/src/core/BaseAgent.ts`) is the central orchestrator. It manages:
 - A direct input queue (requires LLM response) and ambient input queue (agent may ignore with `[IGNORE]`)
 - Plugin registration and lifecycle
 - System prompt assembly from plugin fragments
@@ -13,9 +13,9 @@ This directory contains the sub-agent factory used by `2b.ts` and supporting uti
 - `<think>` tag extraction for UI display
 - Interrupt mechanism for barge-in (mid-response cancellation)
 
-**CortexAgent** (`src/core/CortexAgent.ts`) wraps `BaseAgent` and automatically registers `CortexMemoryPlugin` and `ThoughtPlugin`. All new agents should use `CortexAgent`.
+**CortexAgent** (`packages/framework/src/core/CortexAgent.ts`) wraps `BaseAgent` and automatically registers `CortexMemoryPlugin` and `ThoughtPlugin`. All new agents should use `CortexAgent`.
 
-**HeadlessAgent** (`src/core/HeadlessAgent.ts`) is a stateless, single-call agent with no tick loop or input sources. It exposes one method — `ask(task: string): Promise<string>` — and is used as the building block for sub-agents. Plugins that rely on `onMessage`, `getMessages`, or `augmentResponse` are not invoked; the agent is task-in/result-out.
+**HeadlessAgent** (`packages/framework/src/core/HeadlessAgent.ts`) is a stateless, single-call agent with no tick loop or input sources. It exposes one method — `ask(task: string): Promise<string>` — and is used as the building block for sub-agents. Plugins that rely on `onMessage`, `getMessages`, or `augmentResponse` are not invoked; the agent is task-in/result-out.
 
 ## Orchestrator + Dynamic Agent Pattern
 
@@ -56,7 +56,7 @@ Sub-agent tool calls are forwarded to the parent orchestrator's `subagent_tool_c
 
 ## Plugin Interface
 
-All capabilities are injected via the `AgentPlugin` interface (see `src/core/Plugin.ts`):
+All capabilities are injected via the `AgentPlugin` interface (see `packages/framework/src/core/Plugin.ts`):
 
 ```typescript
 interface AgentPlugin {
@@ -104,9 +104,9 @@ Standalone `ToolDefinition` objects for the old LMStudio SDK tool format (pre-pl
 
 ## Adding a New Agent
 
-1. Create a factory function in `src/agents/<Name>AgentFactory.ts`
+1. Create a factory function in `packages/framework/src/agents/<Name>AgentFactory.ts`
 2. Instantiate `CortexAgent(llm, config)` — `llm` is an `LLMProvider`, `config` has `name`, `cortexName`, `model`, `systemPrompt`
 3. Register plugins via `agent.registerPlugin(new SomePlugin())`
-4. Wire it up in `2b.ts` — input is handled by the terminal or web UI layer, not an input source class
+4. Wire it up in `packages/app-2b/2b.ts` — input is handled by the terminal or web UI layer, not an input source class
 
 `cortexName` determines the SQLite database filename: `data/<cortexName>.cortex.sqlite`.

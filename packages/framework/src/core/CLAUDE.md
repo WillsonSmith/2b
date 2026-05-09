@@ -177,5 +177,5 @@ await sub.ask("What were the key papers you mentioned?"); // remembers prior con
 
 - `CortexAgent` is a façade, not a subclass of `BaseAgent`. It holds `inner: BaseAgent` and proxies all methods. Subscribe to events with `agent.on(...)` — this goes through to `inner`.
 - `cortexName` (or `name`) determines the SQLite file path. Omitting it causes all agents to share `data/cortex.cortex.sqlite`.
-- `HeadlessAgent` does not call `onInit` — plugins must be fully initialized before being passed in (constructors must not do I/O; see plugin conventions in `src/plugins/CLAUDE.md`).
+- `HeadlessAgent` does not call `onInit` — plugins must be fully initialized before being passed in (constructors must not do I/O; see plugin conventions in `packages/framework/src/plugins/CLAUDE.md`).
 - `addPerception()` on `BaseAgent` is a backward-compat shim — prefer `addDirect()` / `addAmbient()` for new code.

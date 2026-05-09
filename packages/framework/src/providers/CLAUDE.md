@@ -11,8 +11,8 @@ Backend adapters for LLM inference and audio capture/transcription. Nothing in t
 
 ## Dependencies
 
-- **Depends on:** nothing in `src/` except `../logger.ts` and `../core/types.ts`
-- **Depended on by:** `src/core/BaseAgent.ts`, `src/core/HeadlessAgent.ts`, `src/agents/input-sources/MicrophoneInputSource.ts`, `src/plugins/CortexMemoryPlugin.ts`
+- **Depends on:** nothing in `packages/framework/src/` except `logger.ts` and `core/types.ts`
+- **Depended on by:** `packages/framework/src/core/BaseAgent.ts`, `packages/framework/src/core/HeadlessAgent.ts`, `packages/framework/src/plugins/CortexMemoryPlugin.ts`
 
 ## Adding a New LLM Provider
 
