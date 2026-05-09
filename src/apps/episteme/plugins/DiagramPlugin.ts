@@ -5,8 +5,11 @@ import type { EpistemeConfig } from "../config.ts";
 import { featureModel } from "../config.ts";
 
 const SYSTEM = `You are a Mermaid.js diagram generator. Convert the user's description into a valid Mermaid.js diagram.
+If document content is provided, use it as context — it is the document the user is currently editing. Use it to resolve references like "this argument", "the process above", or "the flow described here".
 Return ONLY the raw Mermaid syntax — no code fences, no explanation, no preamble.
 Default to flowchart LR unless another type is clearly more appropriate (sequenceDiagram, gantt, pie, classDiagram, etc.).`;
+
+const MAX_DOC_CHARS = 20_000;
 
 export class DiagramPlugin implements AgentPlugin {
   name = "Diagram";
@@ -59,8 +62,12 @@ export class DiagramPlugin implements AgentPlugin {
     return this.generate(description);
   }
 
-  async generate(description: string): Promise<string> {
-    const raw = await this.getAgent().ask(description);
+  async generate(description: string, documentContent?: string): Promise<string> {
+    const doc = documentContent?.trim();
+    const prompt = doc
+      ? `Document:\n${doc.slice(0, MAX_DOC_CHARS)}\n\n${description}`
+      : description;
+    const raw = await this.getAgent().ask(prompt);
     return raw.trim()
       .replace(/^```(?:mermaid)?\s*\n?/, "")
       .replace(/\n?```\s*$/, "")
