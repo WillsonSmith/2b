@@ -60,6 +60,19 @@
   background: #1e2a1e;
   border-left: 2px solid var(--green);
 }
+.sidecar-msg.notification {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #1e2336;
+  border-left: 2px solid var(--accent);
+  padding: 6px 10px;
+}
+.sidecar-notification-text {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-muted);
+}
 .sidecar-msg-header {
   display: flex;
   align-items: center;
@@ -123,6 +136,16 @@
   align-items: center;
   justify-content: space-between;
   padding: 4px 6px 6px;
+}
+.sidecar-status {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.sidecar-status.thinking {
+  color: var(--accent);
+}
+.sidecar-status.disconnected {
+  color: var(--red);
 }
 .sidecar-send {
   display: inline-flex;

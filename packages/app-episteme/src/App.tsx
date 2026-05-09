@@ -8,25 +8,17 @@ import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { ResearchPanel } from "./components/ResearchPanel.tsx";
 import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
 import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
-import { ExportPanel } from "./components/ExportPanel.tsx";
 import { UnifiedSearch, type SearchCommand } from "./components/UnifiedSearch.tsx";
-import type { ExportFormat } from "./features/export.ts";
 import type { WikilinkSuggestion } from "./features/autolink.ts";
 import "./styles.css";
 import { getShell } from "./shell/index.ts";
 import { useWebSocket } from "./hooks/useWebSocket.ts";
 import {
   Search,
-  Zap,
   Network,
-  Download,
   Settings,
-  HelpCircle,
   AlignLeft,
-  X,
   Circle,
-  CircleDot,
-  CircleDashed,
 } from "lucide-react";
 import { useFileManager } from "./hooks/useFileManager.ts";
 import { useEditorFeatures } from "./hooks/useEditorFeatures.ts";
@@ -77,50 +69,6 @@ function AutolinkBanner({
   );
 }
 
-// ── Keyboard shortcut help panel ──────────────────────────────────────────────
-
-function HelpPanel({ onClose }: { onClose: () => void }) {
-  const shortcuts = [
-    { key: "⌘S", desc: "Save file" },
-    { key: "⌘F", desc: "Find in document" },
-    { key: "⌘Z / ⌘⇧Z", desc: "Undo / Redo" },
-    { key: "⌘B", desc: "Bold" },
-    { key: "⌘I", desc: "Italic" },
-    { key: "Tab", desc: "Accept ghost-text autocomplete" },
-    { key: "Esc", desc: "Dismiss autocomplete" },
-    { key: "Enter after /diagram: …", desc: "Generate Mermaid diagram" },
-    { key: "?", desc: "Show this help" },
-    { key: "Select text → bubble menu", desc: "Tone rewrite, TL;DR, Table" },
-    { key: "Paste/drop image", desc: "Insert image with AI alt text" },
-    { key: "Hover code block", desc: "Explain code with AI" },
-  ];
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <span className="modal-title">Keyboard Shortcuts</span>
-          <button className="modal-close" onClick={onClose}>
-            <X size={14} />
-          </button>
-        </div>
-        <table className="help-table">
-          <tbody>
-            {shortcuts.map(({ key, desc }) => (
-              <tr key={key} className="help-row">
-                <td className="help-key">
-                  <kbd>{key}</kbd>
-                </td>
-                <td className="help-desc">{desc}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 // ── Large file warning ────────────────────────────────────────────────────────
 
 function LargeFileBanner({
@@ -149,11 +97,8 @@ function App() {
   const [messages, setMessages] = useState<SidecarMessage[]>([]);
   const [sidecarCollapsed, setSidecarCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<"style" | "models" | "help">("style");
   const [showToc, setShowToc] = useState(false);
-  const [showExport, setShowExport] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [pandocAvailable, setPandocAvailable] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [dismissedLargeFile, setDismissedLargeFile] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -241,7 +186,7 @@ function App() {
       fetch("/api/health")
         .then((r) => r.json())
         .then(
-          (data: { workspace?: string | null; pandocAvailable?: boolean }) => {
+          (data: { workspace?: string | null }) => {
             if (data.workspace) {
               const parts = data.workspace.split("/");
               fileManager.setWorkspaceName(parts.at(-1) ?? data.workspace);
@@ -262,7 +207,6 @@ function App() {
             } else {
               fileManager.setNeedsWorkspace(true);
             }
-            setPandocAvailable(data.pandocAvailable ?? false);
           },
         )
         .catch(() => {});
@@ -283,7 +227,8 @@ function App() {
         !(e.target instanceof HTMLInputElement) &&
         !(e.target instanceof HTMLTextAreaElement)
       ) {
-        setShowHelp((v) => !v);
+        setSettingsInitialTab("help");
+        setShowSettings(true);
       }
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
@@ -336,9 +281,8 @@ function App() {
       { id: "research", label: "Research Panel", description: "Search arXiv, Wikipedia & workspace", action: () => research.setShowResearch((v) => !v) },
       { id: "conflicts", label: "Conflicts Panel", description: "Detect contradictions", action: () => conflictsGraph.showConflicts ? conflictsGraph.setShowConflicts(false) : conflictsGraph.handleOpenConflicts() },
       { id: "graph", label: "Knowledge Graph", description: "Visualize note connections", action: () => conflictsGraph.showGraph ? conflictsGraph.setShowGraph(false) : conflictsGraph.handleOpenGraph() },
-      { id: "export", label: "Export Document", description: "Export to PDF or HTML", action: () => setShowExport(true) },
       { id: "settings", label: "Settings", description: "Style guide & features", action: () => setShowSettings(true) },
-      { id: "help", label: "Keyboard Shortcuts", description: "View all shortcuts", action: () => setShowHelp(true) },
+      { id: "help", label: "Keyboard Shortcuts", description: "View all shortcuts", action: () => { setSettingsInitialTab("help"); setShowSettings(true); } },
       { id: "newfile", label: "New File", description: "Create a new note", action: () => fileManager.createFile("untitled.md") },
       { id: "reindex", label: "Re-index Workspace", description: "Update search index", action: () => research.handleReindex() },
       { id: "save", label: "Save File", description: "Save current document", action: () => fileManager.saveFile() },
@@ -423,52 +367,6 @@ function App() {
       }
     },
     [ws.agentState, ws.wsRef, voice],
-  );
-
-  // ── Export ─────────────────────────────────────────────────────────────────
-
-  const handleExport = useCallback(
-    async (format: ExportFormat, includeFrontmatter: boolean) => {
-      if (!fileManager.activeFile || isExporting) return;
-      setIsExporting(true);
-      try {
-        const res = await fetch("/api/export", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filePath: fileManager.activeFile,
-            format,
-            includeFrontmatter,
-          }),
-        });
-        const data = (await res.json()) as { url?: string; error?: string };
-        if (data.url) {
-          const a = document.createElement("a");
-          a.href = data.url;
-          a.download = data.url.split("/").at(-1) ?? "export";
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setShowExport(false);
-        } else {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              text: `[Export error] ${data.error ?? "Unknown error"}`,
-            },
-          ]);
-        }
-      } catch {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", text: "[Export error] Request failed." },
-        ]);
-      } finally {
-        setIsExporting(false);
-      }
-    },
-    [fileManager.activeFile, isExporting],
   );
 
   // ── Cross-cutting WebSocket subscriptions ───────────────────────────────────
@@ -567,6 +465,22 @@ function App() {
       if (msg.total === 0 || msg.indexed >= msg.total) setIndexProgress(null);
       else setIndexProgress({ indexed: msg.indexed, total: msg.total });
     });
+    const unsubContradictionNotif = ws.subscribe("contradiction_notification", (msg) => {
+      const label = msg.count === 1 ? "1 contradiction" : `${msg.count} contradictions`;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "notification",
+          text: `Background scan found ${label}.`,
+          actionLabel: "View",
+          onAction: () => {
+            conflictsGraph.handleOpenConflicts();
+            setSidecarCollapsed(false);
+          },
+        },
+      ]);
+      setSidecarCollapsed(false);
+    });
     return () => {
       unsubSpeak();
       unsubToolCall();
@@ -579,6 +493,7 @@ function App() {
       unsubFileContent();
       unsubFileCreated();
       unsubIndex();
+      unsubContradictionNotif();
     };
   }, [
     ws.subscribe,
@@ -587,23 +502,6 @@ function App() {
     research,
     conflictsGraph,
   ]);
-
-  // ── Status indicator ──────────────────────────────────────────────────────────
-
-  const statusLabel =
-    ws.agentState === "disconnected" ? (
-      <span className="icon-inline">
-        <Circle size={10} /> offline
-      </span>
-    ) : ws.agentState === "thinking" ? (
-      <span className="icon-inline">
-        <CircleDashed size={10} /> thinking
-      </span>
-    ) : (
-      <span className="icon-inline">
-        <CircleDot size={10} /> ready
-      </span>
-    );
 
   const charCount = fileManager.editorContent.length;
   const showLargeFileWarning = charCount > 50_000 && !dismissedLargeFile;
@@ -675,17 +573,6 @@ function App() {
             <Search size={16} />
           </button>
           <button
-            className={`header-research-btn${conflictsGraph.showConflicts ? " active" : ""}`}
-            title="Conflicts panel"
-            onClick={() =>
-              conflictsGraph.showConflicts
-                ? conflictsGraph.setShowConflicts(false)
-                : conflictsGraph.handleOpenConflicts()
-            }
-          >
-            <Zap size={16} />
-          </button>
-          <button
             className={`header-research-btn${conflictsGraph.showGraph ? " active" : ""}`}
             title="Knowledge graph"
             onClick={() =>
@@ -696,24 +583,11 @@ function App() {
           >
             <Network size={16} />
           </button>
+
           <button
             className="header-research-btn"
-            title="Export document"
-            onClick={() => setShowExport(true)}
-          >
-            <Download size={16} />
-          </button>
-          <button
-            className="header-research-btn"
-            title="Keyboard shortcuts (?)"
-            onClick={() => setShowHelp(true)}
-          >
-            <HelpCircle size={16} />
-          </button>
-          <button
-            className="header-settings-btn"
-            title="Style Guide"
-            onClick={() => setShowSettings(true)}
+            title="Settings"
+            onClick={() => { setSettingsInitialTab("style"); setShowSettings(true); }}
           >
             <Settings size={16} />
           </button>
@@ -725,11 +599,6 @@ function App() {
               Indexing {indexProgress.indexed}/{indexProgress.total}
             </span>
           )}
-          <span
-            className={`app-header-status${ws.agentState === "thinking" ? " thinking" : ws.agentState === "disconnected" ? " disconnected" : ""}`}
-          >
-            {statusLabel}
-          </span>
         </div>
       </div>
 
@@ -753,19 +622,9 @@ function App() {
           onAutocompleteEnabledChange={editorFeatures.setAutocompleteEnabled}
           onAutosaveEnabledChange={fileManager.setAutosaveEnabled}
           onLintEnabledChange={editorFeatures.setLintEnabled}
+          initialTab={settingsInitialTab}
         />
       )}
-      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
-      {showExport && (
-        <ExportPanel
-          onClose={() => setShowExport(false)}
-          onExport={handleExport}
-          isExporting={isExporting}
-          pandocAvailable={pandocAvailable}
-          activeFile={fileManager.activeFile}
-        />
-      )}
-
       {/* Drag-over overlay */}
       {isDragOver && (
         <div
@@ -972,6 +831,7 @@ function App() {
         <AISidecar
           messages={messages}
           isThinking={ws.agentState === "thinking"}
+          agentState={ws.agentState}
           collapsed={sidecarCollapsed}
           onToggle={() => setSidecarCollapsed((c) => !c)}
           onSend={sendToAgent}
