@@ -21,28 +21,22 @@ function extractHeadingData(markdown: string): HeadingData[] {
   const lines = markdown.split("\n");
   const result: HeadingData[] = [];
   let current: { level: number; text: string } | null = null;
-  let contentLines: string[] = [];
+  let content = "";
 
   for (const line of lines) {
     const m = line.match(/^(#{1,6})\s+(.+)/);
     if (m) {
       if (current) {
-        result.push({
-          ...current,
-          contentHash: sectionHash(current.text, contentLines.join(" ")),
-        });
+        result.push({ ...current, contentHash: sectionHash(current.text, content) });
       }
       current = { level: m[1]!.length, text: m[2]!.trim() };
-      contentLines = [];
+      content = "";
     } else if (current && line.trim()) {
-      contentLines.push(line);
+      content += line + " ";
     }
   }
   if (current) {
-    result.push({
-      ...current,
-      contentHash: sectionHash(current.text, contentLines.join(" ")),
-    });
+    result.push({ ...current, contentHash: sectionHash(current.text, content) });
   }
   return result;
 }
