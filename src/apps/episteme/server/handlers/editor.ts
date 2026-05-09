@@ -102,10 +102,10 @@ export async function handleEditor(
     }
 
     case "diagram_request": {
-      const { description, from, to } = msg;
+      const { description, placeholderId } = msg;
       if (!description?.trim()) return;
       diagram.generate(description).then((code) => {
-        send(ws, { type: "diagram_result", code, from, to });
+        send(ws, { type: "diagram_result", code, placeholderId });
       }).catch(() => {
         send(ws, { type: "error", message: "Failed to generate diagram." });
       });

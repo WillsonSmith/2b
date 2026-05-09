@@ -27,6 +27,7 @@ import {
 } from "./extensions/wikilinks.ts";
 import { DiagramCommandExtension } from "./extensions/diagramCommand.ts";
 import { MermaidCodeBlock } from "./extensions/mermaid.tsx";
+import { DiagramPlaceholderExtension } from "./extensions/diagramPlaceholder.tsx";
 import { EditorBubbleMenu } from "./BubbleMenu.tsx";
 import { WikilinkPopup } from "./SlashCommand.tsx";
 import { MarkdownToolbar } from "./MarkdownToolbar.tsx";
@@ -59,8 +60,8 @@ interface EditorProps {
   onMetadataRequest?: () => void;
   isGeneratingMetadata?: boolean;
   onTableRequest?: (text: string, insertPos: number) => void;
-  onDiagramRequest?: (description: string, from: number, to: number) => void;
-  diagramResult?: { code: string; from: number; to: number } | null;
+  onDiagramRequest?: (description: string, placeholderId: string) => void;
+  diagramResult?: { code: string; placeholderId: string } | null;
   onDiagramApplied?: () => void;
   metadataResult?: string | null;
   onMetadataApplied?: () => void;
@@ -152,6 +153,45 @@ function FindBar({
 }
 
 
+interface DiagramBarProps {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+}
+
+function DiagramBar({ value, onChange, onSubmit, onClose, inputRef }: DiagramBarProps) {
+  return (
+    <div className="diagram-bar" role="dialog" aria-label="Insert diagram">
+      <input
+        ref={inputRef}
+        className="diagram-input"
+        type="text"
+        placeholder="Describe your diagram…"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); onSubmit(); }
+          else if (e.key === "Escape") { e.preventDefault(); onClose(); }
+        }}
+        autoFocus
+      />
+      <button
+        className="diagram-submit-btn toolbar-btn"
+        onClick={onSubmit}
+        disabled={!value.trim()}
+        type="button"
+      >
+        Generate
+      </button>
+      <button className="find-btn" title="Close (Esc)" onClick={onClose} type="button">
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
 export function Editor({
   content,
   onUpdate,
@@ -239,8 +279,13 @@ export function Editor({
   const dismissRef = useRef(onGhostDismiss);
   acceptRef.current = onGhostAccept;
   dismissRef.current = onGhostDismiss;
-  const diagramCallbackRef = useRef<((description: string, from: number, to: number) => void) | undefined>(undefined);
+  const diagramCallbackRef = useRef<((description: string, placeholderId: string) => void) | undefined>(undefined);
   diagramCallbackRef.current = onDiagramRequest;
+
+  const [diagramBarOpen, setDiagramBarOpen] = useState(false);
+  const [diagramBarInput, setDiagramBarInput] = useState("");
+  const diagramInsertPosRef = useRef<number>(0);
+  const diagramBarInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleAccept = useCallback((t: string) => acceptRef.current?.(t), []);
   const handleDismiss = useCallback(() => dismissRef.current?.(), []);
@@ -249,6 +294,7 @@ export function Editor({
     extensions: [
       StarterKit.configure({ link: { openOnClick: false }, codeBlock: false }),
       MermaidCodeBlock,
+      DiagramPlaceholderExtension,
       Markdown.configure({ transformPastedText: true }),
       Placeholder.configure({ placeholder: "Start writing… (type /diagram <description> to insert a diagram)" }),
       CharacterCount,
@@ -316,9 +362,14 @@ export function Editor({
 
   useEffect(() => {
     if (!editor || !diagramResult) return;
-    const { from, to, code } = diagramResult;
+    const { code, placeholderId } = diagramResult;
     const replacement = "```mermaid\n" + code + "\n```";
-    editor.chain().focus().insertContentAt({ from, to }, replacement).run();
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === "diagramPlaceholder" && node.attrs.id === placeholderId) {
+        editor.chain().focus().insertContentAt({ from: pos, to: pos + node.nodeSize }, replacement).run();
+        return false;
+      }
+    });
     onDiagramApplied?.();
   }, [diagramResult]);
 
@@ -426,6 +477,26 @@ export function Editor({
     setFindQuery("");
     editor?.commands.focus();
   }, [editor]);
+
+  const openDiagramBar = useCallback(() => {
+    diagramInsertPosRef.current = editor?.state.selection.from ?? 0;
+    setDiagramBarInput("");
+    setDiagramBarOpen(true);
+    requestAnimationFrame(() => diagramBarInputRef.current?.focus());
+  }, [editor]);
+
+  const submitDiagram = useCallback(() => {
+    const description = diagramBarInput.trim();
+    if (!description || !editor || !onDiagramRequest) return;
+    const placeholderId = crypto.randomUUID();
+    editor.chain().focus().insertContentAt(diagramInsertPosRef.current, {
+      type: "diagramPlaceholder",
+      attrs: { id: placeholderId },
+    }).run();
+    onDiagramRequest(description, placeholderId);
+    setDiagramBarOpen(false);
+    setDiagramBarInput("");
+  }, [diagramBarInput, editor, onDiagramRequest]);
 
   const autocompleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleAutocomplete = useCallback(() => {
@@ -658,12 +729,22 @@ export function Editor({
           inputRef={findInputRef}
         />
       )}
+      {diagramBarOpen && (
+        <DiagramBar
+          value={diagramBarInput}
+          onChange={setDiagramBarInput}
+          onSubmit={submitDiagram}
+          onClose={() => { setDiagramBarOpen(false); editor?.commands.focus(); }}
+          inputRef={diagramBarInputRef}
+        />
+      )}
       <MarkdownToolbar
         editor={editor}
         onMetadataRequest={onMetadataRequest}
         isGeneratingMetadata={isGeneratingMetadata}
         onToggleRecording={onToggleRecording}
         isRecording={isRecording}
+        onOpenDiagramBar={openDiagramBar}
       />
 
       <div className="editor-scroll">
