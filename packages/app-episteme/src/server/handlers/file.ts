@@ -8,7 +8,7 @@ import type { WsContext } from "../context.ts";
 
 export type FileMsg = Extract<
   ClientMsg,
-  { type: "list_workspace" | "file_open" | "file_save" | "file_create" | "file_rename" | "open_in_finder" }
+  { type: "list_workspace" | "file_open" | "file_save" | "file_create" | "folder_create" | "folder_rename" | "file_rename" | "open_in_finder" }
 >;
 
 export async function handleFile(
@@ -16,12 +16,16 @@ export async function handleFile(
   ctx: WsContext,
   ws: ServerWebSocket<unknown>,
 ): Promise<void> {
-  const { send, absRoot, collectMarkdownFiles, resolveWorkspacePath, workspaceDb } = ctx;
+  const { send, absRoot, collectMarkdownFiles, collectSubdirectories, resolveWorkspacePath, workspaceDb } = ctx;
+
+  async function sendWorkspaceFiles() {
+    const [files, folders] = await Promise.all([collectMarkdownFiles(), collectSubdirectories()]);
+    send(ws, { type: "workspace_files", files, folders });
+  }
 
   switch (msg.type) {
     case "list_workspace": {
-      const files = await collectMarkdownFiles();
-      send(ws, { type: "workspace_files", files });
+      await sendWorkspaceFiles();
       return;
     }
 
@@ -92,10 +96,41 @@ export async function handleFile(
         await Bun.write(absolute, "");
         const relPath = absolute.slice(absRoot.length + 1);
         send(ws, { type: "file_created", path: relPath });
-        const files = await collectMarkdownFiles();
-        send(ws, { type: "workspace_files", files });
+        await sendWorkspaceFiles();
       } catch {
         send(ws, { type: "error", message: `Cannot create: ${msg.path}` });
+      }
+      return;
+    }
+
+    case "folder_create": {
+      const absolute = resolveWorkspacePath(msg.path);
+      if (!absolute) {
+        send(ws, { type: "error", message: "Path escapes workspace boundary." });
+        return;
+      }
+      try {
+        await mkdir(absolute, { recursive: true });
+        await sendWorkspaceFiles();
+      } catch {
+        send(ws, { type: "error", message: `Cannot create folder: ${msg.path}` });
+      }
+      return;
+    }
+
+    case "folder_rename": {
+      const absOld = resolveWorkspacePath(msg.oldPath);
+      const absNew = resolveWorkspacePath(msg.newPath);
+      if (!absOld || !absNew) {
+        send(ws, { type: "error", message: "Path escapes workspace boundary." });
+        return;
+      }
+      try {
+        await mkdir(dirname(absNew), { recursive: true });
+        await fsRename(absOld, absNew);
+        await sendWorkspaceFiles();
+      } catch {
+        send(ws, { type: "error", message: `Cannot move folder: ${msg.oldPath}` });
       }
       return;
     }
@@ -113,8 +148,7 @@ export async function handleFile(
         const relOld = absOld.slice(absRoot.length + 1);
         const relNew = absNew.slice(absRoot.length + 1);
         send(ws, { type: "file_renamed", oldPath: relOld, newPath: relNew });
-        const files = await collectMarkdownFiles();
-        send(ws, { type: "workspace_files", files });
+        await sendWorkspaceFiles();
       } catch {
         send(ws, { type: "error", message: `Cannot rename: ${msg.oldPath}` });
       }

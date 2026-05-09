@@ -379,6 +379,8 @@ function App() {
   // ── Drag-drop ─────────────────────────────────────────────────────────────────
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
+    const isExternal = e.dataTransfer.types.includes("Files") || e.dataTransfer.types.includes("text/uri-list");
+    if (!isExternal) return;
     e.preventDefault();
     setIsDragOver(true);
   }, []);
@@ -811,11 +813,14 @@ function App() {
       <div className="app-body">
         <FileTree
           files={fileManager.workspaceFiles}
+          folders={fileManager.workspaceFolders}
           activeFile={fileManager.activeFile}
           onFileSelect={fileManager.openFile}
           onRefresh={fileManager.refreshFiles}
           onCreateFile={fileManager.createFile}
+          onCreateFolder={fileManager.createFolder}
           onRenameFile={fileManager.renameFile}
+          onRenameFolder={fileManager.renameFolder}
           onOpenInFinder={fileManager.openInFinder}
           workspaceRoot={workspaceRoot}
         />

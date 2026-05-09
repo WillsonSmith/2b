@@ -35,6 +35,7 @@ export interface WsContext {
   broadcast: (msg: ServerMsg) => void;
   send: (ws: ServerWebSocket<unknown>, msg: ServerMsg) => void;
   collectMarkdownFiles: () => Promise<string[]>;
+  collectSubdirectories: () => Promise<string[]>;
   resolveWorkspacePath: (path: string) => string | null;
   scheduleWorkspaceRefresh: () => void;
 }

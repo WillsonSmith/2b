@@ -170,3 +170,29 @@
   flex-shrink: 0;
   opacity: 0.6;
 }
+.file-tree-item.dragging,
+.file-tree-dir-row.dragging {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.file-tree-dir-row.drag-over {
+  color: var(--text-primary);
+  background: var(--bg-highlight);
+  outline: 1px dashed var(--text-dim);
+  outline-offset: -2px;
+}
+.file-tree-root-drop {
+  margin: 2px 4px 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+  border-radius: 3px;
+  border: 1px dashed transparent;
+  cursor: default;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+.file-tree-root-drop.active {
+  color: var(--text-muted);
+  background: var(--bg-highlight);
+  border-color: var(--text-dim);
+}
