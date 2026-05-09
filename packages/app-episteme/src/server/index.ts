@@ -9,19 +9,16 @@
  *   PATCH /api/style-guide    body: raw Markdown text
  *   GET   /api/config
  *   PATCH /api/config         { models }
- *   POST  /api/export         { filePath, format, includeFrontmatter }
- *   GET   /api/exports/:filename
  */
 import type { ServerWebSocket } from "bun";
 import { resolve, join } from "node:path";
-import { tmpdir, homedir } from "node:os";
+import { homedir } from "node:os";
 import { mkdir, readdir } from "node:fs/promises";
 import type { EpistemeAgentBundle } from "../agent.ts";
 import type { EpistemeConfig } from "../config.ts";
 import { saveConfig } from "../config.ts";
 import { AutocompleteRunner } from "../features/autocomplete.ts";
 import { LintRunner } from "../features/lint.ts";
-import { checkPandoc, exportDocument, pandocAvailable } from "../features/export.ts";
 import { assertNever, type ClientMsg, type ServerMsg } from "../protocol.ts";
 import index from "../index.html";
 import type { WsContext } from "./context.ts";
@@ -138,12 +135,6 @@ export async function startEpistemServer(
   const absRoot = resolve(workspaceRoot);
 
   await agent.start();
-  await checkPandoc();
-  if (pandocAvailable) {
-    console.log("Pandoc: available");
-  } else {
-    console.log("Pandoc: not found (export disabled — install with: brew install pandoc)");
-  }
 
   const autocomplete = new AutocompleteRunner(config);
   const linter = new LintRunner(config);
@@ -226,7 +217,7 @@ export async function startEpistemServer(
       "/": index,
       "/api/health": {
         GET: () =>
-          json({ status: "ok", app: "episteme", workspace: workspaceRoot, pandocAvailable }),
+          json({ status: "ok", app: "episteme", workspace: workspaceRoot }),
       },
       "/api/style-guide": {
         GET: () => json({ content: styleGuide.currentContent }),
@@ -322,56 +313,6 @@ export async function startEpistemServer(
           return json({ results });
         },
       },
-      "/api/export": {
-        POST: async (req: Request) => {
-          if (!pandocAvailable) {
-            return json({ error: "Pandoc not installed. Run: brew install pandoc" }, 503);
-          }
-          try {
-            const body = (await req.json()) as {
-              filePath: string;
-              format: "pdf" | "html";
-              includeFrontmatter: boolean;
-            };
-            const { filePath, format, includeFrontmatter } = body;
-            const absolute = resolveWorkspacePath(filePath);
-            if (!absolute) {
-              return json({ error: "Path escapes workspace boundary." }, 400);
-            }
-            const content = await Bun.file(absolute).text();
-            const filename = filePath.split("/").at(-1) ?? "export.md";
-            const result = await exportDocument(content, filename, { format, includeFrontmatter });
-            setTimeout(() => Bun.$`rm -f ${result.path}`.quiet().catch(() => {}), 60_000);
-            return json({ url: `/api/exports/${result.filename}` });
-          } catch (err) {
-            return json({ error: err instanceof Error ? err.message : "Export failed" }, 500);
-          }
-        },
-      },
-      "/api/exports/:filename": {
-        GET: async (req: Request) => {
-          const url = new URL(req.url);
-          const filename = url.pathname.split("/").at(-1) ?? "";
-          if (!filename || filename.includes("..") || filename.includes("/")) {
-            return new Response("Not found", { status: 404 });
-          }
-          const filePath = join(tmpdir(), "episteme-exports", filename);
-          try {
-            const file = Bun.file(filePath);
-            const ext = filename.split(".").at(-1) ?? "";
-            const contentType =
-              ext === "pdf" ? "application/pdf" : "text/html; charset=utf-8";
-            return new Response(file, {
-              headers: {
-                "Content-Type": contentType,
-                "Content-Disposition": `attachment; filename="${filename.replace(/["\\]/g, "")}"`,
-              },
-            });
-          } catch {
-            return new Response("Not found", { status: 404 });
-          }
-        },
-      },
     },
     websocket: {
       open(ws) {
@@ -418,7 +359,7 @@ export async function startEpistemStubServer(port: number): Promise<void> {
     routes: {
       "/": index,
       "/api/health": {
-        GET: () => json({ status: "ok", app: "episteme", workspace: null, pandocAvailable: false }),
+        GET: () => json({ status: "ok", app: "episteme", workspace: null }),
       },
       "/api/workspace": {
         POST: async (req: Request) => {
