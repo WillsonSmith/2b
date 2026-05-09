@@ -252,7 +252,8 @@
 
 .tiptap .mermaid-footer {
   display: flex;
-  justify-content: flex-start;
+  justify-content: space-between;
+  align-items: center;
   background: var(--bg-highlight);
   border: 1px solid var(--border);
   border-top: none;
@@ -271,6 +272,35 @@
 
 .tiptap .mermaid-toggle:hover {
   opacity: 1;
+}
+
+.tiptap .mermaid-remove-group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.tiptap .mermaid-remove {
+  background: none;
+  border: none;
+  font-size: 11px;
+  color: var(--text-muted, var(--text));
+  cursor: pointer;
+  padding: 2px 4px;
+  opacity: 0.7;
+}
+
+.tiptap .mermaid-remove:hover {
+  opacity: 1;
+}
+
+.tiptap .mermaid-remove--confirm {
+  color: var(--color-error, #e53e3e);
+  opacity: 1;
+}
+
+.tiptap .mermaid-remove--cancel {
+  color: var(--text-muted, var(--text));
 }
 
 .tiptap .mermaid-source {

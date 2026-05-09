@@ -140,12 +140,13 @@ function MermaidDiagram({ svg }: { svg: string }) {
   );
 }
 
-function MermaidNodeView({ node }: NodeViewProps) {
+function MermaidNodeView({ node, deleteNode }: NodeViewProps) {
   const language = (node.attrs as { language?: string | null }).language ?? "";
   const code = node.textContent;
   const [svg, setSvg] = useState("");
   const [errored, setErrored] = useState(false);
   const [showSource, setShowSource] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (language !== "mermaid" || !code.trim()) return;
@@ -172,6 +173,34 @@ function MermaidNodeView({ node }: NodeViewProps) {
           >
             {showSource ? "Hide source" : "Show source"}
           </button>
+          <div className="mermaid-remove-group">
+            {confirmDelete ? (
+              <>
+                <button
+                  className="mermaid-remove mermaid-remove--confirm"
+                  onClick={deleteNode}
+                  type="button"
+                >
+                  Delete
+                </button>
+                <button
+                  className="mermaid-remove mermaid-remove--cancel"
+                  onClick={() => setConfirmDelete(false)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                className="mermaid-remove"
+                onClick={() => setConfirmDelete(true)}
+                type="button"
+              >
+                Remove
+              </button>
+            )}
+          </div>
         </div>
         {(showSource || !hasDiagram) && (
           <pre
