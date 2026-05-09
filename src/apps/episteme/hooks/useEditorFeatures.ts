@@ -78,7 +78,7 @@ export function useEditorFeatures(
     if (!markdown.trim()) return;
     setIsTocGenerating(true);
     wsRef.current.send(JSON.stringify({ type: "toc_request", markdown, file: activeFile ?? "" }));
-  }, [agentState, isTocGenerating, wsRef, editorContentRef]);
+  }, [agentState, isTocGenerating, wsRef, editorContentRef, activeFile]);
 
   const handleAutolinkAccept = useCallback((suggestion: WikilinkSuggestion) => {
     const linkName = suggestion.filename.split("/").at(-1)?.replace(/\.md$/i, "") ?? suggestion.filename;
@@ -124,12 +124,6 @@ export function useEditorFeatures(
     [agentState, wsRef],
   );
 
-  // Clear stale TOC annotations whenever the active file changes.
-  useEffect(() => {
-    setTocEntries([]);
-    setIsTocGenerating(false);
-  }, [activeFile]);
-
   // Idle-debounced lint — fires 5s after the user stops typing, decoupled
   // from autosave so the linter doesn't spin every 2s.
   const debouncedLintContent = useDebounce(editorContent, 5000);
@@ -154,6 +148,10 @@ export function useEditorFeatures(
       setMetadataResult(msg.yaml);
       setIsGeneratingMetadata(false);
     });
+    const unsubFileContentToc = subscribe("file_content", () => {
+      setTocEntries([]);
+      setIsTocGenerating(false);
+    });
     const unsubToc = subscribe("toc_result", (msg) => {
       setTocEntries(msg.entries);
       setIsTocGenerating(false);
@@ -174,6 +172,7 @@ export function useEditorFeatures(
       unsubTone();
       unsubSummarize();
       unsubMetadata();
+      unsubFileContentToc();
       unsubToc();
       unsubTocStored();
       unsubAutolink();
