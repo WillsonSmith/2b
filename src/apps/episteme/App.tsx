@@ -158,6 +158,7 @@ function App() {
   const [dismissedLargeFile, setDismissedLargeFile] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [editorCounts, setEditorCounts] = useState({ words: 0, chars: 0 });
+  const [editorMode, setEditorMode] = useState<"formatted" | "markdown">("formatted");
   const [indexProgress, setIndexProgress] = useState<{
     indexed: number;
     total: number;
@@ -860,6 +861,7 @@ function App() {
             onCreateFile={fileManager.createFile}
             workspaceFiles={fileManager.workspaceFiles}
             onCountsChange={handleCountsChange}
+            editorMode={editorMode}
           />
 
           {/* Status bar */}
@@ -882,6 +884,17 @@ function App() {
               <span style={{ color: "var(--text-dim)" }}>No file open</span>
             )}
             <div className="status-bar-spacer" />
+            {fileManager.activeFile && (
+              <label className="settings-toggle" title="Toggle Markdown / Formatted view">
+                <input
+                  type="checkbox"
+                  checked={editorMode === "markdown"}
+                  onChange={() => setEditorMode(m => m === "formatted" ? "markdown" : "formatted")}
+                />
+                <span className="settings-toggle-track" />
+                <span className="status-bar-mode-label">Markdown</span>
+              </label>
+            )}
             {fileManager.activeFile && (
               <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
                 {editorCounts.words.toLocaleString()} words ·{" "}

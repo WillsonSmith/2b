@@ -102,6 +102,12 @@
   background: var(--accent);
   color: #fff;
 }
+.status-bar-mode-label {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  user-select: none;
+}
 
 /* ── Offline / large-file banners ───────────────────────────────────────── */
 .offline-banner {
