@@ -33,7 +33,9 @@ The server and frontend are identical whether opened in a browser or Electron. E
 
 | Channel | Direction | Handler |
 |---------|-----------|---------|
-| `open-folder` | renderer → main | `dialog.showOpenDialog` — returns selected path or `null` |
+| `open-folder` | renderer → main | `dialog.showOpenDialog` — returns selected path or `null`; saves to recents |
+| `create-project` | renderer → main | `dialog.showSaveDialog` — creates directory at chosen path, saves to recents, returns path or `null` |
+| `get-recent-folders` | renderer → main | Returns `string[]` of up to 10 recently opened workspace paths (most recent first) |
 | `get-app-version` | renderer → main | `app.getVersion()` |
 
 Both are `ipcMain.handle` / `ipcRenderer.invoke` (promise-based). Add new channels here when native OS capabilities are needed; keep business logic out of IPC handlers.
