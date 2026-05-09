@@ -99,6 +99,10 @@ export function useFileManager(
     wsRef.current?.send(JSON.stringify({ type: "folder_create", path }));
   }, [wsRef]);
 
+  const renameFolder = useCallback((oldPath: string, newPath: string) => {
+    wsRef.current?.send(JSON.stringify({ type: "folder_rename", oldPath, newPath }));
+  }, [wsRef]);
+
   const renameFile = useCallback((oldPath: string, newPath: string) => {
     wsRef.current?.send(JSON.stringify({ type: "file_rename", oldPath, newPath }));
   }, [wsRef]);
@@ -198,6 +202,7 @@ export function useFileManager(
     createFile,
     createFolder,
     renameFile,
+    renameFolder,
     refreshFiles,
     openInFinder,
     handleOpenWorkspace,

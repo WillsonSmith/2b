@@ -10,6 +10,7 @@ interface FileTreeProps {
   onCreateFile: (path: string) => void;
   onCreateFolder?: (path: string) => void;
   onRenameFile: (oldPath: string, newPath: string) => void;
+  onRenameFolder?: (oldPath: string, newPath: string) => void;
   onOpenInFinder: (path: string) => void;
   workspaceRoot: string;
 }
@@ -92,6 +93,7 @@ export function FileTree({
   onCreateFile,
   onCreateFolder,
   onRenameFile,
+  onRenameFolder,
   onOpenInFinder,
   workspaceRoot,
 }: FileTreeProps) {
@@ -177,12 +179,23 @@ export function FileTree({
   const [dragOverDir, setDragOverDir] = useState<string | null>(null);
 
   function handleDrop(e: React.DragEvent, targetDir: string) {
-    const filePath = e.dataTransfer.getData("text/plain");
-    if (!filePath) return;
-    if (dirname(filePath) === targetDir) return;
-    const newPath = targetDir ? `${targetDir}/${basename(filePath)}` : basename(filePath);
-    onRenameFile(filePath, newPath);
-    expandDir(targetDir);
+    const kind = e.dataTransfer.getData("text/x-episteme-kind");
+    const path = e.dataTransfer.getData("text/plain");
+    if (!path) return;
+
+    if (kind === "folder") {
+      if (path === targetDir) return; // can't drop into itself
+      if (targetDir.startsWith(path + "/")) return; // can't drop into a child
+      if (dirname(path) === targetDir) return; // already here
+      const newPath = targetDir ? `${targetDir}/${basename(path)}` : basename(path);
+      onRenameFolder?.(path, newPath);
+    } else {
+      if (dirname(path) === targetDir) return;
+      const newPath = targetDir ? `${targetDir}/${basename(path)}` : basename(path);
+      onRenameFile(path, newPath);
+      expandDir(targetDir);
+    }
+
     setDraggingPath(null);
     setDragOverDir(null);
   }
@@ -396,14 +409,26 @@ export function FileTree({
               return (
                 <div
                   key={item.path}
-                  className={`file-tree-dir-row${dragOverDir === item.path ? " drag-over" : ""}`}
+                  className={`file-tree-dir-row${dragOverDir === item.path ? " drag-over" : ""}${draggingPath === item.path ? " dragging" : ""}`}
+                  draggable
                   onClick={() => toggleDir(item.path)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     setContextMenu({ type: "dir", path: item.path, x: e.clientX, y: e.clientY });
                   }}
-                  onDragOver={(e) => { e.preventDefault(); setDragOverDir(item.path); }}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("text/plain", item.path);
+                    e.dataTransfer.setData("text/x-episteme-kind", "folder");
+                    e.dataTransfer.effectAllowed = "move";
+                    setTimeout(() => setDraggingPath(item.path), 0);
+                  }}
+                  onDragEnd={() => { setDraggingPath(null); setDragOverDir(null); }}
+                  onDragOver={(e) => {
+                    if (draggingPath === item.path) return;
+                    e.preventDefault();
+                    setDragOverDir(item.path);
+                  }}
                   onDragLeave={(e) => {
                     if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverDir(null);
                   }}
@@ -452,6 +477,7 @@ export function FileTree({
                 }}
                 onDragStart={(e) => {
                   e.dataTransfer.setData("text/plain", item.path);
+                  e.dataTransfer.setData("text/x-episteme-kind", "file");
                   e.dataTransfer.effectAllowed = "move";
                   setTimeout(() => setDraggingPath(item.path), 0);
                 }}

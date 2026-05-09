@@ -170,7 +170,8 @@
   flex-shrink: 0;
   opacity: 0.6;
 }
-.file-tree-item.dragging {
+.file-tree-item.dragging,
+.file-tree-dir-row.dragging {
   opacity: 0.4;
   pointer-events: none;
 }
