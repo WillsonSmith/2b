@@ -130,6 +130,31 @@ export function FileTree({
     });
   }
 
+  // Drag and drop state
+  const [draggingPath, setDraggingPath] = useState<string | null>(null);
+  const [dragOverDir, setDragOverDir] = useState<string | null>(null);
+
+  function handleDrop(e: React.DragEvent, targetDir: string) {
+    const filePath = e.dataTransfer.getData("text/plain");
+    if (!filePath) return;
+    if (dirname(filePath) === targetDir) return;
+    const newPath = targetDir ? `${targetDir}/${basename(filePath)}` : basename(filePath);
+    onRenameFile(filePath, newPath);
+    setCollapsedDirs((prev) => {
+      if (!prev.has(targetDir)) return prev;
+      const next = new Set(prev);
+      next.delete(targetDir);
+      if (workspaceRoot) {
+        try {
+          localStorage.setItem(`episteme:filetree:collapsed:${workspaceRoot}`, JSON.stringify([...next]));
+        } catch {}
+      }
+      return next;
+    });
+    setDraggingPath(null);
+    setDragOverDir(null);
+  }
+
   const items = buildItems(files, collapsedDirs, creatingInDir);
 
   // Focus inputs when they appear
@@ -245,6 +270,18 @@ export function FileTree({
       </div>
 
       <div className="file-tree-list">
+          {/* Root drop zone — only visible while dragging a file from a subdir */}
+          {draggingPath && dirname(draggingPath) !== "" && (
+            <div
+              className={`file-tree-root-drop${dragOverDir === "" ? " active" : ""}`}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverDir(""); }}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverDir(null); }}
+              onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDrop(e, ""); }}
+            >
+              Drop to move to root
+            </div>
+          )}
+
           {/* New file inline input (root level) */}
           {isCreating && (
             <div className="file-tree-new-file">
@@ -293,11 +330,24 @@ export function FileTree({
                 return (
                   <div
                     key={item.path}
-                    className="file-tree-dir-row"
+                    className={`file-tree-dir-row${dragOverDir === item.path ? " drag-over" : ""}`}
                     onClick={() => toggleDir(item.path)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       setContextMenu({ path: item.path, x: e.clientX, y: e.clientY, isDir: true });
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOverDir(item.path);
+                    }}
+                    onDragLeave={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                        setDragOverDir(null);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      handleDrop(e, item.path);
                     }}
                     title={item.path}
                   >
@@ -332,11 +382,22 @@ export function FileTree({
               return (
                 <div
                   key={item.path}
-                  className={`file-tree-item${item.path === activeFile ? " active" : ""}`}
+                  className={`file-tree-item${item.path === activeFile ? " active" : ""}${draggingPath === item.path ? " dragging" : ""}`}
+                  draggable
                   onClick={() => onFileSelect(item.path)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setContextMenu({ path: item.path, x: e.clientX, y: e.clientY, isDir: false });
+                  }}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("text/plain", item.path);
+                    e.dataTransfer.effectAllowed = "move";
+                    // Defer so React doesn't re-render and cancel the drag before it starts
+                    setTimeout(() => setDraggingPath(item.path), 0);
+                  }}
+                  onDragEnd={() => {
+                    setDraggingPath(null);
+                    setDragOverDir(null);
                   }}
                   title={item.path}
                 >
