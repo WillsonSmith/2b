@@ -570,10 +570,17 @@ export function Editor({
     if (!editor || !wikiPopup) return;
     const replacement = `[[${basename}]]`;
     const cursor = editor.state.selection.from;
+
+    // If cursor is inside an existing [[...]], consume the rest of the target + closing ]]
+    const docSize = editor.state.doc.content.size;
+    const textAfter = editor.state.doc.textBetween(cursor, Math.min(docSize, cursor + 300), "\n");
+    const trailingMatch = textAfter.match(/^([^\]\n]*)\]\]/);
+    const to = trailingMatch ? cursor + trailingMatch[0].length : cursor;
+
     editor
       .chain()
       .focus()
-      .insertContentAt({ from: wikiPopup.from, to: cursor }, replacement)
+      .insertContentAt({ from: wikiPopup.from, to }, replacement)
       .run();
     setWikiPopup(null);
   }, [editor, wikiPopup]);
