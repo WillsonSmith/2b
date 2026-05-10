@@ -4,7 +4,6 @@ import { transformTone } from "../../features/tone.ts";
 import { summarizeSection } from "../../features/summarize.ts";
 import { generateFrontmatter } from "../../features/metadata.ts";
 import { generateNarrativeToc, extractSectionsFromMarkdown } from "../../features/toc.ts";
-import { detectAutolinkCandidates } from "../../features/autolink.ts";
 import { generateTable } from "../../features/table.ts";
 import type { WsContext } from "../context.ts";
 
@@ -18,7 +17,6 @@ export type EditorMsg = Extract<
       | "summarize_request"
       | "metadata_request"
       | "toc_request"
-      | "autolink_request"
       | "diagram_request"
       | "table_request"
       | "lint_request";
@@ -90,14 +88,6 @@ export async function handleEditor(
       }).catch(() => {
         send(ws, { type: "error", message: "Failed to generate TOC." });
       });
-      return;
-    }
-
-    case "autolink_request": {
-      const { markdown, files } = msg;
-      if (!markdown?.trim()) return;
-      const suggestions = detectAutolinkCandidates(markdown, files ?? []);
-      send(ws, { type: "autolink_result", suggestions });
       return;
     }
 
