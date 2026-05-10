@@ -425,59 +425,6 @@
   font-style: italic;
 }
 
-/* ── Autolink banner ─────────────────────────────────────────────────── */
-.autolink-banner {
-  background: var(--bg-raised);
-  border-bottom: 1px solid var(--border);
-  padding: 6px 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-muted);
-  flex-wrap: wrap;
-}
-.autolink-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.autolink-text strong {
-  color: var(--text);
-}
-.autolink-text code {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--accent-soft);
-}
-.autolink-btn {
-  padding: 3px 10px;
-  border-radius: 4px;
-  font-size: 12px;
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background 0.1s,
-    color 0.1s;
-}
-.autolink-btn:hover {
-  background: var(--bg-highlight);
-  color: var(--text);
-}
-.autolink-btn.accept {
-  border-color: var(--accent-soft);
-  color: var(--accent-soft);
-}
-.autolink-btn.accept:hover {
-  background: var(--accent-soft);
-  color: var(--bg);
-}
-
 /* ── Find bar ────────────────────────────────────────────────────────── */
 .find-bar {
   position: absolute;

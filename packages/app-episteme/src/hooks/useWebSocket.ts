@@ -69,7 +69,6 @@ export function useWebSocket(): UseWebSocketReturn {
       case "metadata_result":
       case "toc_result":
       case "toc_stored":
-      case "autolink_result":
       case "diagram_result":
       case "table_result":
       case "search_result":

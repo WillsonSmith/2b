@@ -94,7 +94,6 @@ async function dispatch(
     case "summarize_request":
     case "metadata_request":
     case "toc_request":
-    case "autolink_request":
     case "diagram_request":
     case "table_request":
     case "lint_request":

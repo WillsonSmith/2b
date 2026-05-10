@@ -9,7 +9,6 @@ import { ResearchPanel } from "./components/ResearchPanel.tsx";
 import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
 import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
 import { UnifiedSearch, type SearchCommand } from "./components/UnifiedSearch.tsx";
-import type { WikilinkSuggestion } from "./features/autolink.ts";
 import "./styles.css";
 import { getShell } from "./shell/index.ts";
 import { useWebSocket } from "./hooks/useWebSocket.ts";
@@ -26,49 +25,6 @@ import { useResearch } from "./hooks/useResearch.ts";
 import { useConflictsAndGraph } from "./hooks/useConflictsAndGraph.ts";
 import { useVoiceAndMedia } from "./hooks/useVoiceAndMedia.ts";
 
-// ── Autolink suggestion banner ─────────────────────────────────────────────────
-
-interface AutolinkBannerProps {
-  suggestions: WikilinkSuggestion[];
-  onAccept: (s: WikilinkSuggestion) => void;
-  onDismiss: (s: WikilinkSuggestion) => void;
-  onDismissAll: () => void;
-}
-
-function AutolinkBanner({
-  suggestions,
-  onAccept,
-  onDismiss,
-  onDismissAll,
-}: AutolinkBannerProps) {
-  const current = suggestions[0];
-  if (!current) return null;
-  const linkName =
-    current.filename.split("/").at(-1)?.replace(/\.md$/i, "") ??
-    current.filename;
-  return (
-    <div className="autolink-banner">
-      <span className="autolink-text">
-        Link <strong>"{current.text}"</strong> → <code>[[{linkName}]]</code>?
-      </span>
-      <button className="autolink-btn accept" onClick={() => onAccept(current)}>
-        Accept
-      </button>
-      <button
-        className="autolink-btn dismiss"
-        onClick={() => onDismiss(current)}
-      >
-        Skip
-      </button>
-      {suggestions.length > 1 && (
-        <button className="autolink-btn dismiss" onClick={onDismissAll}>
-          Dismiss all ({suggestions.length})
-        </button>
-      )}
-    </div>
-  );
-}
-
 // ── Large file warning ────────────────────────────────────────────────────────
 
 function LargeFileBanner({
@@ -84,7 +40,7 @@ function LargeFileBanner({
         This document is {(charCount / 1000).toFixed(0)}k characters — AI
         features may be slow or truncated.
       </span>
-      <button className="autolink-btn dismiss" onClick={onDismiss}>
+      <button className="large-file-banner-btn" onClick={onDismiss}>
         Dismiss
       </button>
     </div>
@@ -453,13 +409,11 @@ function App() {
     const unsubFileContent = ws.subscribe("file_content", () => {
       editorFeatures.setGhostText("");
       editorFeatures.setLintIssues([]);
-      editorFeatures.setAutolinkSuggestions([]);
       setDismissedLargeFile(false);
     });
     const unsubFileCreated = ws.subscribe("file_created", () => {
       editorFeatures.setGhostText("");
       editorFeatures.setLintIssues([]);
-      editorFeatures.setAutolinkSuggestions([]);
     });
     const unsubIndex = ws.subscribe("index_progress", (msg) => {
       if (msg.total === 0 || msg.indexed >= msg.total) setIndexProgress(null);
@@ -643,16 +597,6 @@ function App() {
         >
           Drop URL, PDF, or image
         </div>
-      )}
-
-      {/* Autolink banner */}
-      {editorFeatures.autolinkSuggestions.length > 0 && (
-        <AutolinkBanner
-          suggestions={editorFeatures.autolinkSuggestions}
-          onAccept={editorFeatures.handleAutolinkAccept}
-          onDismiss={editorFeatures.handleAutolinkDismiss}
-          onDismissAll={editorFeatures.handleAutolinkDismissAll}
-        />
       )}
 
       {/* Large file warning */}
