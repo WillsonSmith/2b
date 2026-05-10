@@ -25,10 +25,10 @@ function dirname(path: string): string {
 }
 
 type TreeItem =
-  | { type: "dir"; label: string; path: string }
-  | { type: "file"; label: string; path: string }
-  | { type: "new-file-in-dir"; dirPath: string }
-  | { type: "new-folder-in-dir"; dirPath: string };
+  | { type: "dir"; label: string; path: string; depth: number }
+  | { type: "file"; label: string; path: string; depth: number }
+  | { type: "new-file-in-dir"; dirPath: string; depth: number }
+  | { type: "new-folder-in-dir"; dirPath: string; depth: number };
 
 function buildItems(
   files: string[],
@@ -38,41 +38,54 @@ function buildItems(
   creatingFolderInDir: string | null,
 ): TreeItem[] {
   const result: TreeItem[] = [];
-  const byDir = new Map<string, string[]>();
 
+  // Collect all directory paths including intermediate ancestors
+  const allDirPaths = new Set<string>();
   for (const f of files) {
-    const dir = dirname(f);
-    const bucket = byDir.get(dir) ?? [];
-    bucket.push(f);
-    byDir.set(dir, bucket);
+    let d = dirname(f);
+    while (d) { allDirPaths.add(d); d = dirname(d); }
   }
-
-  // Ensure empty folders appear in the map (with an empty file list)
   for (const folder of folders) {
-    if (!byDir.has(folder)) byDir.set(folder, []);
+    let d = folder;
+    while (d) { allDirPaths.add(d); d = dirname(d); }
   }
 
-  const rootFiles = byDir.get("") ?? [];
-  for (const f of rootFiles) {
-    result.push({ type: "file", label: basename(f), path: f });
+  const filesByDir = new Map<string, string[]>();
+  for (const f of files) {
+    const d = dirname(f);
+    const bucket = filesByDir.get(d) ?? [];
+    bucket.push(f);
+    filesByDir.set(d, bucket);
   }
 
-  const dirs = [...byDir.keys()].filter((d) => d !== "").sort();
-  for (const dir of dirs) {
-    const dirFiles = byDir.get(dir) ?? [];
-    result.push({ type: "dir", label: dir + "/", path: dir });
-    if (!collapsedDirs.has(dir)) {
-      if (creatingFolderInDir === dir) {
-        result.push({ type: "new-folder-in-dir", dirPath: dir });
-      }
-      if (creatingInDir === dir) {
-        result.push({ type: "new-file-in-dir", dirPath: dir });
-      }
-      for (const f of dirFiles) {
-        result.push({ type: "file", label: basename(f), path: f });
-      }
-    }
+  function getChildDirs(parentPath: string): string[] {
+    return [...allDirPaths]
+      .filter((d) =>
+        parentPath === ""
+          ? !d.includes("/")
+          : d.startsWith(parentPath + "/") && !d.slice(parentPath.length + 1).includes("/"),
+      )
+      .sort();
   }
+
+  function addDir(dirPath: string, depth: number) {
+    result.push({ type: "dir", label: basename(dirPath) + "/", path: dirPath, depth });
+    if (collapsedDirs.has(dirPath)) return;
+
+    if (creatingFolderInDir === dirPath)
+      result.push({ type: "new-folder-in-dir", dirPath, depth: depth + 1 });
+    if (creatingInDir === dirPath)
+      result.push({ type: "new-file-in-dir", dirPath, depth: depth + 1 });
+
+    for (const child of getChildDirs(dirPath)) addDir(child, depth + 1);
+    for (const f of filesByDir.get(dirPath) ?? [])
+      result.push({ type: "file", label: basename(f), path: f, depth: depth + 1 });
+  }
+
+  for (const f of filesByDir.get("") ?? [])
+    result.push({ type: "file", label: basename(f), path: f, depth: 0 });
+
+  for (const dir of getChildDirs("")) addDir(dir, 0);
 
   return result;
 }
@@ -83,6 +96,16 @@ type ContextMenuState = {
   x: number;
   y: number;
 } | null;
+
+function IndentGuides({ depth }: { depth: number }) {
+  return (
+    <>
+      {Array.from({ length: depth }, (_, i) => (
+        <span key={i} className="file-tree-guide-line" />
+      ))}
+    </>
+  );
+}
 
 export function FileTree({
   files,
@@ -366,10 +389,12 @@ export function FileTree({
           items.map((item) => {
             if (item.type === "new-file-in-dir") {
               return (
-                <div key={`new-file-in-${item.dirPath}`} className="file-tree-new-file" style={{ paddingLeft: 20 }}>
+                <div key={`new-file-in-${item.dirPath}`} className="file-tree-new-file" style={{ display: "flex", alignItems: "center", paddingLeft: 6, paddingRight: 6 }}>
+                  <IndentGuides depth={item.depth} />
                   <input
                     ref={newFileInDirInputRef}
                     className="file-tree-rename-input"
+                    style={{ flex: 1, width: "auto" }}
                     type="text"
                     value={newFileInDirName}
                     onChange={(e) => setNewFileInDirName(e.target.value)}
@@ -386,10 +411,12 @@ export function FileTree({
 
             if (item.type === "new-folder-in-dir") {
               return (
-                <div key={`new-folder-in-${item.dirPath}`} className="file-tree-new-file" style={{ paddingLeft: 20 }}>
+                <div key={`new-folder-in-${item.dirPath}`} className="file-tree-new-file" style={{ display: "flex", alignItems: "center", paddingLeft: 6, paddingRight: 6 }}>
+                  <IndentGuides depth={item.depth} />
                   <input
                     ref={newFolderInDirInputRef}
                     className="file-tree-rename-input"
+                    style={{ flex: 1, width: "auto" }}
                     type="text"
                     value={newFolderInDirName}
                     onChange={(e) => setNewFolderInDirName(e.target.value)}
@@ -435,6 +462,7 @@ export function FileTree({
                   onDrop={(e) => { e.preventDefault(); handleDrop(e, item.path); }}
                   title={item.path}
                 >
+                  <IndentGuides depth={item.depth} />
                   <span className="file-tree-dir-chevron">
                     {isCollapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
                   </span>
@@ -446,10 +474,12 @@ export function FileTree({
             // file — rename input
             if (renamingPath === item.path) {
               return (
-                <div key={item.path} className="file-tree-item active">
+                <div key={item.path} className="file-tree-item active" style={{ paddingLeft: 6 }}>
+                  <IndentGuides depth={item.depth} />
                   <input
                     ref={renameInputRef}
                     className="file-tree-rename-input"
+                    style={{ flex: 1, width: "auto" }}
                     type="text"
                     value={renameValue}
                     onChange={(e) => setRenameValue(e.target.value)}
@@ -483,7 +513,9 @@ export function FileTree({
                 }}
                 onDragEnd={() => { setDraggingPath(null); setDragOverDir(null); }}
                 title={item.path}
+                style={{ paddingLeft: 6 }}
               >
+                <IndentGuides depth={item.depth} />
                 <span className="file-tree-item-icon"><FileText size={12} /></span>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{item.label}</span>
               </div>
