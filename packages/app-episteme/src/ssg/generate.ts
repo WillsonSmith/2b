@@ -657,9 +657,9 @@ const link = g.append('g')
   .selectAll('line')
   .data(links)
   .join('line')
-  .style('stroke', 'var(--border-light)')
-  .style('stroke-opacity', '0.55')
-  .style('stroke-width', '1');
+  .style('stroke', 'var(--text-dim)')
+  .style('stroke-opacity', '0.75')
+  .style('stroke-width', '1.5');
 
 const node = g.append('g')
   .selectAll('g')
