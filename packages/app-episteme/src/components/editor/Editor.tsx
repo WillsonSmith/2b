@@ -340,6 +340,8 @@ export function Editor({
     const current = getMarkdown(editor);
     if (current !== trimmedBody) {
       editor.commands.setContent(trimmedBody, { emitUpdate: false });
+      wikilinkRef.current = resolveWikilinks(editor.state.doc, filesRef.current);
+      editor.view.dispatch(editor.state.tr.setMeta("wikilink-refresh", true));
     }
   }, [content]);
 
