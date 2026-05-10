@@ -9,7 +9,6 @@
 import type { Tone } from "./features/tone.ts";
 import type { LintIssue } from "./features/lint.ts";
 import type { TocEntry } from "./features/toc.ts";
-import type { WikilinkSuggestion } from "./features/autolink.ts";
 import type { UnifiedSearchResponse } from "./plugins/ResearchPlugin.ts";
 import type { CitationCheckResult } from "./plugins/CitationPlugin.ts";
 import type { ContradictionRecord } from "./plugins/ContradictionPlugin.ts";
@@ -35,7 +34,6 @@ export type ClientMsg =
   | { type: "summarize_request"; text: string; insertPos: number }
   | { type: "metadata_request"; title: string; preview: string }
   | { type: "toc_request"; markdown: string; file?: string }
-  | { type: "autolink_request"; markdown: string; files: string[] }
   | { type: "diagram_request"; description: string; placeholderId: string }
   | { type: "table_request"; text: string; insertPos: number }
   | { type: "search_request"; query: string }
@@ -71,7 +69,6 @@ export type ServerMsg =
   | { type: "metadata_result"; yaml: string }
   | { type: "toc_result"; entries: TocEntry[] }
   | { type: "toc_stored"; file: string; entries: TocEntry[] }
-  | { type: "autolink_result"; suggestions: WikilinkSuggestion[] }
   | { type: "diagram_result"; code: string; placeholderId: string }
   | { type: "table_result"; text: string; insertPos: number }
   | { type: "search_result"; results: UnifiedSearchResponse }

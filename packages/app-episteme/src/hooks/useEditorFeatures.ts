@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import type { Tone } from "../features/tone.ts";
 import type { LintIssue } from "../features/lint.ts";
 import type { TocEntry } from "../features/toc.ts";
-import type { WikilinkSuggestion } from "../features/autolink.ts";
 import type { Subscribe } from "./useWebSocket.ts";
 import { useDebounce } from "./useDebounce.ts";
 
@@ -29,8 +28,6 @@ export function useEditorFeatures(
 
   const [tocEntries, setTocEntries] = useState<TocEntry[]>([]);
   const [isTocGenerating, setIsTocGenerating] = useState(false);
-
-  const [autolinkSuggestions, setAutolinkSuggestions] = useState<WikilinkSuggestion[]>([]);
 
   const [diagramResult, setDiagramResult] = useState<{ code: string; placeholderId: string } | null>(null);
   const [tableResult, setTableResult] = useState<{ text: string; insertPos: number } | null>(null);
@@ -79,34 +76,6 @@ export function useEditorFeatures(
     setIsTocGenerating(true);
     wsRef.current.send(JSON.stringify({ type: "toc_request", markdown, file: activeFile ?? "" }));
   }, [agentState, isTocGenerating, wsRef, editorContentRef, activeFile]);
-
-  const handleAutolinkAccept = useCallback((suggestion: WikilinkSuggestion) => {
-    const linkName = suggestion.filename.split("/").at(-1)?.replace(/\.md$/i, "") ?? suggestion.filename;
-    const wikilink = `[[${linkName}]]`;
-    const content = editorContentRef.current;
-    const updated = content.slice(0, suggestion.offset) +
-      wikilink +
-      content.slice(suggestion.offset + suggestion.text.length);
-    setEditorContent(updated);
-    setAutolinkSuggestions((prev) =>
-      prev
-        .filter((s) => s !== suggestion)
-        .map((s) => ({
-          ...s,
-          offset: s.offset > suggestion.offset
-            ? s.offset + (wikilink.length - suggestion.text.length)
-            : s.offset,
-        })),
-    );
-  }, [editorContentRef, setEditorContent]);
-
-  const handleAutolinkDismiss = useCallback((suggestion: WikilinkSuggestion) => {
-    setAutolinkSuggestions((prev) => prev.filter((s) => s !== suggestion));
-  }, []);
-
-  const handleAutolinkDismissAll = useCallback(() => {
-    setAutolinkSuggestions([]);
-  }, []);
 
   const handleDiagramRequest = useCallback(
     (description: string, placeholderId: string) => {
@@ -159,7 +128,6 @@ export function useEditorFeatures(
     const unsubTocStored = subscribe("toc_stored", (msg) => {
       setTocEntries(msg.entries);
     });
-    const unsubAutolink = subscribe("autolink_result", (msg) => setAutolinkSuggestions(msg.suggestions));
     const unsubDiagram = subscribe("diagram_result", (msg) =>
       setDiagramResult({ code: msg.code, placeholderId: msg.placeholderId }),
     );
@@ -175,7 +143,6 @@ export function useEditorFeatures(
       unsubFileContentToc();
       unsubToc();
       unsubTocStored();
-      unsubAutolink();
       unsubDiagram();
       unsubTable();
     };
@@ -191,7 +158,6 @@ export function useEditorFeatures(
     metadataResult,
     tocEntries,
     isTocGenerating,
-    autolinkSuggestions,
     diagramResult,
     tableResult,
     lintIssues,
@@ -204,7 +170,6 @@ export function useEditorFeatures(
     setMetadataResult,
     setTocEntries,
     setIsTocGenerating,
-    setAutolinkSuggestions,
     setDiagramResult,
     setTableResult,
     setLintIssues,
@@ -215,9 +180,6 @@ export function useEditorFeatures(
     handleSummarizeRequest,
     handleMetadataRequest,
     handleGenerateToc,
-    handleAutolinkAccept,
-    handleAutolinkDismiss,
-    handleAutolinkDismissAll,
     handleDiagramRequest,
     handleTableRequest,
   };

@@ -120,6 +120,19 @@
   gap: 10px;
   flex-shrink: 0;
 }
+.large-file-banner-btn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: none;
+  border: 1px solid #554422;
+  color: #cc9944;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.large-file-banner-btn:hover {
+  background: rgba(85, 68, 34, 0.4);
+}
 
 /* ── Empty workspace state ──────────────────────────────────────────────── */
 .empty-workspace {

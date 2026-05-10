@@ -2,7 +2,6 @@ import type { ServerWebSocket } from "bun";
 import { dirname, join } from "node:path";
 import { rename as fsRename, mkdir } from "node:fs/promises";
 import type { ClientMsg } from "../../protocol.ts";
-import { detectAutolinkCandidates } from "../../features/autolink.ts";
 import type { WsContext } from "../context.ts";
 
 
@@ -67,13 +66,6 @@ export async function handleFile(
       try {
         await Bun.write(absolute, msg.content);
         send(ws, { type: "file_saved" });
-        // Async autolink detection after save (lint runs on its own idle cadence)
-        collectMarkdownFiles().then((files) => {
-          const suggestions = detectAutolinkCandidates(msg.content, files);
-          if (suggestions.length > 0) {
-            send(ws, { type: "autolink_result", suggestions });
-          }
-        }).catch(() => {});
       } catch {
         send(ws, { type: "error", message: `Cannot save: ${msg.path}` });
       }
