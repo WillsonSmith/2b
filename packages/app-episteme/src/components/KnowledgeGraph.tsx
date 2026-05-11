@@ -95,6 +95,21 @@ export function KnowledgeGraph({
     }
   }, [graphData, isEmpty]);
 
+  // Resize the canvas when the container dimensions change (e.g. panel drag-resize)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver(() => {
+      if (graphRef.current && el.clientWidth > 0 && el.clientHeight > 0) {
+        graphRef.current.width(el.clientWidth).height(el.clientHeight);
+      }
+    });
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const handleRefresh = useCallback(() => {
     onRefresh();
   }, [onRefresh]);
