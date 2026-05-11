@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Copy, Check, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, ChevronLeft, ChevronRight, X, Square, Circle, CircleDashed, CircleDot, Trash2 } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
+import { usePanelResize } from "../hooks/usePanelResize.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -463,6 +464,7 @@ export function AISidecar({
 }: AISidecarProps) {
   const [expanded, setExpanded] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const { width, handleMouseDown, isDragging } = usePanelResize(300, "ai-sidecar");
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -470,7 +472,11 @@ export function AISidecar({
 
   return (
     <>
-      <div className={`ai-sidecar${collapsed ? " collapsed" : ""}`}>
+      <div
+        className={`ai-sidecar${collapsed ? " collapsed" : ""}`}
+        style={collapsed ? undefined : { width, minWidth: width, transition: isDragging ? "none" : undefined }}
+      >
+        {!collapsed && <div className="panel-drag-handle" onMouseDown={handleMouseDown} />}
         <div className="sidecar-header">
           {!collapsed && <span className="sidecar-title">Episteme AI</span>}
           {!collapsed && (
