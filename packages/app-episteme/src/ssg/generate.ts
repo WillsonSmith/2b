@@ -437,6 +437,22 @@ time{display:block;color:var(--text-muted);font-size:var(--md-scale-sm);margin-b
 }
 .tags li a:hover{background:var(--accent);color:var(--bg)}
 
+/* ── Tags details/summary toggle ────────────────────────────────────── */
+details.tags-section{margin-bottom:var(--md-sp4)}
+details.tags-section summary{
+  display:flex;align-items:center;gap:0.4rem;cursor:pointer;user-select:none;
+  list-style:none;font-size:var(--md-scale-xs);font-weight:600;
+  text-transform:uppercase;letter-spacing:0.08em;color:var(--text-dim);
+  margin-bottom:0;padding:var(--md-sp2) 0
+}
+details.tags-section summary::-webkit-details-marker{display:none}
+details.tags-section summary::before{
+  content:'▶';font-size:0.65em;flex-shrink:0;transition:transform 0.15s
+}
+details.tags-section[open] summary::before{transform:rotate(90deg)}
+details.tags-section summary:hover{color:var(--text-muted)}
+details.tags-section[open] summary{margin-bottom:var(--md-sp2)}
+
 /* ── File listing (index / tag pages) ───────────────────────────────── */
 .file-list{list-style:none;padding:0}
 .file-list li{padding:var(--md-sp2) 0;border-bottom:1px solid var(--border)}
@@ -557,9 +573,9 @@ function autoIndexPage(files: FileInfo[]): string {
   let tagCloudHtml = "";
   if (allTags.size > 0) {
     const sortedTags = [...allTags.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-    tagCloudHtml = `<h2>Tags</h2><div class="tag-cloud">${sortedTags
+    tagCloudHtml = `<details class="tags-section"><summary>Tags</summary><div class="tag-cloud">${sortedTags
       .map(([t, n]) => `<a href="tags/${slugify(t)}.html">${t} <span class="tag-count">${n}</span></a>`)
-      .join("")}</div>`;
+      .join("")}</div></details>`;
   }
 
   return pageShell({
