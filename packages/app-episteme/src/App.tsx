@@ -404,7 +404,6 @@ function App() {
       research.setIsDetectingGaps(false);
       conflictsGraph.setIsScanning(false);
       conflictsGraph.setIsLoadingGraph(false);
-      setIsExporting(false);
     });
     const unsubFileContent = ws.subscribe("file_content", () => {
       editorFeatures.setGhostText("");
@@ -782,6 +781,13 @@ function App() {
           onInterrupt={interrupt}
           onNavigate={fileManager.openFile}
           workspaceFiles={fileManager.workspaceFiles}
+          onContinueFrom={(afterIndex, text) => {
+            setMessages((prev) => prev.slice(0, afterIndex + 1));
+            sendToAgent(text);
+          }}
+          onDeleteMessage={(index) => {
+            setMessages((prev) => prev.filter((_, i) => i !== index));
+          }}
         />
       </div>
     </div>

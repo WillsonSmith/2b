@@ -79,6 +79,12 @@
   justify-content: space-between;
   margin-bottom: 4px;
 }
+.sidecar-msg-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
 .sidecar-msg-role {
   font-size: 10px;
   color: var(--text-dim);
@@ -101,6 +107,21 @@
 }
 .sidecar-copy-btn:hover {
   color: var(--text);
+  background: var(--bg-highlight);
+}
+.sidecar-delete-btn {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 1px 4px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.sidecar-msg:hover .sidecar-delete-btn {
+  opacity: 1;
+}
+.sidecar-delete-btn:hover {
+  color: var(--danger, #e05c5c);
   background: var(--bg-highlight);
 }
 .sidecar-thinking {

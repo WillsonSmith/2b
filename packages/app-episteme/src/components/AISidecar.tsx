@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { Copy, Check, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, ChevronLeft, ChevronRight, X, Square, Circle, CircleDashed, CircleDot } from "lucide-react";
+import { Copy, Check, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, ChevronLeft, ChevronRight, X, Square, Circle, CircleDashed, CircleDot, Trash2 } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -20,6 +20,8 @@ interface AISidecarProps {
   onInterrupt: () => void;
   onNavigate?: (path: string) => void;
   workspaceFiles?: string[];
+  onContinueFrom?: (afterIndex: number, text: string) => void;
+  onDeleteMessage?: (index: number) => void;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -84,9 +86,11 @@ interface MessageListProps {
   onSend: (text: string) => void;
   endRef: React.MutableRefObject<HTMLDivElement | null>;
   onNavigate?: (path: string) => void;
+  onContinueFrom?: (afterIndex: number, text: string) => void;
+  onDeleteMessage?: (index: number) => void;
 }
 
-function MessageList({ messages, isThinking, onSend, endRef, onNavigate }: MessageListProps) {
+function MessageList({ messages, isThinking, onSend, endRef, onNavigate, onContinueFrom, onDeleteMessage }: MessageListProps) {
   return (
     <div className="sidecar-messages">
       {messages.length === 0 && (
@@ -118,25 +122,38 @@ function MessageList({ messages, isThinking, onSend, endRef, onNavigate }: Messa
         }
 
         if (m.role === "assistant") {
+          const send = (text: string) =>
+            onContinueFrom ? onContinueFrom(i, text) : onSend(text);
           return (
             <div key={i} className="sidecar-msg assistant">
               <div className="sidecar-msg-header">
                 <span className="sidecar-msg-role">Episteme</span>
-                <CopyButton text={m.text} />
+                <div className="sidecar-msg-header-actions">
+                  <CopyButton text={m.text} />
+                  {onDeleteMessage && (
+                    <button
+                      className="sidecar-delete-btn"
+                      onClick={() => onDeleteMessage(i)}
+                      title="Delete message"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  )}
+                </div>
               </div>
               <MarkdownView content={m.text} className="sidecar-msg-markdown" onNavigate={onNavigate} />
               <div className="sidecar-msg-actions">
                 <button
                   className="sidecar-action-btn primary icon-inline"
                   title="Execute the plan above using available tools"
-                  onClick={() => onSend(EXECUTE_PROMPT)}
+                  onClick={() => send(EXECUTE_PROMPT)}
                 >
                   Execute <ArrowRight size={12} />
                 </button>
                 <button
                   className="sidecar-action-btn"
-                  title="Ask the agent to continue"
-                  onClick={() => onSend("Please continue.")}
+                  title="Continue from this message, discarding anything after it"
+                  onClick={() => send("Please continue.")}
                 >
                   Continue
                 </button>
@@ -149,6 +166,17 @@ function MessageList({ messages, isThinking, onSend, endRef, onNavigate }: Messa
           <div key={i} className="sidecar-msg user">
             <div className="sidecar-msg-header">
               <span className="sidecar-msg-role">You</span>
+              {onDeleteMessage && (
+                <div className="sidecar-msg-header-actions">
+                  <button
+                    className="sidecar-delete-btn"
+                    onClick={() => onDeleteMessage(i)}
+                    title="Delete message"
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              )}
             </div>
             <div className="sidecar-msg-user-text">{m.text}</div>
           </div>
@@ -383,9 +411,11 @@ interface ChatModalProps {
   onClose: () => void;
   onNavigate?: (path: string) => void;
   workspaceFiles?: string[];
+  onContinueFrom?: (afterIndex: number, text: string) => void;
+  onDeleteMessage?: (index: number) => void;
 }
 
-function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles }: ChatModalProps) {
+function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onContinueFrom, onDeleteMessage }: ChatModalProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -406,6 +436,8 @@ function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onCl
             onSend={onSend}
             endRef={endRef}
             onNavigate={onNavigate}
+            onContinueFrom={onContinueFrom}
+            onDeleteMessage={onDeleteMessage}
           />
         </div>
         <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
@@ -426,6 +458,8 @@ export function AISidecar({
   onInterrupt,
   onNavigate,
   workspaceFiles,
+  onContinueFrom,
+  onDeleteMessage,
 }: AISidecarProps) {
   const [expanded, setExpanded] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -465,6 +499,8 @@ export function AISidecar({
               onSend={onSend}
               endRef={endRef}
               onNavigate={onNavigate}
+              onContinueFrom={onContinueFrom}
+              onDeleteMessage={onDeleteMessage}
             />
             <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
           </>
@@ -481,6 +517,8 @@ export function AISidecar({
           onClose={() => setExpanded(false)}
           onNavigate={onNavigate}
           workspaceFiles={workspaceFiles}
+          onContinueFrom={onContinueFrom}
+          onDeleteMessage={onDeleteMessage}
         />
       )}
     </>
