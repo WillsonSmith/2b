@@ -2,6 +2,7 @@ import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { resolve, relative, isAbsolute, extname } from "node:path";
 import { logger } from "../logger.ts";
 import { defaultVisionBaseUrl, defaultVisionModel } from "../providers/llm/createProvider.ts";
+import { getPlatform } from "../platform/platform.ts";
 
 const MIME_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
@@ -219,14 +220,14 @@ Use analyze_image_file to analyze an image saved on the local filesystem.`;
         return `Error: Unsupported file type "${ext ? `.${ext}` : "(no extension)"}". Supported types: ${Object.keys(MIME_TYPES).join(", ")}`;
       }
 
-      const bunFile = Bun.file(safePath);
-      const size = bunFile.size;
+      const fs = getPlatform().fs;
+      const size = fs.size(safePath);
       if (size > MAX_IMAGE_BYTES) {
         logger.warn(NS, `Image file too large: ${size} bytes for ${safePath}`);
         return `Error: Image file is too large (${size} bytes). Maximum allowed size is ${MAX_IMAGE_BYTES} bytes.`;
       }
 
-      const buffer = await bunFile.arrayBuffer();
+      const buffer = await fs.readBytes(safePath);
       const base64 = Buffer.from(buffer).toString("base64");
 
       return this.callVisionModel(base64, mime, prompt);

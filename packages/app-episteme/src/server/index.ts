@@ -214,7 +214,7 @@ export async function startEpistemServer(
     }
   });
 
-  Bun.serve({
+  const server = Bun.serve({
     port,
     routes: {
       "/": index,
@@ -345,7 +345,7 @@ export async function startEpistemServer(
     },
   });
 
-  console.log(`Episteme running at http://localhost:${port}`);
+  console.log(`Episteme running at http://localhost:${server.port}`);
   console.log(`Workspace: ${workspaceRoot}`);
 }
 
@@ -357,7 +357,7 @@ const LAST_WORKSPACE_FILE = join(homedir(), ".config", "episteme", "last-workspa
  * can restart the full server with the selected workspace.
  */
 export async function startEpistemStubServer(port: number): Promise<void> {
-  Bun.serve({
+  const server = Bun.serve({
     port,
     routes: {
       "/": index,
@@ -395,5 +395,5 @@ export async function startEpistemStubServer(port: number): Promise<void> {
     },
   });
 
-  console.log(`Episteme running at http://localhost:${port} (no workspace — waiting for folder selection)`);
+  console.log(`Episteme running at http://localhost:${server.port} (no workspace — waiting for folder selection)`);
 }

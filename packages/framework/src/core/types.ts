@@ -115,4 +115,9 @@ export interface AgentConfig {
   };
   /** Permission manager for tools that declare permission !== "none". */
   permissionManager?: import("./PermissionManager.ts").PermissionManager;
+  /**
+   * Platform implementation (filesystem + SQLite). Defaults to BunPlatform when running in Bun.
+   * Pass a NodePlatform here when running the framework in Electron's main process (Node.js).
+   */
+  platform?: import("../platform/IPlatform.ts").IPlatform;
 }
