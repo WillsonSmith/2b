@@ -7,6 +7,7 @@
   flex-direction: column;
   background: var(--bg);
   overflow: hidden;
+  position: relative;
   transition:
     width 0.2s,
     min-width 0.2s;

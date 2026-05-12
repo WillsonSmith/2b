@@ -8,6 +8,7 @@ import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { ResearchPanel } from "./components/ResearchPanel.tsx";
 import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
 import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
+import { PanelGroup, type PanelEntry } from "./components/PanelGroup.tsx";
 import { UnifiedSearch, type SearchCommand } from "./components/UnifiedSearch.tsx";
 import "./styles.css";
 import { getShell } from "./shell/index.ts";
@@ -630,6 +631,7 @@ function App() {
         <div
           style={{
             flex: 1,
+            minWidth: 320,
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
@@ -725,52 +727,80 @@ function App() {
           </div>
         </div>
 
-        {showToc && (
-          <TocPanel
-            content={fileManager.editorContent}
-            tocEntries={editorFeatures.tocEntries}
-            isAnnotating={editorFeatures.isTocGenerating}
-            onAnnotate={editorFeatures.handleGenerateToc}
-            onClose={() => setShowToc(false)}
-          />
-        )}
-        {research.showResearch && (
-          <ResearchPanel
-            onClose={() => research.setShowResearch(false)}
-            onSearch={research.handleSearch}
-            onDetectGaps={research.handleDetectGaps}
-            onIngest={research.handleIngestFromSearch}
-            onReindex={research.handleReindex}
-            onSendToAgent={(text) => {
-              sendToAgent(text);
-              setSidecarCollapsed(false);
-            }}
-            searchResults={research.searchResults}
-            gapReport={research.gapReport}
-            isSearching={research.isSearching}
-            isDetectingGaps={research.isDetectingGaps}
-          />
-        )}
-        {conflictsGraph.showConflicts && (
-          <ConflictsPanel
-            onClose={() => conflictsGraph.setShowConflicts(false)}
-            onRefresh={conflictsGraph.handleContradictionScan}
-            contradictions={conflictsGraph.contradictions}
-            isLoading={conflictsGraph.isScanning}
-          />
-        )}
-        {conflictsGraph.showGraph && (
-          <KnowledgeGraph
-            onClose={() => conflictsGraph.setShowGraph(false)}
-            onRefresh={conflictsGraph.handleRefreshGraph}
-            onReindex={conflictsGraph.handleReindex}
-            onLoadMore={conflictsGraph.handleLoadMoreGraph}
-            onNodeClick={conflictsGraph.handleGraphNodeClick}
-            graphData={conflictsGraph.graphData}
-            pagination={conflictsGraph.graphPagination}
-            isLoading={conflictsGraph.isLoadingGraph}
-          />
-        )}
+        {(() => {
+          const panels: PanelEntry[] = [];
+          if (showToc) panels.push({
+            id: "toc",
+            label: "TOC",
+            defaultWidth: 220,
+            onClose: () => setShowToc(false),
+            content: (
+              <TocPanel
+                content={fileManager.editorContent}
+                tocEntries={editorFeatures.tocEntries}
+                isAnnotating={editorFeatures.isTocGenerating}
+                onAnnotate={editorFeatures.handleGenerateToc}
+                onClose={() => setShowToc(false)}
+              />
+            ),
+          });
+          if (research.showResearch) panels.push({
+            id: "research",
+            label: "Research",
+            defaultWidth: 320,
+            onClose: () => research.setShowResearch(false),
+            content: (
+              <ResearchPanel
+                onClose={() => research.setShowResearch(false)}
+                onSearch={research.handleSearch}
+                onDetectGaps={research.handleDetectGaps}
+                onIngest={research.handleIngestFromSearch}
+                onReindex={research.handleReindex}
+                onSendToAgent={(text) => {
+                  sendToAgent(text);
+                  setSidecarCollapsed(false);
+                }}
+                searchResults={research.searchResults}
+                gapReport={research.gapReport}
+                isSearching={research.isSearching}
+                isDetectingGaps={research.isDetectingGaps}
+              />
+            ),
+          });
+          if (conflictsGraph.showConflicts) panels.push({
+            id: "conflicts",
+            label: "Conflicts",
+            defaultWidth: 320,
+            onClose: () => conflictsGraph.setShowConflicts(false),
+            content: (
+              <ConflictsPanel
+                onClose={() => conflictsGraph.setShowConflicts(false)}
+                onRefresh={conflictsGraph.handleContradictionScan}
+                contradictions={conflictsGraph.contradictions}
+                isLoading={conflictsGraph.isScanning}
+              />
+            ),
+          });
+          if (conflictsGraph.showGraph) panels.push({
+            id: "graph",
+            label: "Graph",
+            defaultWidth: 420,
+            onClose: () => conflictsGraph.setShowGraph(false),
+            content: (
+              <KnowledgeGraph
+                onClose={() => conflictsGraph.setShowGraph(false)}
+                onRefresh={conflictsGraph.handleRefreshGraph}
+                onReindex={conflictsGraph.handleReindex}
+                onLoadMore={conflictsGraph.handleLoadMoreGraph}
+                onNodeClick={conflictsGraph.handleGraphNodeClick}
+                graphData={conflictsGraph.graphData}
+                pagination={conflictsGraph.graphPagination}
+                isLoading={conflictsGraph.isLoadingGraph}
+              />
+            ),
+          });
+          return <PanelGroup panels={panels} />;
+        })()}
         <AISidecar
           messages={messages}
           isThinking={ws.agentState === "thinking"}
