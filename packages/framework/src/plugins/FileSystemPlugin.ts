@@ -29,6 +29,7 @@
  */
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { logger } from "../logger.ts";
+import { getPlatform } from "../platform/platform.ts";
 import { join, resolve, dirname, sep } from "node:path";
 import {
   readdir,
@@ -682,10 +683,10 @@ export class FileSystemPlugin implements AgentPlugin {
     totalLinesApproximate?: boolean;
   }> {
     const resolved = this.resolveSafe(path);
-    const file = Bun.file(resolved);
+    const fs = getPlatform().fs;
 
-    if (!(await file.exists())) throw new Error(`File not found: ${resolved}`);
-    const size = file.size;
+    if (!(await fs.exists(resolved))) throw new Error(`File not found: ${resolved}`);
+    const size = fs.size(resolved);
 
     if (size > MAX_PAGINATED_READ_BYTES) {
       throw new Error(
@@ -701,7 +702,7 @@ export class FileSystemPlugin implements AgentPlugin {
 
     // Binary detection: sample first 512 bytes
     if (size > 0) {
-      const sampleBuf = await file.slice(0, BINARY_SAMPLE_BYTES).arrayBuffer();
+      const sampleBuf = await fs.readSlice(resolved, 0, BINARY_SAMPLE_BYTES);
       if (isBinary(new Uint8Array(sampleBuf))) {
         throw new Error(
           "File appears to be binary. Use a different tool to handle binary content.",
@@ -712,7 +713,7 @@ export class FileSystemPlugin implements AgentPlugin {
     // Streaming path for large paginated reads (avoids loading full file into memory)
     if (size > MAX_READ_BYTES && offset !== undefined && limit !== undefined) {
       const startLine = Math.max(1, offset);
-      const stream = file.stream();
+      const stream = fs.stream(resolved);
       const decoder = new TextDecoder();
       let buffer = "";
       let lineNum = 0;
@@ -756,7 +757,7 @@ export class FileSystemPlugin implements AgentPlugin {
     }
 
     // Normal path
-    const raw = await file.text();
+    const raw = await fs.readText(resolved);
     const rawLines = raw.split("\n");
     // Strip trailing empty string produced by a file ending with \n
     const lines = rawLines.at(-1) === "" ? rawLines.slice(0, -1) : rawLines;
@@ -791,23 +792,24 @@ export class FileSystemPlugin implements AgentPlugin {
     }
 
     const resolved = this.resolveSafe(path);
-    const file = Bun.file(resolved);
-    if (!(await file.exists())) throw new Error(`File not found: ${resolved}`);
+    const fs = getPlatform().fs;
+    if (!(await fs.exists(resolved))) throw new Error(`File not found: ${resolved}`);
+    const fileSize = fs.size(resolved);
 
-    if (file.size > MAX_PATCH_BYTES) {
+    if (fileSize > MAX_PATCH_BYTES) {
       throw new Error(
-        `File is ${file.size} bytes, which exceeds the ${MAX_PATCH_BYTES / 1024 / 1024} MB limit for patch_file. Use patch_file_range instead.`,
+        `File is ${fileSize} bytes, which exceeds the ${MAX_PATCH_BYTES / 1024 / 1024} MB limit for patch_file. Use patch_file_range instead.`,
       );
     }
 
-    if (file.size > 0) {
-      const sampleBuf = await file.slice(0, BINARY_SAMPLE_BYTES).arrayBuffer();
+    if (fileSize > 0) {
+      const sampleBuf = await fs.readSlice(resolved, 0, BINARY_SAMPLE_BYTES);
       if (isBinary(new Uint8Array(sampleBuf))) {
         throw new Error("File appears to be binary. patch_file only supports text files.");
       }
     }
 
-    const content = await file.text();
+    const content = await fs.readText(resolved);
 
     // Validate and locate all edits before applying any (all-or-nothing)
     const located: Array<{ start: number; end: number; replace: string; fuzzy: boolean }> = [];
@@ -842,7 +844,7 @@ export class FileSystemPlugin implements AgentPlugin {
       patched = patched.slice(0, start) + replace + patched.slice(end);
     }
 
-    await Bun.write(resolved, patched);
+    await getPlatform().fs.write(resolved, patched);
     return { path: resolved, editsApplied: edits.length, linesAdded, linesRemoved };
   }
 
@@ -869,11 +871,12 @@ export class FileSystemPlugin implements AgentPlugin {
     }
 
     const resolved = this.resolveSafe(path);
-    const file = Bun.file(resolved);
-    if (!(await file.exists())) throw new Error(`File not found: ${resolved}`);
+    const fs = getPlatform().fs;
+    if (!(await fs.exists(resolved))) throw new Error(`File not found: ${resolved}`);
+    const fileSize = fs.size(resolved);
 
-    if (file.size > 0) {
-      const sampleBuf = await file.slice(0, BINARY_SAMPLE_BYTES).arrayBuffer();
+    if (fileSize > 0) {
+      const sampleBuf = await fs.readSlice(resolved, 0, BINARY_SAMPLE_BYTES);
       if (isBinary(new Uint8Array(sampleBuf))) {
         throw new Error("File appears to be binary. patch_file_range only supports text files.");
       }
@@ -884,7 +887,7 @@ export class FileSystemPlugin implements AgentPlugin {
     const fh = await fsOpen(tmpPath, "w");
 
     try {
-      const stream = file.stream();
+      const stream = fs.stream(resolved);
       const decoder = new TextDecoder();
       let buffer = "";
       let lineNum = 0;
@@ -951,7 +954,7 @@ export class FileSystemPlugin implements AgentPlugin {
   ): Promise<{ path: string; size: number }> {
     const resolved = this.resolveSafe(path);
     await mkdir(dirname(resolved), { recursive: true });
-    const size = await Bun.write(resolved, content);
+    const size = await getPlatform().fs.write(resolved, content);
     return { path: resolved, size };
   }
 
@@ -962,7 +965,7 @@ export class FileSystemPlugin implements AgentPlugin {
     const resolved = this.resolveSafe(path);
     await mkdir(dirname(resolved), { recursive: true });
     await fsAppendFile(resolved, content);
-    const size = Bun.file(resolved).size;
+    const size = getPlatform().fs.size(resolved);
     return { path: resolved, size };
   }
 
@@ -1094,10 +1097,9 @@ export class FileSystemPlugin implements AgentPlugin {
     includeDotfiles?: boolean,
   ): Promise<{ pattern: string; matches: string[]; truncated?: boolean }> {
     const deadline = Date.now() + FS_OP_TIMEOUT_MS;
-    const glob = new Bun.Glob(pattern);
     const searchDir = cwd ? this.resolveSafe(cwd) : this.allowedRoots[0]!;
     const matches: string[] = [];
-    for await (const file of glob.scan({
+    for await (const file of getPlatform().fs.glob(pattern, {
       cwd: searchDir,
       onlyFiles: true,
       dot: includeDotfiles ?? false,
@@ -1208,26 +1210,26 @@ export class FileSystemPlugin implements AgentPlugin {
     }
 
     const globPattern = fileGlob ?? "**/*";
-    const scanner = new Bun.Glob(globPattern);
     const matches: Array<{ file: string; line: number; content: string }> = [];
     let truncated = false;
 
-    for await (const filePath of scanner.scan({
+    for await (const filePath of getPlatform().fs.glob(globPattern, {
       cwd: searchDir,
       onlyFiles: true,
       dot: false,
     })) {
       const abs = join(searchDir, filePath);
-      const f = Bun.file(abs);
-      if (!(await f.exists())) continue;
+      const fs = getPlatform().fs;
+      if (!(await fs.exists(abs))) continue;
+      const fSize = fs.size(abs);
 
-      if (f.size > 0) {
-        const sampleBuf = await f.slice(0, BINARY_SAMPLE_BYTES).arrayBuffer();
+      if (fSize > 0) {
+        const sampleBuf = await fs.readSlice(abs, 0, BINARY_SAMPLE_BYTES);
         if (isBinary(new Uint8Array(sampleBuf))) continue;
       }
 
       try {
-        const text = await f.text();
+        const text = await fs.readText(abs);
         const lines = text.split("\n");
         for (let i = 0; i < lines.length; i++) {
           if (regex.test(lines[i]!)) {

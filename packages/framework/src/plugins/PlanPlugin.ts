@@ -11,28 +11,29 @@
  *   abandon_plan   — mark the active plan abandoned
  *   get_plan       — retrieve full details of the active (or a named) plan
  */
-import { Database } from "bun:sqlite";
 import { randomUUID } from "crypto";
 import { join } from "node:path";
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import type { Plan, PlanStep, PlanStatus, PlanStepStatus } from "../core/types.ts";
 import { appDataPath } from "../paths.ts";
 import { logger } from "../logger.ts";
+import { getPlatform } from "../platform/platform.ts";
+import type { IDatabase } from "../platform/IDatabase.ts";
 
 const STEP_STATUSES: ReadonlySet<string> = new Set(["pending", "in_progress", "done", "skipped", "failed"]);
 
 export class PlanPlugin implements AgentPlugin {
   name = "Plan";
-  private db: Database;
+  private db: IDatabase;
 
   constructor(dbPath?: string) {
     const path = dbPath ?? join(appDataPath("data"), "plans.sqlite");
-    this.db = new Database(path, { create: true });
+    this.db = getPlatform().openDatabase(path);
     this.initSchema();
   }
 
   private initSchema(): void {
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS plans (
         id         TEXT PRIMARY KEY,
         goal       TEXT NOT NULL,
@@ -41,7 +42,7 @@ export class PlanPlugin implements AgentPlugin {
         updated_at INTEGER NOT NULL
       )
     `);
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS plan_steps (
         id          TEXT PRIMARY KEY,
         plan_id     TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
@@ -51,33 +52,33 @@ export class PlanPlugin implements AgentPlugin {
         notes       TEXT
       )
     `);
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_plan_steps_plan_id ON plan_steps(plan_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_plan_steps_plan_id ON plan_steps(plan_id)`);
   }
 
   // ── Public read API (used by tests and getContext) ─────────────────────────
 
   public getActivePlan(): Plan | null {
-    const row = this.db.query<{ id: string; goal: string; status: string; created_at: number; updated_at: number }, []>(
+    const row = this.db.query(
       `SELECT * FROM plans WHERE status = 'active' ORDER BY created_at DESC LIMIT 1`,
-    ).get();
+    ).get() as { id: string; goal: string; status: string; created_at: number; updated_at: number } | undefined;
     if (!row) return null;
     return this.hydratePlan(row);
   }
 
   public getPlanById(id: string): Plan | null {
-    const row = this.db.query<{ id: string; goal: string; status: string; created_at: number; updated_at: number }, [string]>(
+    const row = this.db.query(
       `SELECT * FROM plans WHERE id = ?`,
-    ).get(id);
+    ).get(id) as { id: string; goal: string; status: string; created_at: number; updated_at: number } | undefined;
     if (!row) return null;
     return this.hydratePlan(row);
   }
 
   private hydratePlan(row: { id: string; goal: string; status: string; created_at: number; updated_at: number }): Plan {
-    const steps = this.db.query<{
-      id: string; plan_id: string; position: number; description: string; status: string; notes: string | null;
-    }, [string]>(
+    const steps = (this.db.query(
       `SELECT * FROM plan_steps WHERE plan_id = ? ORDER BY position`,
-    ).all(row.id).map(s => ({
+    ).all(row.id) as Array<{
+      id: string; plan_id: string; position: number; description: string; status: string; notes: string | null;
+    }>).map(s => ({
       id: s.id,
       planId: s.plan_id,
       position: s.position,
@@ -97,7 +98,7 @@ export class PlanPlugin implements AgentPlugin {
   }
 
   private touchPlan(id: string): void {
-    this.db.run(`UPDATE plans SET updated_at = ? WHERE id = ?`, [Date.now(), id]);
+    this.db.exec(`UPDATE plans SET updated_at = ? WHERE id = ?`, [Date.now(), id]);
   }
 
   private formatPlan(plan: Plan): string {
@@ -221,18 +222,18 @@ export class PlanPlugin implements AgentPlugin {
     // Abandon any current active plan
     const existing = this.getActivePlan();
     if (existing) {
-      this.db.run(`UPDATE plans SET status = 'abandoned', updated_at = ? WHERE id = ?`, [now, existing.id]);
+      this.db.exec(`UPDATE plans SET status = 'abandoned', updated_at = ? WHERE id = ?`, [now, existing.id]);
       logger.info(this.name, `create_plan: abandoned prior plan ${existing.id.slice(0, 8)}`);
     }
 
     const planId = randomUUID();
-    this.db.run(
+    this.db.exec(
       `INSERT INTO plans (id, goal, status, created_at, updated_at) VALUES (?, ?, 'active', ?, ?)`,
       [planId, goal, now, now],
     );
 
     for (let i = 0; i < stepDescriptions.length; i++) {
-      this.db.run(
+      this.db.exec(
         `INSERT INTO plan_steps (id, plan_id, position, description, status) VALUES (?, ?, ?, ?, 'pending')`,
         [randomUUID(), planId, i, stepDescriptions[i]],
       );
@@ -254,13 +255,13 @@ export class PlanPlugin implements AgentPlugin {
     }
 
     // Allow matching by full UUID or the first 8 chars
-    const row = this.db.query<{ id: string; plan_id: string }, [string, string]>(
+    const row = this.db.query(
       `SELECT id, plan_id FROM plan_steps WHERE id = ? OR id LIKE ? LIMIT 1`,
-    ).get(stepIdPrefix, `${stepIdPrefix}%`);
+    ).get(stepIdPrefix, `${stepIdPrefix}%`) as { id: string; plan_id: string } | undefined;
 
     if (!row) return `update_step error: no step found matching '${stepIdPrefix}'.`;
 
-    this.db.run(
+    this.db.exec(
       `UPDATE plan_steps SET status = ?, notes = COALESCE(?, notes) WHERE id = ?`,
       [status, notes, row.id],
     );
@@ -274,7 +275,7 @@ export class PlanPlugin implements AgentPlugin {
     const plan = this.getActivePlan();
     if (!plan) return `No active plan to ${status === "completed" ? "complete" : "abandon"}.`;
 
-    this.db.run(
+    this.db.exec(
       `UPDATE plans SET status = ?, updated_at = ? WHERE id = ?`,
       [status, Date.now(), plan.id],
     );
