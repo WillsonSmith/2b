@@ -33,7 +33,7 @@ const portArg = portFlagEq
   : portFlagSpace !== -1
   ? Number(args[portFlagSpace + 1])
   : undefined;
-const port = portArg ?? (process.env["PORT"] ? Number(process.env["PORT"]) : 4000);
+const port = portArg ?? (process.env["PORT"] ? Number(process.env["PORT"]) : 0);
 
 // Support --workspace=/path as well as positional arg
 const workspaceFlagEq = args.find((a) => a.startsWith("--workspace="));

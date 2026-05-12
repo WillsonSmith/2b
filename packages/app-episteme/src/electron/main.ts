@@ -1,18 +1,23 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from "electron";
 import { spawn, type ChildProcess } from "child_process";
-import * as net from "net";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
-
-let serverProcess: ChildProcess | null = null;
-let mainWindow: BrowserWindow | null = null;
-let currentPort = 4000;
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "episteme");
 const LAST_WORKSPACE_FILE = path.join(CONFIG_DIR, "last-workspace");
 const RECENT_WORKSPACES_FILE = path.join(CONFIG_DIR, "recent-workspaces.json");
 const MAX_RECENT = 10;
+
+interface WindowState {
+  process: ChildProcess;
+  port: number;
+  workspace: string | undefined;
+}
+
+const windows = new Map<BrowserWindow, WindowState>();
+
+// --- Workspace persistence ---
 
 function readLastWorkspace(): string | undefined {
   try {
@@ -48,27 +53,13 @@ function addRecentWorkspace(workspacePath: string): void {
   );
 }
 
-function findFreePort(start = 4000): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.listen(start, "127.0.0.1", () => {
-      const addr = server.address() as net.AddressInfo;
-      server.close(() => resolve(addr.port));
-    });
-    server.on("error", () =>
-      findFreePort(start + 1)
-        .then(resolve)
-        .catch(reject),
-    );
-  });
-}
+// --- Utilities ---
 
 function repoRoot(): string {
   if (app.isPackaged) {
-    // In a packaged app the repo is bundled under Contents/Resources/app
     return path.join(process.resourcesPath, "app");
   }
-  // electron/ is at packages/app-episteme/src/electron/ — repo root is 4 levels up from there, 5 from dist/
+  // electron/ is at packages/app-episteme/src/electron/ — repo root is 5 levels up from dist/
   return path.resolve(__dirname, "..", "..", "..", "..", "..");
 }
 
@@ -80,30 +71,35 @@ function bunBin(): string {
   return "bun";
 }
 
-function startServer(port: number, workspace?: string): Promise<void> {
+// --- Server ---
+
+function startServer(workspace?: string): Promise<{ proc: ChildProcess; port: number }> {
   return new Promise((resolve, reject) => {
-    const args = [path.join("packages", "app-episteme", "episteme.ts"), `--port=${port}`];
+    const args = [
+      path.join("packages", "app-episteme", "episteme.ts"),
+      "--port=0", // let the OS assign a guaranteed-free port
+    ];
     if (workspace) args.push(`--workspace=${workspace}`);
 
-    serverProcess = spawn(bunBin(), args, {
+    const proc = spawn(bunBin(), args, {
       cwd: repoRoot(),
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    serverProcess.stdout?.on("data", (data: Buffer) => {
+    proc.stdout?.on("data", (data: Buffer) => {
       const text = data.toString();
       process.stdout.write(text);
-      if (text.includes("Episteme running")) resolve();
+      const match = text.match(/Episteme running at http:\/\/localhost:(\d+)/);
+      if (match) resolve({ proc, port: Number(match[1]) });
     });
 
-    serverProcess.stderr?.on("data", (data: Buffer) => {
+    proc.stderr?.on("data", (data: Buffer) => {
       process.stderr.write(data);
     });
 
-    serverProcess.on("error", reject);
+    proc.on("error", reject);
 
-    // Resolve after timeout as fallback if stdout signal doesn't fire
-    setTimeout(resolve, 5000);
+    setTimeout(() => reject(new Error("Server failed to start within 10s")), 10_000);
   });
 }
 
@@ -118,8 +114,10 @@ async function waitForServer(port: number, retries = 30): Promise<void> {
   throw new Error(`Server on port ${port} did not become ready`);
 }
 
-function createWindow(port: number): void {
-  mainWindow = new BrowserWindow({
+// --- Window factory ---
+
+function createWindow(): BrowserWindow {
+  const win = new BrowserWindow({
     width: 1400,
     height: 900,
     titleBarStyle: "hiddenInset",
@@ -130,14 +128,61 @@ function createWindow(port: number): void {
     },
   });
 
-  mainWindow.loadURL(`http://localhost:${port}`);
-
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  win.on("closed", () => {
+    const state = windows.get(win);
+    state?.process?.kill();
+    windows.delete(win);
+    buildMenu();
   });
+
+  return win;
 }
 
-function buildMenu(port: number): void {
+// --- Project window lifecycle ---
+
+async function openProjectWindow(
+  workspace?: string,
+  targetWindow?: BrowserWindow,
+): Promise<BrowserWindow> {
+  const { proc, port } = await startServer(workspace);
+  await waitForServer(port);
+
+  let win: BrowserWindow;
+  if (targetWindow && !targetWindow.isDestroyed()) {
+    // Reuse an existing window: kill its previous server first
+    const oldState = windows.get(targetWindow);
+    if (oldState) {
+      oldState.process.kill();
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    win = targetWindow;
+  } else {
+    win = createWindow();
+  }
+
+  windows.set(win, { process: proc, port, workspace });
+  win.loadURL(`http://localhost:${port}`);
+  buildMenu();
+
+  // Stub server (no workspace): exits with code 0 after the user picks a
+  // workspace via the web UI. Reload that same window with the real server.
+  proc.once("exit", async (code) => {
+    if (code === 0 && !win.isDestroyed()) {
+      const ws = readLastWorkspace();
+      try {
+        await openProjectWindow(ws, win);
+      } catch (err) {
+        console.error("Failed to restart server after workspace selection:", err);
+      }
+    }
+  });
+
+  return win;
+}
+
+// --- Menu ---
+
+function buildMenu(): void {
   const recents = readRecentWorkspaces();
 
   const openRecentSubmenu: Electron.MenuItemConstructorOptions[] =
@@ -147,9 +192,10 @@ function buildMenu(port: number): void {
             label: path.basename(p),
             sublabel: p,
             click: async () => {
-              saveLastWorkspace(p);
               addRecentWorkspace(p);
-              await restartWithWorkspace(p, port);
+              buildMenu();
+              // Always open recents in a new window
+              await openProjectWindow(p);
             },
           })),
           { type: "separator" as const },
@@ -157,7 +203,7 @@ function buildMenu(port: number): void {
             label: "Clear Recents",
             click: () => {
               fs.writeFileSync(RECENT_WORKSPACES_FILE, "[]", "utf8");
-              buildMenu(port);
+              buildMenu();
             },
           },
         ]
@@ -185,17 +231,28 @@ function buildMenu(port: number): void {
           label: "New Project…",
           accelerator: "CmdOrCtrl+Shift+N",
           click: async () => {
-            const result = await dialog.showSaveDialog(mainWindow!, {
+            const focused = BrowserWindow.getFocusedWindow();
+            const opts = {
               title: "Create New Project",
               buttonLabel: "Create",
               nameFieldLabel: "Project name:",
               showsTagField: false,
-            });
+            };
+            const result = focused
+              ? await dialog.showSaveDialog(focused, opts)
+              : await dialog.showSaveDialog(opts);
             if (!result.canceled && result.filePath) {
               fs.mkdirSync(result.filePath, { recursive: true });
               saveLastWorkspace(result.filePath);
               addRecentWorkspace(result.filePath);
-              await restartWithWorkspace(result.filePath, port);
+              buildMenu();
+              const state = focused ? windows.get(focused) : undefined;
+              // Stub window (no workspace yet): take over this window
+              // Already has a workspace: open a new window
+              await openProjectWindow(
+                result.filePath,
+                !state?.workspace ? focused ?? undefined : undefined,
+              );
             }
           },
         },
@@ -203,15 +260,26 @@ function buildMenu(port: number): void {
           label: "Open Folder…",
           accelerator: "CmdOrCtrl+Shift+O",
           click: async () => {
-            const result = await dialog.showOpenDialog(mainWindow!, {
-              properties: ["openDirectory"],
-              title: "Open Workspace Folder",
-            });
+            const focused = BrowserWindow.getFocusedWindow();
+            const result = focused
+              ? await dialog.showOpenDialog(focused, {
+                  properties: ["openDirectory"],
+                  title: "Open Workspace Folder",
+                })
+              : await dialog.showOpenDialog({
+                  properties: ["openDirectory"],
+                  title: "Open Workspace Folder",
+                });
             if (!result.canceled && result.filePaths[0]) {
-              const selectedPath = result.filePaths[0];
-              saveLastWorkspace(selectedPath);
-              addRecentWorkspace(selectedPath);
-              await restartWithWorkspace(selectedPath, port);
+              const p = result.filePaths[0];
+              saveLastWorkspace(p);
+              addRecentWorkspace(p);
+              buildMenu();
+              const state = focused ? windows.get(focused) : undefined;
+              await openProjectWindow(
+                p,
+                !state?.workspace ? focused ?? undefined : undefined,
+              );
             }
           },
         },
@@ -224,40 +292,58 @@ function buildMenu(port: number): void {
           label: "Generate Static Site…",
           accelerator: "CmdOrCtrl+Shift+G",
           click: async () => {
-            const workspace = readLastWorkspace();
+            const focused = BrowserWindow.getFocusedWindow();
+            const state = focused ? windows.get(focused) : undefined;
+            const workspace = state?.workspace;
+
             if (!workspace) {
-              dialog.showMessageBox(mainWindow!, {
-                type: "info",
+              const opts = {
+                type: "info" as const,
                 message: "No workspace is open.",
                 detail: "Open a folder first, then generate the static site.",
-              });
+              };
+              if (focused) await dialog.showMessageBox(focused, opts);
+              else await dialog.showMessageBox(opts);
               return;
             }
 
-            const result = await dialog.showOpenDialog(mainWindow!, {
-              properties: ["openDirectory", "createDirectory"],
-              title: "Choose Output Folder",
-              buttonLabel: "Generate Here",
-            });
+            const result = focused
+              ? await dialog.showOpenDialog(focused, {
+                  properties: ["openDirectory", "createDirectory"],
+                  title: "Choose Output Folder",
+                  buttonLabel: "Generate Here",
+                })
+              : await dialog.showOpenDialog({
+                  properties: ["openDirectory", "createDirectory"],
+                  title: "Choose Output Folder",
+                  buttonLabel: "Generate Here",
+                });
             if (result.canceled || !result.filePaths[0]) return;
             const outputDir = result.filePaths[0];
 
-            const proc = spawn(bunBin(), [
-              path.join("packages", "app-episteme", "src", "ssg", "generate.ts"),
-              `--workspace=${workspace}`,
-              `--output=${outputDir}`,
-            ], { cwd: repoRoot(), stdio: ["ignore", "pipe", "pipe"] });
+            const proc = spawn(
+              bunBin(),
+              [
+                path.join("packages", "app-episteme", "src", "ssg", "generate.ts"),
+                `--workspace=${workspace}`,
+                `--output=${outputDir}`,
+              ],
+              { cwd: repoRoot(), stdio: ["ignore", "pipe", "pipe"] },
+            );
 
             proc.stderr?.on("data", (d: Buffer) => process.stderr.write(d));
 
             proc.on("exit", async (code) => {
               if (code === 0) {
-                const { response } = await dialog.showMessageBox(mainWindow!, {
-                  type: "info",
+                const msgOpts = {
+                  type: "info" as const,
                   message: "Static site generated!",
                   buttons: ["Open in Finder", "OK"],
                   defaultId: 1,
-                });
+                };
+                const { response } = focused
+                  ? await dialog.showMessageBox(focused, msgOpts)
+                  : await dialog.showMessageBox(msgOpts);
                 if (response === 0) shell.openPath(outputDir);
               } else {
                 dialog.showErrorBox("Generation failed", "Check the console for details.");
@@ -300,45 +386,45 @@ function buildMenu(port: number): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-async function restartWithWorkspace(
-  workspacePath: string,
-  port: number,
-): Promise<void> {
-  if (serverProcess) {
-    serverProcess.kill();
-    serverProcess = null;
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  await startServer(port, workspacePath);
-  await waitForServer(port);
-  mainWindow?.loadURL(`http://localhost:${port}`);
-  buildMenu(port);
-}
+// --- IPC handlers ---
 
-// IPC handlers
-ipcMain.handle("open-folder", async () => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
+ipcMain.handle("open-folder", async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return null;
+
+  const result = await dialog.showOpenDialog(win, {
     properties: ["openDirectory"],
     title: "Open Workspace Folder",
   });
   if (result.canceled || !result.filePaths[0]) return null;
+
   const selectedPath = result.filePaths[0];
   saveLastWorkspace(selectedPath);
   addRecentWorkspace(selectedPath);
+  buildMenu();
+
+  // Return the path so the renderer can POST it to the stub server.
+  // The stub exits(0) → the exit handler in openProjectWindow reloads this window.
   return selectedPath;
 });
 
-ipcMain.handle("create-project", async () => {
-  const result = await dialog.showSaveDialog(mainWindow!, {
+ipcMain.handle("create-project", async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return null;
+
+  const result = await dialog.showSaveDialog(win, {
     title: "Create New Project",
     buttonLabel: "Create",
     nameFieldLabel: "Project name:",
     showsTagField: false,
   });
   if (result.canceled || !result.filePath) return null;
+
   fs.mkdirSync(result.filePath, { recursive: true });
   saveLastWorkspace(result.filePath);
   addRecentWorkspace(result.filePath);
+  buildMenu();
+
   return result.filePath;
 });
 
@@ -346,36 +432,16 @@ ipcMain.handle("get-recent-folders", () => readRecentWorkspaces());
 
 ipcMain.handle("get-app-version", () => app.getVersion());
 
-app.whenReady().then(async () => {
-  currentPort = await findFreePort(4000);
-  const lastWorkspace = readLastWorkspace();
+// --- App lifecycle ---
 
+app.whenReady().then(async () => {
+  const lastWorkspace = readLastWorkspace();
   try {
-    await startServer(currentPort, lastWorkspace);
-    await waitForServer(currentPort);
+    await openProjectWindow(lastWorkspace);
   } catch (err) {
     console.error("Failed to start server:", err);
     app.quit();
-    return;
   }
-
-  createWindow(currentPort);
-  buildMenu(currentPort);
-
-  // When server exits with code 0 (workspace set via POST /api/workspace),
-  // the frontend already has the workspace path saved to disk — reload.
-  serverProcess?.on("exit", async (code) => {
-    if (code === 0 && mainWindow) {
-      const workspace = readLastWorkspace();
-      try {
-        await startServer(currentPort, workspace);
-        await waitForServer(currentPort);
-        mainWindow.loadURL(`http://localhost:${currentPort}`);
-      } catch (err) {
-        console.error("Failed to restart server:", err);
-      }
-    }
-  });
 });
 
 app.on("window-all-closed", () => {
@@ -383,9 +449,15 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
-  if (mainWindow === null) createWindow(currentPort);
+  if (windows.size === 0) {
+    openProjectWindow(readLastWorkspace()).catch((err) => {
+      console.error("Failed to open project window:", err);
+    });
+  }
 });
 
 app.on("will-quit", () => {
-  serverProcess?.kill();
+  for (const state of windows.values()) {
+    state.process?.kill();
+  }
 });
