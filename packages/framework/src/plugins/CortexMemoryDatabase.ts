@@ -1,8 +1,9 @@
-import { Database } from "bun:sqlite";
 import { randomUUID } from "crypto";
 import { join } from "node:path";
 import { logger } from "../logger.ts";
 import { appDataPath } from "../paths.ts";
+import { getPlatform } from "../platform/platform.ts";
+import type { IDatabase } from "../platform/IDatabase.ts";
 
 /**
  * Wrap a user-supplied string in FTS5 phrase-query syntax.
@@ -48,18 +49,18 @@ function bufferToFloat32Array(buf: Buffer): Float32Array {
 
 /** Standalone SQLite memory store with type support and memory linking. */
 export class CortexMemoryDatabase {
-  private db: Database;
+  private db: IDatabase;
   private llm: any;
 
   constructor(llmProvider: any, name: string, dbPath?: string) {
     this.llm = llmProvider;
-    this.db = new Database(dbPath ?? join(appDataPath("data"), `${name}.cortex.sqlite`), { create: true });
+    this.db = getPlatform().openDatabase(dbPath ?? join(appDataPath("data"), `${name}.cortex.sqlite`));
     this.initSchema();
   }
 
   private initSchema() {
     // Core tables — new schema uses embedding_bin BLOB (no embedding TEXT column)
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS memories (
         id TEXT PRIMARY KEY,
         text TEXT NOT NULL,
@@ -69,7 +70,7 @@ export class CortexMemoryDatabase {
       )
     `);
 
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS memory_links (
         memory_id TEXT NOT NULL,
         linked_id TEXT NOT NULL,
@@ -78,42 +79,42 @@ export class CortexMemoryDatabase {
     `);
 
     // Schema version tracking
-    this.db.run(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL, updated_at INTEGER NOT NULL)`);
-    this.db.run(`INSERT INTO schema_version SELECT 1, ${Date.now()} WHERE NOT EXISTS (SELECT 1 FROM schema_version)`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL, updated_at INTEGER NOT NULL)`);
+    this.db.exec(`INSERT INTO schema_version SELECT 1, ${Date.now()} WHERE NOT EXISTS (SELECT 1 FROM schema_version)`);
 
     // Column migrations — each is idempotent via PRAGMA check
     const columns = this.db.prepare("PRAGMA table_info(memories)").all() as { name: string }[];
 
     const hasType = columns.some(c => c.name === "type");
-    if (!hasType) this.db.run(`ALTER TABLE memories ADD COLUMN type TEXT NOT NULL DEFAULT 'factual'`);
+    if (!hasType) this.db.exec(`ALTER TABLE memories ADD COLUMN type TEXT NOT NULL DEFAULT 'factual'`);
 
     const hasTags = columns.some(c => c.name === "tags");
-    if (!hasTags) this.db.run(`ALTER TABLE memories ADD COLUMN tags TEXT DEFAULT '[]'`);
+    if (!hasTags) this.db.exec(`ALTER TABLE memories ADD COLUMN tags TEXT DEFAULT '[]'`);
 
     // Phase 1 columns
     const hasStatus = columns.some(c => c.name === "status");
-    if (!hasStatus) this.db.run(`ALTER TABLE memories ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`);
+    if (!hasStatus) this.db.exec(`ALTER TABLE memories ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`);
 
     const hasSource = columns.some(c => c.name === "source");
-    if (!hasSource) this.db.run(`ALTER TABLE memories ADD COLUMN source TEXT`);
+    if (!hasSource) this.db.exec(`ALTER TABLE memories ADD COLUMN source TEXT`);
 
     const hasConfidence = columns.some(c => c.name === "confidence");
-    if (!hasConfidence) this.db.run(`ALTER TABLE memories ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0`);
+    if (!hasConfidence) this.db.exec(`ALTER TABLE memories ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0`);
 
     const hasScope = columns.some(c => c.name === "scope");
-    if (!hasScope) this.db.run(`ALTER TABLE memories ADD COLUMN scope TEXT NOT NULL DEFAULT 'global'`);
+    if (!hasScope) this.db.exec(`ALTER TABLE memories ADD COLUMN scope TEXT NOT NULL DEFAULT 'global'`);
 
     // Phase 4 column
     const hasEmbeddingBin = columns.some(c => c.name === "embedding_bin");
-    if (!hasEmbeddingBin) this.db.run(`ALTER TABLE memories ADD COLUMN embedding_bin BLOB`);
+    if (!hasEmbeddingBin) this.db.exec(`ALTER TABLE memories ADD COLUMN embedding_bin BLOB`);
 
     // FTS5 virtual table for full-text search
     const ftsBefore = this.db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='memories_fts'")
       .get();
-    this.db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(memory_id UNINDEXED, text)`);
+    this.db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(memory_id UNINDEXED, text)`);
     if (!ftsBefore) {
-      this.db.run(`INSERT INTO memories_fts(memory_id, text) SELECT id, text FROM memories`);
+      this.db.exec(`INSERT INTO memories_fts(memory_id, text) SELECT id, text FROM memories`);
     }
 
     // Phase 4 migration: JSON text embeddings → Float32Array BLOB
@@ -132,57 +133,57 @@ export class CortexMemoryDatabase {
             const parsed = JSON.parse(row.embedding) as number[];
             updateStmt.run(new Float32Array(parsed), row.id);
           }
-          this.db.run(`UPDATE schema_version SET version = 2, updated_at = ${Date.now()}`);
+          this.db.exec(`UPDATE schema_version SET version = 2, updated_at = ${Date.now()}`);
         });
         migrate();
         logger.info("CortexDB", `Phase 4 migration: converted ${rows.length} embeddings.`);
         try {
-          this.db.run(`ALTER TABLE memories DROP COLUMN embedding`);
+          this.db.exec(`ALTER TABLE memories DROP COLUMN embedding`);
         } catch (e) {
           logger.warn("CortexDB", "Could not drop old embedding column (requires SQLite 3.35+):", e);
         }
       } else {
         // Fresh database — no legacy embedding column to migrate, just bump version
-        this.db.run(`UPDATE schema_version SET version = 2, updated_at = ${Date.now()}`);
+        this.db.exec(`UPDATE schema_version SET version = 2, updated_at = ${Date.now()}`);
       }
     }
 
     // Phase 5 migrations: lineage columns
     const hasSupersededBy = columns.some(c => c.name === "superseded_by_id");
     if (!hasSupersededBy) {
-      this.db.run(`ALTER TABLE memories ADD COLUMN superseded_by_id TEXT`);
+      this.db.exec(`ALTER TABLE memories ADD COLUMN superseded_by_id TEXT`);
     }
 
     const hasReconstructedFrom = columns.some(c => c.name === "reconstructed_from_id");
     if (!hasReconstructedFrom) {
-      this.db.run(`ALTER TABLE memories ADD COLUMN reconstructed_from_id TEXT`);
+      this.db.exec(`ALTER TABLE memories ADD COLUMN reconstructed_from_id TEXT`);
     }
 
     const hasVersionRank = columns.some(c => c.name === "version_rank");
     if (!hasVersionRank) {
-      this.db.run(`ALTER TABLE memories ADD COLUMN version_rank INTEGER NOT NULL DEFAULT 1`);
+      this.db.exec(`ALTER TABLE memories ADD COLUMN version_rank INTEGER NOT NULL DEFAULT 1`);
     }
 
     // memory_links link_type
     const linkColumns = this.db.prepare("PRAGMA table_info(memory_links)").all() as { name: string }[];
     const hasLinkType = linkColumns.some(c => c.name === "link_type");
     if (!hasLinkType) {
-      this.db.run(`ALTER TABLE memory_links ADD COLUMN link_type TEXT NOT NULL DEFAULT 'related'`);
+      this.db.exec(`ALTER TABLE memory_links ADD COLUMN link_type TEXT NOT NULL DEFAULT 'related'`);
     }
 
     // Bump schema version to 3
     if (version < 3) {
-      this.db.run(`UPDATE schema_version SET version = 3, updated_at = ${Date.now()}`);
+      this.db.exec(`UPDATE schema_version SET version = 3, updated_at = ${Date.now()}`);
     }
 
     // Phase 6: weight column — controls behavior injection priority (0.0–1.0)
     const freshCols2 = this.db.prepare("PRAGMA table_info(memories)").all() as { name: string }[];
     const hasWeight = freshCols2.some(c => c.name === "weight");
     if (!hasWeight) {
-      this.db.run(`ALTER TABLE memories ADD COLUMN weight REAL NOT NULL DEFAULT 1.0`);
+      this.db.exec(`ALTER TABLE memories ADD COLUMN weight REAL NOT NULL DEFAULT 1.0`);
     }
     if (version < 4) {
-      this.db.run(`UPDATE schema_version SET version = 4, updated_at = ${Date.now()}`);
+      this.db.exec(`UPDATE schema_version SET version = 4, updated_at = ${Date.now()}`);
     }
 
     // Phase 3 migration: strip [THOUGHT] prefix from thought memory text — idempotent

@@ -9,13 +9,14 @@
  * `evaluate_options` is deliberative — it calls the LLM and does NOT automatically
  * persist. The agent can then call `record_decision` once it has made its choice.
  */
-import { Database } from "bun:sqlite";
 import { randomUUID } from "crypto";
 import { join } from "node:path";
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import { appDataPath } from "../paths.ts";
 import { logger } from "../logger.ts";
+import { getPlatform } from "../platform/platform.ts";
+import type { IDatabase } from "../platform/IDatabase.ts";
 
 export interface DecisionRecord {
   id: string;
@@ -26,21 +27,30 @@ export interface DecisionRecord {
   createdAt: number;
 }
 
+type DecisionRow = {
+  id: string;
+  question: string;
+  chosen_option: string;
+  rationale: string;
+  options_considered: string;
+  created_at: number;
+};
+
 export class DecisionPlugin implements AgentPlugin {
   name = "Decision";
-  private db: Database;
+  private db: IDatabase;
 
   constructor(
     private readonly llm: LLMProvider,
     dbPath?: string,
   ) {
     const path = dbPath ?? join(appDataPath("data"), "decisions.sqlite");
-    this.db = new Database(path, { create: true });
+    this.db = getPlatform().openDatabase(path);
     this.initSchema();
   }
 
   private initSchema(): void {
-    this.db.run(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS decisions (
         id                TEXT PRIMARY KEY,
         question          TEXT NOT NULL,
@@ -50,22 +60,15 @@ export class DecisionPlugin implements AgentPlugin {
         created_at        INTEGER NOT NULL
       )
     `);
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_decisions_created_at ON decisions(created_at)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_decisions_created_at ON decisions(created_at)`);
   }
 
   // ── Public read API ────────────────────────────────────────────────────────
 
   public getHistory(limit = 20): DecisionRecord[] {
-    return this.db.query<{
-      id: string;
-      question: string;
-      chosen_option: string;
-      rationale: string;
-      options_considered: string;
-      created_at: number;
-    }, [number]>(
+    return (this.db.query(
       `SELECT * FROM decisions ORDER BY created_at DESC LIMIT ?`,
-    ).all(limit).map(r => ({
+    ).all(limit) as DecisionRow[]).map(r => ({
       id: r.id,
       question: r.question,
       chosenOption: r.chosen_option,
@@ -76,16 +79,9 @@ export class DecisionPlugin implements AgentPlugin {
   }
 
   public getById(id: string): DecisionRecord | null {
-    const r = this.db.query<{
-      id: string;
-      question: string;
-      chosen_option: string;
-      rationale: string;
-      options_considered: string;
-      created_at: number;
-    }, [string]>(
+    const r = this.db.query(
       `SELECT * FROM decisions WHERE id = ?`,
-    ).get(id);
+    ).get(id) as DecisionRow | undefined;
     if (!r) return null;
     return {
       id: r.id,
@@ -253,7 +249,7 @@ Rationale: <one sentence>`;
 
     const id = randomUUID();
     const now = Date.now();
-    this.db.run(
+    this.db.exec(
       `INSERT INTO decisions (id, question, chosen_option, rationale, options_considered, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
       [id, question, chosenOption, rationale, JSON.stringify(optionsConsidered), now],
     );

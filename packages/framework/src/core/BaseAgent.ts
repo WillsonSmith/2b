@@ -30,6 +30,7 @@ import type { AgentPlugin, ToolDefinition } from "./Plugin.ts";
 import type { InputSource } from "./InputSource.ts";
 import type { AgentConfig, AmbientOptions, Message, MemoryWriteRequest } from "./types.ts";
 import { logger } from "../logger.ts";
+import { setPlatform } from "../platform/platform.ts";
 
 export class BaseAgent extends EventEmitter {
   private isThinking = false;
@@ -67,6 +68,7 @@ export class BaseAgent extends EventEmitter {
     private config: AgentConfig,
   ) {
     super();
+    if (config.platform) setPlatform(config.platform);
   }
 
   public registerPlugin(plugin: AgentPlugin): this {

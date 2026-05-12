@@ -3,6 +3,7 @@ import { join, resolve, relative, isAbsolute } from "node:path";
 import { rm, mkdir } from "node:fs/promises";
 import { logger } from "../logger.ts";
 import { appDataPath } from "../paths.ts";
+import { getPlatform } from "../platform/platform.ts";
 
 const NOTES_DIR = appDataPath("notes");
 
@@ -79,16 +80,15 @@ Use list_notes to see all saved notes, read_note to retrieve one, and delete_not
       }
       const path = safeNotePath(args.title);
       const content = `# ${args.title}\n\n${args.content}`;
-      await Bun.write(path, content);
+      await getPlatform().fs.write(path, content);
       logger.info("Notes", `create_note: ${path}`);
       return { success: true, path };
     }
 
     if (name === "list_notes") {
       await mkdir(NOTES_DIR, { recursive: true });
-      const glob = new Bun.Glob("*.md");
       const notes: string[] = [];
-      for await (const file of glob.scan(NOTES_DIR)) {
+      for await (const file of getPlatform().fs.glob("*.md", { cwd: NOTES_DIR })) {
         notes.push(file.replace(/\.md$/, ""));
       }
       return { notes, count: notes.length };
@@ -99,9 +99,9 @@ Use list_notes to see all saved notes, read_note to retrieve one, and delete_not
         return { error: "read_note requires string 'title'." };
       }
       const path = safeNotePath(args.title);
-      const file = Bun.file(path);
-      if (!(await file.exists())) return { error: `Note "${args.title}" not found.` };
-      return { title: args.title, content: await file.text() };
+      const fs = getPlatform().fs;
+      if (!(await fs.exists(path))) return { error: `Note "${args.title}" not found.` };
+      return { title: args.title, content: await fs.readText(path) };
     }
 
     if (name === "delete_note") {
@@ -109,8 +109,8 @@ Use list_notes to see all saved notes, read_note to retrieve one, and delete_not
         return { error: "delete_note requires string 'title'." };
       }
       const path = safeNotePath(args.title);
-      const file = Bun.file(path);
-      if (!(await file.exists())) return { error: `Note "${args.title}" not found.` };
+      const fs = getPlatform().fs;
+      if (!(await fs.exists(path))) return { error: `Note "${args.title}" not found.` };
       await rm(path);
       logger.info("Notes", `delete_note: ${path}`);
       return { success: true };

@@ -1,6 +1,7 @@
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { join, resolve, relative, isAbsolute, basename } from "node:path";
 import { unlink } from "node:fs/promises";
+import { getPlatform } from "../platform/platform.ts";
 
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024; // 100 MB
 const DOWNLOAD_TIMEOUT_MS = 60_000;
@@ -129,7 +130,7 @@ export class DownloadPlugin implements AgentPlugin {
     }
 
     const contentType = res.headers.get("content-type") ?? "application/octet-stream";
-    const bytesWritten = await Bun.write(savePath, res);
+    const bytesWritten = await getPlatform().fs.write(savePath, res);
 
     if (bytesWritten > MAX_DOWNLOAD_BYTES) {
       await unlink(savePath).catch(() => {});

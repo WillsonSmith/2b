@@ -23,6 +23,7 @@
  */
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
 import { logger } from "../logger.ts";
+import { getPlatform } from "../platform/platform.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdir, readdir, unlink, stat } from "node:fs/promises";
@@ -281,19 +282,19 @@ export class ScratchPlugin implements AgentPlugin {
       );
     }
     await this.ensureDir();
-    await Bun.write(filePath, content);
+    await getPlatform().fs.write(filePath, content);
     logger.debug("Scratch", `write: ${name} (${encoded.length} bytes)`);
     return { name, size: encoded.length };
   }
 
   private async scratchRead(name: string): Promise<{ name: string; content: string; size: number }> {
     const filePath = this.safePath(name);
-    const file = Bun.file(filePath);
-    if (!(await file.exists())) {
+    const fs = getPlatform().fs;
+    if (!(await fs.exists(filePath))) {
       throw new Error(`Scratch file not found: "${name}". Use scratch_list to see available files.`);
     }
-    const content = await file.text();
-    return { name, content, size: file.size };
+    const content = await fs.readText(filePath);
+    return { name, content, size: fs.size(filePath) };
   }
 
   private async scratchList(): Promise<{ files: Array<{ name: string; size: number }> }> {
