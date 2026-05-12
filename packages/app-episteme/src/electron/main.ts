@@ -162,6 +162,11 @@ async function openProjectWindow(
 
   windows.set(win, { process: proc, port, workspace });
   win.loadURL(`http://localhost:${port}`);
+
+  const title = workspace ? `${path.basename(workspace)} — Episteme` : "Episteme";
+  win.setTitle(title);
+  win.webContents.once("did-finish-load", () => win.setTitle(title));
+
   buildMenu();
 
   // Stub server (no workspace): exits with code 0 after the user picks a
@@ -194,8 +199,12 @@ function buildMenu(): void {
             click: async () => {
               addRecentWorkspace(p);
               buildMenu();
-              // Always open recents in a new window
-              await openProjectWindow(p);
+              try {
+                await openProjectWindow(p);
+              } catch (err) {
+                console.error("Failed to open recent project:", err);
+                dialog.showErrorBox("Failed to open project", String(err));
+              }
             },
           })),
           { type: "separator" as const },
@@ -249,10 +258,15 @@ function buildMenu(): void {
               const state = focused ? windows.get(focused) : undefined;
               // Stub window (no workspace yet): take over this window
               // Already has a workspace: open a new window
-              await openProjectWindow(
-                result.filePath,
-                !state?.workspace ? focused ?? undefined : undefined,
-              );
+              try {
+                await openProjectWindow(
+                  result.filePath,
+                  !state?.workspace ? focused ?? undefined : undefined,
+                );
+              } catch (err) {
+                console.error("Failed to open project:", err);
+                dialog.showErrorBox("Failed to open project", String(err));
+              }
             }
           },
         },
@@ -276,10 +290,15 @@ function buildMenu(): void {
               addRecentWorkspace(p);
               buildMenu();
               const state = focused ? windows.get(focused) : undefined;
-              await openProjectWindow(
-                p,
-                !state?.workspace ? focused ?? undefined : undefined,
-              );
+              try {
+                await openProjectWindow(
+                  p,
+                  !state?.workspace ? focused ?? undefined : undefined,
+                );
+              } catch (err) {
+                console.error("Failed to open project:", err);
+                dialog.showErrorBox("Failed to open project", String(err));
+              }
             }
           },
         },
