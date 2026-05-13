@@ -232,6 +232,15 @@ function App() {
     ws.interrupt();
   }, [ws]);
 
+  const onContinueFrom = useCallback((afterIndex, text) => {
+    setMessages((prev) => prev.slice(0, afterIndex + 1));
+    sendToAgent(text);
+  }, []);
+
+  const onDeleteMessage = useCallback((index: number) => {
+    setMessages((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   const searchCommands = useMemo<SearchCommand[]>(
     () => [
       { id: "toc", label: "Table of Contents", description: "Toggle TOC panel", action: () => setShowToc((v) => !v) },
@@ -811,13 +820,8 @@ function App() {
           onInterrupt={interrupt}
           onNavigate={fileManager.openFile}
           workspaceFiles={fileManager.workspaceFiles}
-          onContinueFrom={(afterIndex, text) => {
-            setMessages((prev) => prev.slice(0, afterIndex + 1));
-            sendToAgent(text);
-          }}
-          onDeleteMessage={(index) => {
-            setMessages((prev) => prev.filter((_, i) => i !== index));
-          }}
+          onContinueFrom={onContinueFrom}
+          onDeleteMessage={onDeleteMessage}
         />
       </div>
     </div>
