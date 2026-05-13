@@ -470,6 +470,21 @@ export function AISidecar({
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
+  const ml = useMemo(() => {
+
+    return <MessageList
+                  messages={messages}
+                  isThinking={isThinking}
+                  onSend={onSend}
+                  endRef={endRef}
+                  onNavigate={onNavigate}
+                  onContinueFrom={onContinueFrom}
+                  onDeleteMessage={onDeleteMessage}
+                />
+                // Temporarily removing onSend from deps due to causing re-renders
+                // These re-renders cause the editor to update text slowly when the sidecar is open
+  }, [messages, isThinking, /* onSend ,*/ onNavigate, onContinueFrom, onDeleteMessage])
+
   return (
     <>
       <div
@@ -499,15 +514,7 @@ export function AISidecar({
 
         {!collapsed && (
           <>
-            <MessageList
-              messages={messages}
-              isThinking={isThinking}
-              onSend={onSend}
-              endRef={endRef}
-              onNavigate={onNavigate}
-              onContinueFrom={onContinueFrom}
-              onDeleteMessage={onDeleteMessage}
-            />
+            {ml}
             <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
           </>
         )}
