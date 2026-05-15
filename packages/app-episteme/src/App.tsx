@@ -853,7 +853,9 @@ function App() {
                 onAmendSteps={planning.amendSteps}
                 onPause={planning.pausePlan}
                 onResume={planning.resumePlan}
+                onResumeAuto={planning.resumeAuto}
                 onCancel={planning.cancelPlan}
+                onNewPlan={planning.resetPlan}
               />
             ),
           });

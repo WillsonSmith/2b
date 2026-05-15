@@ -15,6 +15,7 @@ export type PlanMsg = Extract<
       | "plan_amend_steps"
       | "plan_pause"
       | "plan_resume"
+      | "plan_resume_auto"
       | "plan_cancel";
   }
 >;
@@ -69,6 +70,10 @@ export async function handlePlan(
 
     case "plan_resume":
       await planning.resume();
+      return;
+
+    case "plan_resume_auto":
+      await planning.resumeAuto();
       return;
 
     case "plan_cancel":

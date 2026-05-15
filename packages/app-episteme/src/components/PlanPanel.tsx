@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   X, Play, Pause, SkipForward, RotateCcw, Ban,
   Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen,
@@ -261,13 +261,15 @@ export interface PlanPanelProps {
   onAmendSteps: (planId: string, steps: PlanStepDraft[]) => void;
   onPause: () => void;
   onResume: () => void;
+  onResumeAuto: () => void;
   onCancel: () => void;
+  onNewPlan: () => void;
 }
 
 const PLAN_STATE_LABELS: Record<string, string> = {
   structuring:       "Structuring…",
   awaiting_approval: "Review plan",
-  awaiting_step:     "Awaiting step approval",
+  awaiting_step:     "Step-by-step",
   executing:         "Executing",
   step_failed:       "Step failed",
   paused:            "Paused",
@@ -279,9 +281,20 @@ export function PlanPanel({
   plan, activeFile, agentState,
   onClose, onRequestPlan, onRequestPlanFromDocument,
   onApprovePlan, onApproveStep, onRetryStep, onSkipStep,
-  onAmendSteps, onPause, onResume, onCancel,
+  onAmendSteps, onPause, onResume, onResumeAuto, onCancel, onNewPlan,
 }: PlanPanelProps) {
   const [editing, setEditing] = useState(false);
+  const [pausing, setPausing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+
+  // Reset transitional states when the server confirms the transition
+  useEffect(() => {
+    if (plan?.state === "paused" || plan?.state === "executing") setPausing(false);
+  }, [plan?.state]);
+
+  useEffect(() => {
+    if (plan?.state === "cancelled") setCancelling(false);
+  }, [plan?.state]);
 
   const currentStepId = plan?.steps.find(
     s => s.state === "running" || s.state === "awaiting_approval",
@@ -291,8 +304,105 @@ export function PlanPanel({
   const total = plan?.steps.length ?? 0;
   const progress = total > 0 ? (doneCount / total) * 100 : 0;
 
-  const isPlanActive = plan && !["complete", "cancelled"].includes(plan.state);
   const isStructuring = agentState === "structuring";
+
+  // Compute action bar content — returns null when the bar should be hidden entirely
+  const actionBarContent = (() => {
+    if (!plan) return null;
+
+    if (cancelling) {
+      return (
+        <span className="plan-cancelling-message">
+          <Loader2 size={14} className="plan-step-icon-spin" /> Cancelling…
+        </span>
+      );
+    }
+
+    switch (plan.state) {
+      case "awaiting_approval":
+        return (
+          <>
+            <button className="plan-btn plan-btn--primary" onClick={() => onApprovePlan(plan.id)}>
+              <Play size={13} /> Start plan
+            </button>
+            {!editing && (
+              <button className="plan-btn plan-btn--ghost" onClick={() => setEditing(true)}>
+                Edit steps
+              </button>
+            )}
+            <button className="plan-btn plan-btn--ghost" onClick={() => { setCancelling(true); onCancel(); }}>
+              <Ban size={13} /> Cancel
+            </button>
+          </>
+        );
+
+      case "executing":
+        return (
+          <button
+            className="plan-btn plan-btn--ghost"
+            onClick={() => { setPausing(true); onPause(); }}
+            disabled={pausing}
+          >
+            {pausing
+              ? <><Loader2 size={13} className="plan-step-icon-spin" /> Pausing…</>
+              : <><Pause size={13} /> Pause after step</>}
+          </button>
+        );
+
+      case "awaiting_step":
+        return (
+          <button className="plan-btn plan-btn--ghost plan-btn--sm" onClick={onResumeAuto}>
+            Run all remaining
+          </button>
+        );
+
+      case "paused":
+        return (
+          <>
+            <button className="plan-btn plan-btn--primary" onClick={onResume}>
+              <Play size={13} /> Resume
+            </button>
+            {plan.approvalMode === "per_step" && (
+              <button className="plan-btn plan-btn--ghost" onClick={onResumeAuto}>
+                Run all remaining
+              </button>
+            )}
+            <button className="plan-btn plan-btn--ghost" onClick={() => { setCancelling(true); onCancel(); }}>
+              <Ban size={13} /> Cancel
+            </button>
+          </>
+        );
+
+      case "step_failed":
+        return (
+          <button className="plan-btn plan-btn--ghost" onClick={() => { setCancelling(true); onCancel(); }}>
+            <Ban size={13} /> Cancel plan
+          </button>
+        );
+
+      case "complete":
+        return (
+          <>
+            <span className="plan-complete-message">
+              <CheckCircle2 size={14} /> Complete ({doneCount}/{total} steps)
+            </span>
+            <button className="plan-btn plan-btn--ghost plan-btn--sm" onClick={onNewPlan}>
+              New plan
+            </button>
+          </>
+        );
+
+      case "cancelled":
+        return (
+          <button className="plan-btn plan-btn--ghost" onClick={onNewPlan}>
+            <ClipboardList size={13} /> New plan
+          </button>
+        );
+
+      default:
+        return null;
+    }
+  })();
 
   return (
     <div className="plan-panel">
@@ -360,57 +470,10 @@ export function PlanPanel({
             </div>
           )}
 
-          <div className="plan-actions">
-            {plan.state === "awaiting_approval" && (
-              <>
-                <button className="plan-btn plan-btn--primary" onClick={() => onApprovePlan(plan.id)}>
-                  <Play size={13} /> Start plan
-                </button>
-                {!editing && (
-                  <button className="plan-btn plan-btn--ghost" onClick={() => setEditing(true)}>
-                    Edit steps
-                  </button>
-                )}
-                <button className="plan-btn plan-btn--ghost" onClick={onCancel}>
-                  <Ban size={13} /> Cancel
-                </button>
-              </>
-            )}
-
-            {plan.state === "executing" && (
-              <button className="plan-btn plan-btn--ghost" onClick={onPause}>
-                <Pause size={13} /> Pause after step
-              </button>
-            )}
-
-            {plan.state === "paused" && (
-              <>
-                <button className="plan-btn plan-btn--primary" onClick={onResume}>
-                  <Play size={13} /> Resume
-                </button>
-                <button className="plan-btn plan-btn--ghost" onClick={onCancel}>
-                  <Ban size={13} /> Cancel
-                </button>
-              </>
-            )}
-
-            {plan.state === "step_failed" && (
-              <button className="plan-btn plan-btn--ghost" onClick={onCancel}>
-                <Ban size={13} /> Cancel plan
-              </button>
-            )}
-
-            {plan.state === "complete" && (
-              <span className="plan-complete-message">
-                <CheckCircle2 size={14} /> Plan complete ({doneCount}/{total} steps)
-              </span>
-            )}
-          </div>
-
-          {isPlanActive && (
-            <button className="plan-new-btn" onClick={onCancel}>
-              Start a new plan
-            </button>
+          {actionBarContent && (
+            <div className="plan-actions">
+              {actionBarContent}
+            </div>
           )}
         </>
       )}

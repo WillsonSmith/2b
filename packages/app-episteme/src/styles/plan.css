@@ -448,23 +448,14 @@
   color: var(--green);
 }
 
-.plan-new-btn {
-  width: 100%;
-  padding: 0;
-  padding-bottom: 4px;
-  font-size: 10px;
-  color: var(--text-dim);
-  text-align: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  text-decoration: underline;
-  text-decoration-color: transparent;
-}
-.plan-new-btn:hover {
+.plan-cancelling-message {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
   color: var(--text-muted);
-  text-decoration-color: var(--text-muted);
 }
+
 
 /* ── Step editor ──────────────────────────────────────────────────────────── */
 

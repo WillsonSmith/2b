@@ -67,6 +67,7 @@ export type ClientMsg =
   | { type: "plan_amend_steps"; planId: string; steps: PlanStepDraft[] }
   | { type: "plan_pause" }
   | { type: "plan_resume" }
+  | { type: "plan_resume_auto" }
   | { type: "plan_cancel" };
 
 export type ServerMsg =
