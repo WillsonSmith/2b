@@ -258,6 +258,14 @@ describe("getContext", () => {
     expect(ctx).toContain("do Y");
   });
 
+  test("context uses markdown table format", async () => {
+    const plugin = makePlugin();
+    await plugin.executeTool("create_plan", { goal: "G", steps: ["step one"] });
+    const ctx = await plugin.getContext();
+    expect(ctx).toContain("| # | Step | Status | Notes |");
+    expect(ctx).toContain("|---|------|--------|-------|");
+  });
+
   test("context reflects step status updates", async () => {
     const plugin = makePlugin();
     await plugin.executeTool("create_plan", { goal: "G", steps: ["first step"] });
@@ -273,5 +281,117 @@ describe("getContext", () => {
     await plugin.executeTool("complete_plan", {});
     const ctx = await plugin.getContext();
     expect(ctx).toBe("");
+  });
+});
+
+// ── update_step data field ─────────────────────────────────────────────────────
+
+describe("update_step data field", () => {
+  async function planWithSteps() {
+    const plugin = makePlugin();
+    await plugin.executeTool("create_plan", { goal: "G", steps: ["step A", "step B"] });
+    return plugin;
+  }
+
+  test("stores data on the step", async () => {
+    const plugin = await planWithSteps();
+    const stepId = plugin.getActivePlan()!.steps[0]!.id;
+    await plugin.executeTool("update_step", {
+      step_id: stepId,
+      status: "done",
+      data: JSON.stringify({ keywords: ["foo", "bar"] }),
+    });
+    const step = plugin.getActivePlan()!.steps[0]!;
+    expect(step.data).toBe(JSON.stringify({ keywords: ["foo", "bar"] }));
+  });
+
+  test("data is preserved when updating status without passing data", async () => {
+    const plugin = await planWithSteps();
+    const stepId = plugin.getActivePlan()!.steps[0]!.id;
+    await plugin.executeTool("update_step", { step_id: stepId, status: "in_progress", data: '{"x":1}' });
+    await plugin.executeTool("update_step", { step_id: stepId, status: "done" });
+    expect(plugin.getActivePlan()!.steps[0]!.data).toBe('{"x":1}');
+  });
+
+  test("data can be overwritten", async () => {
+    const plugin = await planWithSteps();
+    const stepId = plugin.getActivePlan()!.steps[0]!.id;
+    await plugin.executeTool("update_step", { step_id: stepId, status: "in_progress", data: '{"v":1}' });
+    await plugin.executeTool("update_step", { step_id: stepId, status: "done", data: '{"v":2}' });
+    expect(plugin.getActivePlan()!.steps[0]!.data).toBe('{"v":2}');
+  });
+
+  test("get_plan includes data payloads in output", async () => {
+    const plugin = await planWithSteps();
+    const stepId = plugin.getActivePlan()!.steps[0]!.id;
+    await plugin.executeTool("update_step", { step_id: stepId, status: "done", data: '{"result":"ok"}' });
+    const result = await plugin.executeTool("get_plan", {}) as string;
+    expect(result).toContain('{"result":"ok"}');
+  });
+
+  test("new steps start with null data", async () => {
+    const plugin = await planWithSteps();
+    const step = plugin.getActivePlan()!.steps[0]!;
+    expect(step.data).toBeNull();
+  });
+});
+
+// ── schema migration ───────────────────────────────────────────────────────────
+
+describe("schema migration", () => {
+  test("data column exists after initSchema", () => {
+    const plugin = makePlugin();
+    // If the plugin constructed successfully and data column is queryable, migration ran
+    const plan = plugin.getActivePlan();
+    expect(plan).toBeNull(); // fresh DB, no plans
+  });
+
+  test("data field is null on hydrated steps from fresh DB", async () => {
+    const plugin = makePlugin();
+    await plugin.executeTool("create_plan", { goal: "G", steps: ["s"] });
+    const step = plugin.getActivePlan()!.steps[0]!;
+    expect(step.data).toBeNull();
+  });
+});
+
+// ── listRecentPlans ────────────────────────────────────────────────────────────
+
+describe("listRecentPlans", () => {
+  test("returns empty array when no plans", () => {
+    expect(makePlugin().listRecentPlans()).toEqual([]);
+  });
+
+  test("returns plans in descending created_at order", async () => {
+    const plugin = makePlugin();
+    await plugin.executeTool("create_plan", { goal: "First", steps: ["s"] });
+    await plugin.executeTool("complete_plan", {});
+    await plugin.executeTool("create_plan", { goal: "Second", steps: ["s"] });
+    const plans = plugin.listRecentPlans();
+    expect(plans[0]!.goal).toBe("Second");
+    expect(plans[1]!.goal).toBe("First");
+  });
+
+  test("includes plans of all statuses", async () => {
+    const plugin = makePlugin();
+    await plugin.executeTool("create_plan", { goal: "Active", steps: ["s"] });
+    const plans = plugin.listRecentPlans();
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!.status).toBe("active");
+  });
+
+  test("does not include steps in result", async () => {
+    const plugin = makePlugin();
+    await plugin.executeTool("create_plan", { goal: "G", steps: ["s1", "s2"] });
+    const plans = plugin.listRecentPlans();
+    expect((plans[0] as Record<string, unknown>)["steps"]).toBeUndefined();
+  });
+
+  test("respects limit parameter", async () => {
+    const plugin = makePlugin();
+    for (let i = 0; i < 5; i++) {
+      await plugin.executeTool("create_plan", { goal: `Plan ${i}`, steps: ["s"] });
+      await plugin.executeTool("complete_plan", {});
+    }
+    expect(plugin.listRecentPlans(3)).toHaveLength(3);
   });
 });

@@ -130,7 +130,7 @@ export async function startEpistemServer(
 ): Promise<void> {
   const {
     agent, editorContext, workspace, styleGuide, research,
-    citation, diagram, contradiction, workspaceDb,
+    citation, diagram, contradiction, workspaceDb, plan,
   } = bundle;
   const absRoot = resolve(workspaceRoot);
 
@@ -184,6 +184,7 @@ export async function startEpistemServer(
     diagram,
     styleGuide,
     contradiction,
+    plan,
     workspaceDb,
     config,
     absRoot,

@@ -1,5 +1,6 @@
 import type { ServerWebSocket } from "bun";
 import type { CortexAgent } from "@2b/framework/core/CortexAgent.ts";
+import type { PlanPlugin } from "@2b/framework/plugins/PlanPlugin.ts";
 import type { EpistemeConfig } from "../config.ts";
 import type { WorkspaceDb } from "../db/workspaceDb.ts";
 import type { EditorContextPlugin } from "../plugins/EditorContextPlugin.ts";
@@ -27,6 +28,7 @@ export interface WsContext {
   diagram: DiagramPlugin;
   styleGuide: StyleGuidePlugin;
   contradiction: ContradictionPlugin;
+  plan: PlanPlugin;
   workspaceDb: WorkspaceDb;
   config: EpistemeConfig;
   absRoot: string;

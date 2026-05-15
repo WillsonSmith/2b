@@ -84,6 +84,7 @@ export interface PlanStep {
   description: string;
   status: PlanStepStatus;
   notes: string | null;
+  data: string | null;
 }
 
 export interface Plan {

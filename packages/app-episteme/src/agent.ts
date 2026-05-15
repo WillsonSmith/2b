@@ -4,6 +4,7 @@ import { FileSystemPlugin } from "@2b/framework/plugins/FileSystemPlugin.ts";
 import { DynamicAgentPlugin } from "@2b/framework/plugins/DynamicAgentPlugin.ts";
 import { BehaviorPlugin } from "@2b/framework/plugins/BehaviorPlugin.ts";
 import { MemoryPlugin } from "@2b/framework/plugins/MemoryPlugin.ts";
+import { PlanPlugin } from "@2b/framework/plugins/PlanPlugin.ts";
 import { AutoApprovePermissionManager } from "@2b/framework/core/PermissionManager.ts";
 import { EditorContextPlugin } from "./plugins/EditorContextPlugin.ts";
 import { WorkspacePlugin } from "./plugins/WorkspacePlugin.ts";
@@ -12,7 +13,7 @@ import { StyleGuidePlugin } from "./plugins/StyleGuidePlugin.ts";
 import { DiagramPlugin } from "./plugins/DiagramPlugin.ts";
 import { CitationPlugin } from "./plugins/CitationPlugin.ts";
 import { ContradictionPlugin } from "./plugins/ContradictionPlugin.ts";
-import { workspaceDbPath } from "./paths.ts";
+import { workspaceDbPath, planDbPath } from "./paths.ts";
 import { WorkspaceDb } from "./db/workspaceDb.ts";
 import type { EpistemeConfig } from "./config.ts";
 
@@ -39,6 +40,7 @@ export interface EpistemeAgentBundle {
   contradiction: ContradictionPlugin;
   workspaceDb: WorkspaceDb;
   shortTermMemory: MemoryPlugin;
+  plan: PlanPlugin;
 }
 
 export function createEpistemAgent(
@@ -79,9 +81,12 @@ export function createEpistemAgent(
     workspaceDb,
   );
 
+  const plan = new PlanPlugin(planDbPath(workspaceRoot));
+
   const shortTermMemory = new MemoryPlugin(llm, { minMessages: 10, maxMessages: 15 });
   agent.registerPlugin(shortTermMemory);
   agent.registerPlugin(new BehaviorPlugin(agent.memoryPlugin, llm));
+  agent.registerPlugin(plan);
   agent.registerPlugin(new FileSystemPlugin({ allowedRoots: [workspaceRoot] }));
   agent.registerPlugin(editorContext);
   agent.registerPlugin(workspace);
@@ -108,5 +113,6 @@ export function createEpistemAgent(
     contradiction,
     workspaceDb,
     shortTermMemory,
+    plan,
   };
 }

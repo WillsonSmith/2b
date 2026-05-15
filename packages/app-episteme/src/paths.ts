@@ -37,3 +37,8 @@ export function globalEpistemePath(): string {
 export function globalDbPath(): string {
   return join(globalEpistemePath(), "global.sqlite");
 }
+
+/** SQLite DB path for the per-workspace plan store. */
+export function planDbPath(workspaceRoot: string): string {
+  return join(workspaceEpistemePath(workspaceRoot), "plans.sqlite");
+}
