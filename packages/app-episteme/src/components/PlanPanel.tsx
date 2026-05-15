@@ -3,7 +3,7 @@ import {
   X, Play, Pause, SkipForward, RotateCcw, Ban,
   Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen,
   ChevronDown, ChevronRight, Loader2, CheckCircle2, AlertCircle, Circle,
-  ClipboardList,
+  ClipboardList, PencilLine, Check,
 } from "lucide-react";
 import type { EpistemePlan, EpistemePlanStep, EpistemePlanStepType, PlanStepDraft, PlanApprovalMode } from "../planning/types.ts";
 
@@ -44,10 +44,13 @@ interface StepRowProps {
   onApproveStep: (planId: string, stepId: string) => void;
   onRetry: (planId: string, stepId: string) => void;
   onSkip: (planId: string, stepId: string) => void;
+  onEditSummary: (planId: string, stepId: string, summary: string) => void;
 }
 
-function StepRow({ step, index, isCurrent, planState, planId, onApproveStep, onRetry, onSkip }: StepRowProps) {
+function StepRow({ step, index, isCurrent, planState, planId, onApproveStep, onRetry, onSkip, onEditSummary }: StepRowProps) {
   const [expanded, setExpanded] = useState(false);
+  const [editingSummary, setEditingSummary] = useState(false);
+  const [summaryDraft, setSummaryDraft] = useState("");
   const Icon = STEP_TYPE_ICONS[step.type];
 
   const stateIcon = () => {
@@ -62,6 +65,19 @@ function StepRow({ step, index, isCurrent, planState, planId, onApproveStep, onR
   };
 
   const isExpandable = step.state === "complete" && (step.contextSummary || step.fullResult);
+
+  const startEditing = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSummaryDraft(step.contextSummary ?? "");
+    setEditingSummary(true);
+  };
+
+  const saveSummary = () => {
+    onEditSummary(planId, step.id, summaryDraft.trim());
+    setEditingSummary(false);
+  };
+
+  const cancelEditing = () => setEditingSummary(false);
 
   return (
     <div className={`plan-step${isCurrent ? " plan-step--current" : ""}${step.state === "failed" ? " plan-step--failed" : ""}`}>
@@ -79,7 +95,38 @@ function StepRow({ step, index, isCurrent, planState, planId, onApproveStep, onR
       </div>
 
       {expanded && step.contextSummary && (
-        <div className="plan-step-summary">{step.contextSummary}</div>
+        <div className="plan-step-summary">
+          {editingSummary ? (
+            <div className="plan-step-summary-editor">
+              <textarea
+                className="plan-editor-instruction-input"
+                value={summaryDraft}
+                rows={3}
+                autoFocus
+                onChange={e => setSummaryDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) saveSummary();
+                  if (e.key === "Escape") cancelEditing();
+                }}
+              />
+              <div className="plan-step-summary-edit-actions">
+                <button className="plan-btn plan-btn--primary plan-btn--sm" onClick={saveSummary}>
+                  <Check size={11} /> Save
+                </button>
+                <button className="plan-btn plan-btn--ghost plan-btn--sm" onClick={cancelEditing}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="plan-step-summary-text">
+              <span>{step.contextSummary}</span>
+              <button className="plan-step-summary-edit-btn" onClick={startEditing} title="Edit context summary">
+                <PencilLine size={11} />
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {step.state === "failed" && step.error && (
@@ -259,6 +306,7 @@ export interface PlanPanelProps {
   onRetryStep: (planId: string, stepId: string) => void;
   onSkipStep: (planId: string, stepId: string) => void;
   onAmendSteps: (planId: string, steps: PlanStepDraft[]) => void;
+  onEditStepSummary: (planId: string, stepId: string, summary: string) => void;
   onPause: () => void;
   onResume: () => void;
   onResumeAuto: () => void;
@@ -281,7 +329,7 @@ export function PlanPanel({
   plan, activeFile, agentState,
   onClose, onRequestPlan, onRequestPlanFromDocument,
   onApprovePlan, onApproveStep, onRetryStep, onSkipStep,
-  onAmendSteps, onPause, onResume, onResumeAuto, onCancel, onNewPlan,
+  onAmendSteps, onEditStepSummary, onPause, onResume, onResumeAuto, onCancel, onNewPlan,
 }: PlanPanelProps) {
   const [editing, setEditing] = useState(false);
   const [pausing, setPausing] = useState(false);
@@ -465,6 +513,7 @@ export function PlanPanel({
                   onApproveStep={onApproveStep}
                   onRetry={onRetryStep}
                   onSkip={onSkipStep}
+                  onEditSummary={onEditStepSummary}
                 />
               ))}
             </div>

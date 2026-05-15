@@ -364,6 +364,51 @@
   padding-top: 8px;
 }
 
+/* ── Step summary editor ──────────────────────────────────────────────────── */
+
+.plan-step-summary-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.plan-step-summary-text span {
+  flex: 1;
+}
+
+.plan-step-summary-edit-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+}
+.plan-step-summary:hover .plan-step-summary-edit-btn {
+  opacity: 1;
+}
+.plan-step-summary-edit-btn:hover {
+  color: var(--text-muted);
+  background: var(--bg-highlight);
+}
+
+.plan-step-summary-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plan-step-summary-edit-actions {
+  display: flex;
+  gap: 5px;
+}
+
 /* ── Step error state ─────────────────────────────────────────────────────── */
 
 .plan-step-error {

@@ -11,6 +11,7 @@ export interface UsePlanningReturn {
   retryStep: (planId: string, stepId: string) => void;
   skipStep: (planId: string, stepId: string) => void;
   amendSteps: (planId: string, steps: PlanStepDraft[]) => void;
+  editStepSummary: (planId: string, stepId: string, summary: string) => void;
   pausePlan: () => void;
   resumePlan: () => void;
   resumeAuto: () => void;
@@ -110,6 +111,10 @@ export function usePlanning(
     send({ type: "plan_amend_steps", planId, steps });
   }, [send]);
 
+  const editStepSummary = useCallback((planId: string, stepId: string, summary: string) => {
+    send({ type: "plan_edit_step_summary", planId, stepId, summary });
+  }, [send]);
+
   const pausePlan = useCallback(() => {
     send({ type: "plan_pause" });
   }, [send]);
@@ -139,6 +144,7 @@ export function usePlanning(
     retryStep,
     skipStep,
     amendSteps,
+    editStepSummary,
     pausePlan,
     resumePlan,
     resumeAuto,

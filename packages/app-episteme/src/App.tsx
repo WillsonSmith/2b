@@ -851,6 +851,7 @@ function App() {
                 onRetryStep={planning.retryStep}
                 onSkipStep={planning.skipStep}
                 onAmendSteps={planning.amendSteps}
+                onEditStepSummary={planning.editStepSummary}
                 onPause={planning.pausePlan}
                 onResume={planning.resumePlan}
                 onResumeAuto={planning.resumeAuto}
