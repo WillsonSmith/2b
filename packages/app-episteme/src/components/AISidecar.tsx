@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import { Copy, Check, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, ChevronLeft, ChevronRight, X, Square, Circle, CircleDashed, CircleDot, Trash2 } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
 import { usePanelResize } from "../hooks/usePanelResize.ts";
@@ -91,7 +91,7 @@ interface MessageListProps {
   onDeleteMessage?: (index: number) => void;
 }
 
-function MessageList({ messages, isThinking, onSend, endRef, onNavigate, onContinueFrom, onDeleteMessage }: MessageListProps) {
+const MessageList = memo(function MessageList({ messages, isThinking, onSend, endRef, onNavigate, onContinueFrom, onDeleteMessage }: MessageListProps) {
   return (
     <div className="sidecar-messages">
       {messages.length === 0 && (
@@ -188,7 +188,7 @@ function MessageList({ messages, isThinking, onSend, endRef, onNavigate, onConti
       <div ref={endRef} />
     </div>
   );
-}
+});
 
 // ── Mention helpers ───────────────────────────────────────────────────────────
 
@@ -466,6 +466,25 @@ export function AISidecar({
   const endRef = useRef<HTMLDivElement | null>(null);
   const { width, handleMouseDown, isDragging } = usePanelResize(300, "ai-sidecar");
 
+  // Keep latest callbacks in refs so MessageList (which is memo'd) never re-renders
+  // just because App re-renders and produces new function references.
+  const onSendRef = useRef(onSend);
+  onSendRef.current = onSend;
+  const onContinueFromRef = useRef(onContinueFrom);
+  onContinueFromRef.current = onContinueFrom;
+  const onDeleteMessageRef = useRef(onDeleteMessage);
+  onDeleteMessageRef.current = onDeleteMessage;
+  const onNavigateRef = useRef(onNavigate);
+  onNavigateRef.current = onNavigate;
+
+  const stableSend = useCallback((text: string) => onSendRef.current(text), []);
+  const stableContinueFrom = useCallback(
+    (idx: number, text: string) => onContinueFromRef.current?.(idx, text),
+    [],
+  );
+  const stableDeleteMessage = useCallback((idx: number) => onDeleteMessageRef.current?.(idx), []);
+  const stableNavigate = useCallback((path: string) => onNavigateRef.current?.(path), []);
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
@@ -502,13 +521,13 @@ export function AISidecar({
             <MessageList
               messages={messages}
               isThinking={isThinking}
-              onSend={onSend}
+              onSend={stableSend}
               endRef={endRef}
-              onNavigate={onNavigate}
-              onContinueFrom={onContinueFrom}
-              onDeleteMessage={onDeleteMessage}
+              onNavigate={stableNavigate}
+              onContinueFrom={stableContinueFrom}
+              onDeleteMessage={stableDeleteMessage}
             />
-            <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
+            <ChatInput isThinking={isThinking} agentState={agentState} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
           </>
         )}
       </div>
@@ -518,13 +537,13 @@ export function AISidecar({
           messages={messages}
           isThinking={isThinking}
           agentState={agentState}
-          onSend={onSend}
+          onSend={stableSend}
           onInterrupt={onInterrupt}
           onClose={() => setExpanded(false)}
-          onNavigate={onNavigate}
+          onNavigate={stableNavigate}
           workspaceFiles={workspaceFiles}
-          onContinueFrom={onContinueFrom}
-          onDeleteMessage={onDeleteMessage}
+          onContinueFrom={stableContinueFrom}
+          onDeleteMessage={stableDeleteMessage}
         />
       )}
     </>

@@ -135,6 +135,15 @@ function createWindow(): BrowserWindow {
     buildMenu();
   });
 
+  win.webContents.on('will-navigate', (event, url) => {
+    let requestedHost = new URL(url).host;
+    let currentHost = new URL(win.webContents.getURL()).host;
+    if (requestedHost !== currentHost) {
+      event.preventDefault();
+      shell.openExternal(url)
+    }
+  });
+
   return win;
 }
 
