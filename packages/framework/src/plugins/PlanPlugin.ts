@@ -159,15 +159,15 @@ export class PlanPlugin implements AgentPlugin {
 
   private formatPlan(plan: Plan): string {
     const rows = plan.steps.map((s, i) => {
-      const desc = s.description.length > 80 ? s.description.slice(0, 79) + "…" : s.description;
+      const desc = s.description.length > 70 ? s.description.slice(0, 69) + "…" : s.description;
       const notes = s.notes ?? "";
-      return `| ${i + 1} | ${desc} | ${s.status} | ${notes} |`;
+      return `| ${i + 1} | \`${s.id.slice(0, 8)}\` | ${desc} | ${s.status} | ${notes} |`;
     });
     return [
       `**Plan:** ${plan.goal}  (ID: ${plan.id.slice(0, 8)})`,
       "",
-      "| # | Step | Status | Notes |",
-      "|---|------|--------|-------|",
+      "| # | Step ID | Step | Status | Notes |",
+      "|---|---------|------|--------|-------|",
       ...rows,
     ].join("\n");
   }
@@ -179,11 +179,11 @@ export class PlanPlugin implements AgentPlugin {
       "## Planning",
       "You have a structured plan system. Use it for any multi-step goal (3+ ordered steps).",
       "  create_plan   — define a goal and ordered steps; replaces any active plan",
-      "  update_step   — mark a step in_progress / done / skipped / failed; store human-readable outcome in `notes` and structured JSON output in `data` for downstream steps",
+      "  update_step   — advance a step; `step_id` is the 8-char ID from the Step ID column of the plan table (e.g. `a1b2c3d4`); add human notes in `notes` and structured JSON output in `data` for downstream steps",
       "  complete_plan — mark the current plan completed when all steps are done",
       "  abandon_plan  — cancel the current plan",
       "  get_plan      — inspect the full plan including step data payloads",
-      "Always call update_step to advance step status as you work. Store step outputs in `data` as JSON; read prior step data via get_plan, then parse the field. The current plan is shown as a table in context every turn.",
+      "The current plan is injected as a table every turn. The Step ID column contains the ID required by update_step — always use that value, never a position number.",
     ].join("\n");
   }
 

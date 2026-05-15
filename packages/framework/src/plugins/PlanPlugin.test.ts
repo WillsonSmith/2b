@@ -258,12 +258,15 @@ describe("getContext", () => {
     expect(ctx).toContain("do Y");
   });
 
-  test("context uses markdown table format", async () => {
+  test("context uses markdown table format with step IDs", async () => {
     const plugin = makePlugin();
     await plugin.executeTool("create_plan", { goal: "G", steps: ["step one"] });
     const ctx = await plugin.getContext();
-    expect(ctx).toContain("| # | Step | Status | Notes |");
-    expect(ctx).toContain("|---|------|--------|-------|");
+    expect(ctx).toContain("| # | Step ID | Step | Status | Notes |");
+    expect(ctx).toContain("|---|---------|------|--------|-------|");
+    // Step ID must appear in the table rows so the AI can call update_step
+    const stepId = plugin.getActivePlan()!.steps[0]!.id.slice(0, 8);
+    expect(ctx).toContain(stepId);
   });
 
   test("context reflects step status updates", async () => {
