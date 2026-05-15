@@ -96,6 +96,27 @@ export class MemoryPlugin implements AgentPlugin {
   }
 
   /**
+   * Pre-loads a slice of prior history so the agent has context on first turn.
+   * Takes the last MIN_MESSAGES items from `messages`, advancing the start
+   * until it lands on a `user` message (preserving the invariant that history
+   * never begins with an assistant turn). Safe to call before `onInit`.
+   */
+  seed(messages: Array<{ role: "user" | "assistant"; content: string }>): void {
+    const tail =
+      messages.length > this.MIN_MESSAGES
+        ? messages.slice(messages.length - this.MIN_MESSAGES)
+        : [...messages];
+    let firstUser = tail.findIndex((m) => m.role === "user");
+    this.messages = firstUser === -1 ? [] : tail.slice(firstUser);
+  }
+
+  /** Resets short-term history. Call when switching sessions. */
+  clear(): void {
+    this.messages = [];
+    this.systemMessage = null;
+  }
+
+  /**
    * Condenses old messages into a structured summary and trims the history.
    * Runs after each turn (triggered via state_change → idle).
    * Uses the agent's last assembled system prompt so the summarizer has full

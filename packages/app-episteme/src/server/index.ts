@@ -135,6 +135,10 @@ export async function startEpistemServer(
 
   await agent.start();
 
+  bundle.shortTermMemory.seed(
+    bundle.workspaceDb.listChatMessages(200).map((r) => ({ role: r.role, content: r.text })),
+  );
+
   const autocomplete = new AutocompleteRunner(config);
   const linter = new LintRunner(config);
 

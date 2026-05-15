@@ -40,6 +40,7 @@ export function useChatSessions({
   const pendingSaveRef = useRef<(() => void) | null>(null);
   const activeIdRef = useRef(activeId);
   const loadedCountRef = useRef(0);
+  const seededSessionRef = useRef("");
   useEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
@@ -65,6 +66,14 @@ export function useChatSessions({
   useEffect(() => {
     refreshSessions();
   }, [refreshSessions]);
+
+  // Seed the agent's short-term memory whenever the active session changes or
+  // the WebSocket reconnects (covers server restarts and session switches).
+  useEffect(() => {
+    if (!activeId || !ws.connected || seededSessionRef.current === activeId) return;
+    seededSessionRef.current = activeId;
+    ws.send({ type: "session_load", sessionId: activeId });
+  }, [activeId, ws.connected, ws.send]);
 
   // Ensure an active session exists on first load
   useEffect(() => {
@@ -149,6 +158,8 @@ export function useChatSessions({
     async (id: string) => {
       flushSave();
       ws.send({ type: "clear" });
+      ws.send({ type: "session_load", sessionId: id });
+      seededSessionRef.current = id;
       const res = await fetch(`/api/sessions/${id}/messages`);
       const msgs = res.ok ? ((await res.json()) as ChatMessage[]) : [];
       loadedCountRef.current = msgs.length;
