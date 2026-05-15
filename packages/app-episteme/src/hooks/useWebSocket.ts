@@ -81,6 +81,7 @@ export function useWebSocket(): UseWebSocketReturn {
       case "alt_text":
       case "explain_code_result":
       case "transcript":
+      case "file_externally_changed":
       case "error":
         break;
       default:
