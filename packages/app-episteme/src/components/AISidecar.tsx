@@ -14,7 +14,7 @@ export type SidecarMessage =
 interface AISidecarProps {
   messages: SidecarMessage[];
   isThinking: boolean;
-  agentState: "idle" | "thinking" | "disconnected";
+  agentState: string;
   collapsed: boolean;
   onToggle: () => void;
   onSend: (text: string) => void;
@@ -213,7 +213,7 @@ function insertMention(
 
 interface ChatInputProps {
   isThinking: boolean;
-  agentState: "idle" | "thinking" | "disconnected";
+  agentState: string;
   onSend: (text: string) => void;
   onInterrupt: () => void;
   workspaceFiles?: string[];
@@ -406,7 +406,7 @@ function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles
 interface ChatModalProps {
   messages: SidecarMessage[];
   isThinking: boolean;
-  agentState: "idle" | "thinking" | "disconnected";
+  agentState: string;
   onSend: (text: string) => void;
   onInterrupt: () => void;
   onClose: () => void;

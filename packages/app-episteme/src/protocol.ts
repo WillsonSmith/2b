@@ -13,8 +13,17 @@ import type { UnifiedSearchResponse } from "./plugins/ResearchPlugin.ts";
 import type { CitationCheckResult } from "./plugins/CitationPlugin.ts";
 import type { ContradictionRecord } from "./plugins/ContradictionPlugin.ts";
 import type { GraphData } from "./plugins/WorkspacePlugin.ts";
+import type { EpistemePlan, PlanStepDraft } from "./planning/types.ts";
 
-export type AgentRunState = "idle" | "thinking";
+export type AgentRunState =
+  | "idle"
+  | "thinking"
+  | "structuring"
+  | "awaiting_approval"
+  | "awaiting_step"
+  | "executing"
+  | "step_failed"
+  | "paused";
 
 export type ClientMsg =
   | { type: "send"; text: string }
@@ -48,7 +57,17 @@ export type ClientMsg =
   | { type: "explain_code"; code: string; language: string }
   | { type: "voice_data"; audioBase64: string; mimeType: string }
   | { type: "lint_request"; content: string }
-  | { type: "open_in_finder"; path: string };
+  | { type: "open_in_finder"; path: string }
+  | { type: "plan_request"; goal: string; approvalMode: "all" | "per_step" }
+  | { type: "plan_from_document"; path: string; goal: string; approvalMode: "all" | "per_step" }
+  | { type: "plan_approve"; planId: string }
+  | { type: "plan_approve_step"; planId: string; stepId: string }
+  | { type: "plan_retry_step"; planId: string; stepId: string }
+  | { type: "plan_skip_step"; planId: string; stepId: string }
+  | { type: "plan_amend_steps"; planId: string; steps: PlanStepDraft[] }
+  | { type: "plan_pause" }
+  | { type: "plan_resume" }
+  | { type: "plan_cancel" };
 
 export type ServerMsg =
   | { type: "speak"; text: string }
@@ -82,7 +101,13 @@ export type ServerMsg =
   | { type: "explain_code_result"; explanation: string }
   | { type: "transcript"; text: string }
   | { type: "file_externally_changed"; path: string; content: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "plan_created"; plan: EpistemePlan }
+  | { type: "plan_updated"; plan: EpistemePlan }
+  | { type: "plan_step_started"; planId: string; stepId: string }
+  | { type: "plan_step_completed"; planId: string; stepId: string; summary: string }
+  | { type: "plan_step_failed"; planId: string; stepId: string; error: string }
+  | { type: "plan_complete"; planId: string };
 
 export function assertNever(x: never): never {
   throw new Error(`Unhandled protocol message: ${JSON.stringify(x)}`);
