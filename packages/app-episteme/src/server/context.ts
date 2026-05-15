@@ -38,4 +38,5 @@ export interface WsContext {
   collectSubdirectories: () => Promise<string[]>;
   resolveWorkspacePath: (path: string) => string | null;
   scheduleWorkspaceRefresh: () => void;
+  suppressExternalChange: (absolutePath: string) => void;
 }
