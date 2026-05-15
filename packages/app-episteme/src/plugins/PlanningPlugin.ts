@@ -64,6 +64,11 @@ export class PlanningPlugin implements AgentPlugin {
       "Complete this step thoroughly. Your response will be recorded as the step result.",
     ];
 
+    if (plan.priorContext) {
+      lines.push("", "**Context from previous plan:**");
+      lines.push(plan.priorContext);
+    }
+
     if (completedSteps.length > 0) {
       lines.push("", "**Context from completed steps:**");
       for (const s of completedSteps) {

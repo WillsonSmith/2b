@@ -129,7 +129,7 @@ interface TocEntryRecord {
   content_hash: string;
 }
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /**
  * Structural data store for the Episteme workspace: files, link edges,
@@ -326,6 +326,7 @@ export class WorkspaceDb {
         approval_mode TEXT NOT NULL DEFAULT 'all',
         trigger       TEXT NOT NULL DEFAULT 'user_goal',
         trigger_doc   TEXT,
+        prior_context TEXT,
         created_at    INTEGER NOT NULL,
         started_at    INTEGER,
         completed_at  INTEGER
@@ -355,6 +356,9 @@ export class WorkspaceDb {
         INSERT INTO ws_files_fts(rowid, rel_path, first_line, content)
         SELECT rowid, rel_path, first_line, content FROM ws_files
       `);
+    }
+    if (previousVersion > 0 && previousVersion < 7) {
+      try { this.db.run("ALTER TABLE ep_plans ADD COLUMN prior_context TEXT"); } catch {}
     }
     if (previousVersion > 0 && previousVersion < SCHEMA_VERSION) {
       this.db.run("UPDATE ws_schema_version SET version = ?", [SCHEMA_VERSION]);
@@ -478,8 +482,8 @@ export class WorkspaceDb {
     );
 
     this.stmtInsertPlan = this.db.prepare(`
-      INSERT INTO ep_plans (id, goal, state, approval_mode, trigger, trigger_doc, created_at, started_at, completed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO ep_plans (id, goal, state, approval_mode, trigger, trigger_doc, prior_context, created_at, started_at, completed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     this.stmtGetPlan = this.db.prepare("SELECT * FROM ep_plans WHERE id = ?");
     this.stmtGetActivePlan = this.db.prepare(
@@ -717,6 +721,7 @@ export class WorkspaceDb {
       this.stmtInsertPlan.run(
         plan.id, plan.goal, plan.state, plan.approvalMode,
         plan.trigger, plan.triggerDocument ?? null,
+        plan.priorContext ?? null,
         plan.createdAt, plan.startedAt ?? null, plan.completedAt ?? null,
       );
       for (const step of plan.steps) {
@@ -791,6 +796,7 @@ export class WorkspaceDb {
       approvalMode: row.approval_mode as PlanApprovalMode,
       trigger: row.trigger as "user_goal" | "document",
       triggerDocument: row.trigger_doc ?? undefined,
+      priorContext: row.prior_context ?? undefined,
       steps,
       createdAt: row.created_at,
       startedAt: row.started_at ?? undefined,
@@ -810,6 +816,7 @@ interface PlanRow {
   approval_mode: string;
   trigger: string;
   trigger_doc: string | null;
+  prior_context: string | null;
   created_at: number;
   started_at: number | null;
   completed_at: number | null;

@@ -58,8 +58,8 @@ export type ClientMsg =
   | { type: "voice_data"; audioBase64: string; mimeType: string }
   | { type: "lint_request"; content: string }
   | { type: "open_in_finder"; path: string }
-  | { type: "plan_request"; goal: string; approvalMode: "all" | "per_step" }
-  | { type: "plan_from_document"; path: string; goal: string; approvalMode: "all" | "per_step" }
+  | { type: "plan_request"; goal: string; approvalMode: "all" | "per_step"; previousPlanId?: string }
+  | { type: "plan_from_document"; path: string; goal: string; approvalMode: "all" | "per_step"; previousPlanId?: string }
   | { type: "plan_approve"; planId: string }
   | { type: "plan_approve_step"; planId: string; stepId: string }
   | { type: "plan_retry_step"; planId: string; stepId: string }

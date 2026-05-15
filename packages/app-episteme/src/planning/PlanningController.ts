@@ -74,10 +74,30 @@ export class PlanningController {
     goal: string,
     approvalMode: "all" | "per_step",
     triggerDocument?: string,
+    previousPlanId?: string,
   ): Promise<void> {
     this.broadcast({ type: "state_change", state: "structuring" });
 
+    // Build prior context from the previous plan's completed steps
+    let priorContext: string | undefined;
+    if (previousPlanId) {
+      const prev = this.workspaceDb.getPlan(previousPlanId);
+      if (prev) {
+        const completedSteps = prev.steps.filter(s => s.state === "complete" && s.contextSummary);
+        if (completedSteps.length > 0) {
+          const lines = [`Previous plan: "${prev.goal}"`, "Steps completed:"];
+          for (const s of completedSteps) {
+            lines.push(`- [${s.type}] ${s.title}: ${s.contextSummary}`);
+          }
+          priorContext = lines.join("\n");
+        }
+      }
+    }
+
     let prompt = `Goal: ${goal}`;
+    if (priorContext) {
+      prompt += `\n\n${priorContext}`;
+    }
     if (triggerDocument) {
       try {
         const content = await Bun.file(triggerDocument).text();
@@ -133,6 +153,7 @@ export class PlanningController {
       approvalMode,
       trigger: triggerDocument ? "document" : "user_goal",
       triggerDocument,
+      priorContext,
       steps,
       createdAt: now,
     };

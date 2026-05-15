@@ -49,6 +49,7 @@ export interface EpistemePlan {
   approvalMode: PlanApprovalMode;
   trigger: "user_goal" | "document";
   triggerDocument?: string;
+  priorContext?: string;
   steps: EpistemePlanStep[];
   createdAt: number;
   startedAt?: number;
