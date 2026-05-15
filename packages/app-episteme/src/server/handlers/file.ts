@@ -15,7 +15,7 @@ export async function handleFile(
   ctx: WsContext,
   ws: ServerWebSocket<unknown>,
 ): Promise<void> {
-  const { send, absRoot, collectMarkdownFiles, collectSubdirectories, resolveWorkspacePath, workspaceDb } = ctx;
+  const { send, absRoot, collectMarkdownFiles, collectSubdirectories, resolveWorkspacePath, workspaceDb, suppressExternalChange } = ctx;
 
   async function sendWorkspaceFiles() {
     const [files, folders] = await Promise.all([collectMarkdownFiles(), collectSubdirectories()]);
@@ -64,6 +64,7 @@ export async function handleFile(
         return;
       }
       try {
+        suppressExternalChange(absolute);
         await Bun.write(absolute, msg.content);
         send(ws, { type: "file_saved" });
       } catch {

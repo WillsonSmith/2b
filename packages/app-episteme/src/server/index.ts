@@ -14,6 +14,7 @@ import type { ServerWebSocket } from "bun";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 import { mkdir, readdir } from "node:fs/promises";
+import { watch } from "node:fs";
 import type { EpistemeAgentBundle } from "../agent.ts";
 import type { EpistemeConfig } from "../config.ts";
 import { saveConfig } from "../config.ts";
@@ -153,6 +154,10 @@ export async function startEpistemServer(
     ws.send(JSON.stringify(msg));
   }
 
+  // Tracks absolute paths that were just written by Episteme itself so the
+  // file watcher can skip events caused by our own saves.
+  const recentSelfWrites = new Map<string, number>();
+
   // Debounce workspace file-list broadcasts so rapid consecutive tool calls
   // don't each trigger a full directory scan.
   let workspaceRefreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -190,6 +195,9 @@ export async function startEpistemServer(
     collectSubdirectories: () => collectSubdirectories(absRoot),
     resolveWorkspacePath,
     scheduleWorkspaceRefresh,
+    suppressExternalChange: (absolutePath: string) => {
+      recentSelfWrites.set(absolutePath, Date.now());
+    },
   };
 
   workspace.setIndexProgressListener((indexed, total) => {
@@ -201,6 +209,19 @@ export async function startEpistemServer(
   };
   // Initial index after the listener is wired so connected clients see progress.
   await workspace.index();
+
+  watch(absRoot, { recursive: true }, async (_, filename) => {
+    if (typeof filename !== "string" || !filename.endsWith(".md")) return;
+    const absPath = join(absRoot, filename);
+    const suppressedAt = recentSelfWrites.get(absPath);
+    if (suppressedAt !== undefined && Date.now() - suppressedAt < 2000) return;
+    try {
+      const content = await Bun.file(absPath).text();
+      broadcast({ type: "file_externally_changed", path: filename, content });
+    } catch {
+      // file deleted or temporarily unreadable — ignore
+    }
+  });
 
   agent.on("speak", (text) => {
     workspaceDb.appendChatMessage("assistant", text);

@@ -22,11 +22,14 @@ export function useFileManager(
   const [isPickingWorkspace, setIsPickingWorkspace] = useState(false);
 
   const [autosaveEnabled, setAutosaveEnabled] = useState(true);
+  const [externalContent, setExternalContent] = useState<string | null>(null);
 
   const editorContentRef = useRef(editorContent);
   editorContentRef.current = editorContent;
   const activeFileRef = useRef(activeFile);
   activeFileRef.current = activeFile;
+  const isDirtyRef = useRef(isDirty);
+  isDirtyRef.current = isDirty;
 
   const debouncedContent = useDebounce(editorContent, 500);
   const lastSentHashRef = useRef<string>("");
@@ -111,6 +114,15 @@ export function useFileManager(
     wsRef.current?.send(JSON.stringify({ type: "open_in_finder", path }));
   }, [wsRef]);
 
+  const resolveExternalConflict = useCallback((choice: "reload" | "keep") => {
+    if (choice === "reload" && externalContent !== null) {
+      setEditorContent(externalContent);
+      setSavedContent(externalContent);
+      setIsDirty(false);
+    }
+    setExternalContent(null);
+  }, [externalContent]);
+
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
@@ -132,6 +144,7 @@ export function useFileManager(
       setEditorContent(msg.content);
       setSavedContent(msg.content);
       setIsDirty(false);
+      setExternalContent(null);
     });
     const unsubCreated = subscribe("file_created", (msg) => {
       setActiveFile(msg.path);
@@ -146,12 +159,23 @@ export function useFileManager(
       setSavedContent(editorContentRef.current);
       setIsDirty(false);
     });
+    const unsubExternal = subscribe("file_externally_changed", (msg) => {
+      if (msg.path !== activeFileRef.current) return;
+      if (!isDirtyRef.current) {
+        setEditorContent(msg.content);
+        setSavedContent(msg.content);
+        setIsDirty(false);
+      } else {
+        setExternalContent(msg.content);
+      }
+    });
     return () => {
       unsubFiles();
       unsubContent();
       unsubCreated();
       unsubRenamed();
       unsubSaved();
+      unsubExternal();
     };
   }, [subscribe]);
 
@@ -206,5 +230,7 @@ export function useFileManager(
     refreshFiles,
     openInFinder,
     handleOpenWorkspace,
+    externalContent,
+    resolveExternalConflict,
   };
 }

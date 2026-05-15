@@ -48,6 +48,26 @@ function LargeFileBanner({
   );
 }
 
+function ExternalChangeBanner({
+  onReload,
+  onKeep,
+}: {
+  onReload: () => void;
+  onKeep: () => void;
+}) {
+  return (
+    <div className="large-file-banner">
+      <span>This file was modified externally.</span>
+      <button className="large-file-banner-btn" onClick={onReload}>
+        Reload from disk
+      </button>
+      <button className="large-file-banner-btn" onClick={onKeep}>
+        Keep my edits
+      </button>
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 function App() {
@@ -646,6 +666,12 @@ function App() {
             overflow: "hidden",
           }}
         >
+          {fileManager.externalContent !== null && (
+            <ExternalChangeBanner
+              onReload={() => fileManager.resolveExternalConflict("reload")}
+              onKeep={() => fileManager.resolveExternalConflict("keep")}
+            />
+          )}
           <Editor
             content={fileManager.editorContent}
             onUpdate={(md) => fileManager.setEditorContent(md)}

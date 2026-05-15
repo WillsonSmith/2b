@@ -81,6 +81,7 @@ export type ServerMsg =
   | { type: "alt_text"; text: string }
   | { type: "explain_code_result"; explanation: string }
   | { type: "transcript"; text: string }
+  | { type: "file_externally_changed"; path: string; content: string }
   | { type: "error"; message: string };
 
 export function assertNever(x: never): never {
