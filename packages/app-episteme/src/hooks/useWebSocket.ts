@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { assertNever, type ServerMsg } from "../protocol.ts";
 
-type AgentState = "idle" | "thinking" | "disconnected";
+type AgentState =
+  | "idle"
+  | "thinking"
+  | "structuring"
+  | "awaiting_approval"
+  | "awaiting_step"
+  | "executing"
+  | "step_failed"
+  | "paused"
+  | "disconnected";
 
 export type ServerMsgType = ServerMsg["type"];
 export type ServerMsgOf<T extends ServerMsgType> = Extract<ServerMsg, { type: T }>;
@@ -83,6 +92,12 @@ export function useWebSocket(): UseWebSocketReturn {
       case "transcript":
       case "file_externally_changed":
       case "error":
+      case "plan_created":
+      case "plan_updated":
+      case "plan_step_started":
+      case "plan_step_completed":
+      case "plan_step_failed":
+      case "plan_complete":
         break;
       default:
         assertNever(msg);

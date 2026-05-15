@@ -17,7 +17,9 @@ import { mkdir, readdir } from "node:fs/promises";
 import { watch } from "node:fs";
 import type { EpistemeAgentBundle } from "../agent.ts";
 import type { EpistemeConfig } from "../config.ts";
-import { saveConfig } from "../config.ts";
+import { saveConfig, featureModel } from "../config.ts";
+import { createProvider } from "@2b/framework/providers/llm/createProvider.ts";
+import { PlanningController } from "../planning/PlanningController.ts";
 import { AutocompleteRunner } from "../features/autocomplete.ts";
 import { LintRunner } from "../features/lint.ts";
 import { assertNever, type ClientMsg, type ServerMsg } from "../protocol.ts";
@@ -27,6 +29,7 @@ import { handleFile } from "./handlers/file.ts";
 import { handleEditor } from "./handlers/editor.ts";
 import { handleResearch } from "./handlers/research.ts";
 import { handleMedia } from "./handlers/media.ts";
+import { handlePlan } from "./handlers/plan.ts";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -70,6 +73,10 @@ async function dispatch(
   switch (msg.type) {
     case "send":
       if (msg.text.trim()) {
+        if (ctx.planning.isLocked) {
+          // Agent is executing a plan step — queue message for after completion
+          return;
+        }
         ctx.workspaceDb.appendChatMessage("user", msg.text.trim());
         ctx.agent.addDirect(msg.text.trim());
       }
@@ -117,6 +124,18 @@ async function dispatch(
     case "voice_data":
       return handleMedia(msg, ctx, ws);
 
+    case "plan_request":
+    case "plan_from_document":
+    case "plan_approve":
+    case "plan_approve_step":
+    case "plan_retry_step":
+    case "plan_skip_step":
+    case "plan_amend_steps":
+    case "plan_pause":
+    case "plan_resume":
+    case "plan_cancel":
+      return handlePlan(msg, ctx, ws);
+
     default:
       assertNever(msg);
   }
@@ -130,7 +149,7 @@ export async function startEpistemServer(
 ): Promise<void> {
   const {
     agent, editorContext, workspace, styleGuide, research,
-    citation, diagram, contradiction, workspaceDb,
+    citation, diagram, contradiction, planning: planningPlugin, workspaceDb,
   } = bundle;
   const absRoot = resolve(workspaceRoot);
 
@@ -153,6 +172,14 @@ export async function startEpistemServer(
   function send(ws: ServerWebSocket<unknown>, msg: ServerMsg): void {
     ws.send(JSON.stringify(msg));
   }
+
+  const planning = new PlanningController(
+    createProvider(featureModel(config, "default")),
+    agent,
+    planningPlugin,
+    workspaceDb,
+    broadcast,
+  );
 
   // Tracks absolute paths that were just written by Episteme itself so the
   // file watcher can skip events caused by our own saves.
@@ -184,6 +211,7 @@ export async function startEpistemServer(
     diagram,
     styleGuide,
     contradiction,
+    planning,
     workspaceDb,
     config,
     absRoot,
@@ -345,7 +373,13 @@ export async function startEpistemServer(
     websocket: {
       open(ws) {
         clients.add(ws);
-        send(ws, { type: "state_change", state: "idle" });
+        const activePlan = planningPlugin.getActivePlan();
+        if (activePlan) {
+          send(ws, { type: "plan_created", plan: activePlan });
+          send(ws, { type: "state_change", state: activePlan.state as import("../protocol.ts").AgentRunState });
+        } else {
+          send(ws, { type: "state_change", state: "idle" });
+        }
       },
       close(ws) {
         clients.delete(ws);

@@ -1,0 +1,78 @@
+import type { ServerWebSocket } from "bun";
+import type { ClientMsg } from "../../protocol.ts";
+import type { WsContext } from "../context.ts";
+
+export type PlanMsg = Extract<
+  ClientMsg,
+  {
+    type:
+      | "plan_request"
+      | "plan_from_document"
+      | "plan_approve"
+      | "plan_approve_step"
+      | "plan_retry_step"
+      | "plan_skip_step"
+      | "plan_amend_steps"
+      | "plan_pause"
+      | "plan_resume"
+      | "plan_cancel";
+  }
+>;
+
+export async function handlePlan(
+  msg: PlanMsg,
+  ctx: WsContext,
+  _ws: ServerWebSocket<unknown>,
+): Promise<void> {
+  const { planning, send: _send } = ctx;
+
+  switch (msg.type) {
+    case "plan_request": {
+      const goal = msg.goal?.trim();
+      if (!goal) return;
+      await planning.structurePlan(goal, msg.approvalMode ?? "all");
+      return;
+    }
+
+    case "plan_from_document": {
+      const goal = msg.goal?.trim();
+      if (!goal) return;
+      const absPath = ctx.resolveWorkspacePath(msg.path);
+      if (!absPath) return;
+      await planning.structurePlan(goal, msg.approvalMode ?? "all", absPath);
+      return;
+    }
+
+    case "plan_approve":
+      await planning.approvePlan(msg.planId);
+      return;
+
+    case "plan_approve_step":
+      await planning.approveStep(msg.planId, msg.stepId);
+      return;
+
+    case "plan_retry_step":
+      await planning.retryStep(msg.planId, msg.stepId);
+      return;
+
+    case "plan_skip_step":
+      await planning.skipStep(msg.planId, msg.stepId);
+      return;
+
+    case "plan_amend_steps":
+      await planning.amendSteps(msg.planId, msg.steps);
+      return;
+
+    case "plan_pause":
+      planning.pause();
+      return;
+
+    case "plan_resume":
+      await planning.resume();
+      return;
+
+    case "plan_cancel":
+      planning.cancel();
+      return;
+  }
+}

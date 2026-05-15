@@ -1,0 +1,560 @@
+/* ── Plan panel ──────────────────────────────────────────────────────────── */
+
+.plan-panel {
+  width: 300px;
+  min-width: 260px;
+  background: var(--bg-raised);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Match panel-group override like other panels */
+.panel-group-content .plan-panel {
+  width: 100%;
+  min-width: 0;
+  border-left: none;
+  flex: 1;
+}
+
+.plan-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--header-h);
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.plan-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.plan-panel-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+}
+.plan-panel-close:hover {
+  background: var(--bg-highlight);
+  color: var(--text);
+}
+
+/* ── Structuring loader ───────────────────────────────────────────────────── */
+
+.plan-structuring {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ── Request form ─────────────────────────────────────────────────────────── */
+
+.plan-request-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.plan-request-textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  outline: none;
+  resize: vertical;
+}
+.plan-request-textarea:focus {
+  border-color: var(--accent);
+}
+.plan-request-textarea::placeholder {
+  color: var(--text-dim);
+}
+
+.plan-request-options {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.plan-request-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.plan-request-label input {
+  accent-color: var(--accent);
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+}
+.plan-request-label:hover {
+  color: var(--text);
+}
+
+/* ── Shared button system ─────────────────────────────────────────────────── */
+
+.plan-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--bg-highlight);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.plan-btn:hover:not(:disabled) {
+  background: var(--bg-active);
+  border-color: var(--border-light);
+}
+.plan-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.plan-btn--primary {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+  color: var(--accent);
+}
+.plan-btn--primary:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.plan-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+.plan-btn--ghost:hover:not(:disabled) {
+  background: var(--bg-highlight);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.plan-btn--sm {
+  padding: 3px 7px;
+  font-size: 10px;
+}
+
+.plan-btn--full {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ── Goal header ──────────────────────────────────────────────────────────── */
+
+.plan-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.plan-goal-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.plan-state-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 10px;
+  align-self: flex-start;
+  background: var(--bg-highlight);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+/* State-specific badge colours */
+.plan-state-badge--awaiting_approval,
+.plan-state-badge--awaiting_step {
+  background: rgba(204, 150, 0, 0.12);
+  color: #ccaa44;
+  border-color: rgba(204, 150, 0, 0.25);
+}
+.plan-state-badge--executing,
+.plan-state-badge--structuring {
+  background: rgba(102, 153, 221, 0.12);
+  color: var(--accent);
+  border-color: rgba(102, 153, 221, 0.25);
+}
+.plan-state-badge--step_failed {
+  background: rgba(204, 85, 85, 0.12);
+  color: var(--red);
+  border-color: rgba(204, 85, 85, 0.25);
+}
+.plan-state-badge--complete {
+  background: rgba(76, 175, 112, 0.12);
+  color: var(--green);
+  border-color: rgba(76, 175, 112, 0.25);
+}
+.plan-state-badge--paused {
+  background: var(--bg-highlight);
+  color: var(--text-muted);
+  border-color: var(--border-light);
+}
+.plan-state-badge--cancelled {
+  background: transparent;
+  color: var(--text-dim);
+  border-color: var(--border);
+  text-decoration: line-through;
+}
+
+/* ── Progress bar ─────────────────────────────────────────────────────────── */
+
+.plan-progress-bar {
+  height: 2px;
+  background: var(--border);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.plan-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+/* ── Step list ────────────────────────────────────────────────────────────── */
+
+.plan-steps {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.plan-step {
+  border-bottom: 1px solid var(--border);
+  border-left: 2px solid transparent;
+  transition: border-left-color 0.15s;
+}
+.plan-step:last-child {
+  border-bottom: none;
+}
+.plan-step--current {
+  border-left-color: var(--accent);
+  background: rgba(102, 153, 221, 0.04);
+}
+.plan-step--failed {
+  border-left-color: var(--red);
+  background: rgba(204, 85, 85, 0.04);
+}
+
+.plan-step-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  cursor: default;
+  min-height: 34px;
+}
+.plan-step-header[data-expandable="true"],
+.plan-step:has(.plan-step-summary) .plan-step-header {
+  cursor: pointer;
+}
+.plan-step-header:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.plan-step-num {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-dim);
+  min-width: 14px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.plan-step-state-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.plan-step-type-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.plan-step-title {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-step-type-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  padding: 1px 5px;
+  background: var(--bg);
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+.plan-step-expand-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+/* ── Step expanded summary ────────────────────────────────────────────────── */
+
+.plan-step-summary {
+  padding: 0 12px 10px 36px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  border-top: 1px solid var(--border);
+  margin-top: -1px;
+  padding-top: 8px;
+}
+
+/* ── Step error state ─────────────────────────────────────────────────────── */
+
+.plan-step-error {
+  padding: 0 10px 10px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plan-step-error-text {
+  font-size: 11px;
+  color: var(--red);
+  line-height: 1.45;
+  padding: 6px 8px;
+  background: rgba(204, 85, 85, 0.08);
+  border-radius: 4px;
+  border: 1px solid rgba(204, 85, 85, 0.2);
+}
+.plan-step-error-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── Per-step approval ────────────────────────────────────────────────────── */
+
+.plan-step-approve {
+  padding: 0 10px 10px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plan-step-instruction {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  padding: 6px 8px;
+  background: var(--bg);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+/* ── Step icon states ─────────────────────────────────────────────────────── */
+
+.plan-step-icon-spin {
+  color: var(--accent);
+  animation: plan-spin 1s linear infinite;
+}
+.plan-step-icon-done {
+  color: var(--green);
+}
+.plan-step-icon-fail {
+  color: var(--red);
+}
+.plan-step-icon-skip {
+  color: var(--text-dim);
+}
+.plan-step-icon-pending {
+  color: var(--text-dim);
+}
+
+@keyframes plan-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Action bar ───────────────────────────────────────────────────────────── */
+
+.plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.plan-complete-message {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--green);
+}
+
+.plan-new-btn {
+  width: 100%;
+  padding: 0;
+  padding-bottom: 4px;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+}
+.plan-new-btn:hover {
+  color: var(--text-muted);
+  text-decoration-color: var(--text-muted);
+}
+
+/* ── Step editor ──────────────────────────────────────────────────────────── */
+
+.plan-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.plan-editor-steps {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.plan-editor-step {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-editor-step-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plan-editor-type-select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 11px;
+  padding: 3px 5px;
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.plan-editor-type-select:focus {
+  border-color: var(--accent);
+}
+
+.plan-editor-title-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 7px;
+  outline: none;
+  min-width: 0;
+}
+.plan-editor-title-input:focus {
+  border-color: var(--accent);
+}
+.plan-editor-title-input::placeholder {
+  color: var(--text-dim);
+}
+
+.plan-editor-instruction-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 5px 7px;
+  outline: none;
+  resize: vertical;
+}
+.plan-editor-instruction-input:focus {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.plan-editor-instruction-input::placeholder {
+  color: var(--text-dim);
+}
+
+.plan-editor-actions {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
