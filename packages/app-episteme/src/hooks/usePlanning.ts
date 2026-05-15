@@ -4,8 +4,8 @@ import type { EpistemePlan, PlanStepDraft } from "../planning/types.ts";
 
 export interface UsePlanningReturn {
   plan: EpistemePlan | null;
-  requestPlan: (goal: string, approvalMode: "all" | "per_step") => void;
-  requestPlanFromDocument: (path: string, goal: string, approvalMode: "all" | "per_step") => void;
+  requestPlan: (goal: string, approvalMode: "all" | "per_step", previousPlanId?: string) => void;
+  requestPlanFromDocument: (path: string, goal: string, approvalMode: "all" | "per_step", previousPlanId?: string) => void;
   approvePlan: (planId: string) => void;
   approveStep: (planId: string, stepId: string) => void;
   retryStep: (planId: string, stepId: string) => void;
@@ -83,12 +83,12 @@ export function usePlanning(
     };
   }, [subscribe]);
 
-  const requestPlan = useCallback((goal: string, approvalMode: "all" | "per_step") => {
-    send({ type: "plan_request", goal, approvalMode });
+  const requestPlan = useCallback((goal: string, approvalMode: "all" | "per_step", previousPlanId?: string) => {
+    send({ type: "plan_request", goal, approvalMode, previousPlanId });
   }, [send]);
 
-  const requestPlanFromDocument = useCallback((path: string, goal: string, approvalMode: "all" | "per_step") => {
-    send({ type: "plan_from_document", path, goal, approvalMode });
+  const requestPlanFromDocument = useCallback((path: string, goal: string, approvalMode: "all" | "per_step", previousPlanId?: string) => {
+    send({ type: "plan_from_document", path, goal, approvalMode, previousPlanId });
   }, [send]);
 
   const approvePlan = useCallback((planId: string) => {

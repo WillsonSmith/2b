@@ -76,6 +76,40 @@
   padding: 12px;
 }
 
+.plan-followup-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 8px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(102, 153, 221, 0.25);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--accent);
+  line-height: 1.4;
+}
+.plan-followup-badge em {
+  font-style: normal;
+  font-weight: 600;
+}
+.plan-followup-clear {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  opacity: 0.6;
+}
+.plan-followup-clear:hover {
+  opacity: 1;
+  background: rgba(102, 153, 221, 0.15);
+}
+
 .plan-request-textarea {
   width: 100%;
   background: var(--bg);

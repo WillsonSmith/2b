@@ -32,7 +32,7 @@ export async function handlePlan(
     case "plan_request": {
       const goal = msg.goal?.trim();
       if (!goal) return;
-      await planning.structurePlan(goal, msg.approvalMode ?? "all");
+      await planning.structurePlan(goal, msg.approvalMode ?? "all", undefined, msg.previousPlanId);
       return;
     }
 
@@ -41,7 +41,7 @@ export async function handlePlan(
       if (!goal) return;
       const absPath = ctx.resolveWorkspacePath(msg.path);
       if (!absPath) return;
-      await planning.structurePlan(goal, msg.approvalMode ?? "all", absPath);
+      await planning.structurePlan(goal, msg.approvalMode ?? "all", absPath, msg.previousPlanId);
       return;
     }
 

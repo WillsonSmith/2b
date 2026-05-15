@@ -223,11 +223,13 @@ function StepEditor({ steps, onSave, onCancel }: StepEditorProps) {
 
 interface PlanRequestFormProps {
   activeFile: string | null;
-  onRequest: (goal: string, approvalMode: PlanApprovalMode) => void;
-  onRequestFromDocument: (path: string, goal: string, approvalMode: PlanApprovalMode) => void;
+  followingUp?: { id: string; goal: string } | null;
+  onClearFollowup?: () => void;
+  onRequest: (goal: string, approvalMode: PlanApprovalMode, previousPlanId?: string) => void;
+  onRequestFromDocument: (path: string, goal: string, approvalMode: PlanApprovalMode, previousPlanId?: string) => void;
 }
 
-function PlanRequestForm({ activeFile, onRequest, onRequestFromDocument }: PlanRequestFormProps) {
+function PlanRequestForm({ activeFile, followingUp, onClearFollowup, onRequest, onRequestFromDocument }: PlanRequestFormProps) {
   const [goal, setGoal] = useState("");
   const [approvalMode, setApprovalMode] = useState<PlanApprovalMode>("all");
   const [useDocument, setUseDocument] = useState(false);
@@ -235,19 +237,28 @@ function PlanRequestForm({ activeFile, onRequest, onRequestFromDocument }: PlanR
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!goal.trim()) return;
+    const prevId = followingUp?.id;
     if (useDocument && activeFile) {
-      onRequestFromDocument(activeFile, goal.trim(), approvalMode);
+      onRequestFromDocument(activeFile, goal.trim(), approvalMode, prevId);
     } else {
-      onRequest(goal.trim(), approvalMode);
+      onRequest(goal.trim(), approvalMode, prevId);
     }
     setGoal("");
   };
 
   return (
     <form className="plan-request-form" onSubmit={handleSubmit}>
+      {followingUp && (
+        <div className="plan-followup-badge">
+          <span>Following up: <em>{followingUp.goal}</em></span>
+          <button type="button" className="plan-followup-clear" onClick={onClearFollowup} title="Start a fresh plan instead">
+            <X size={11} />
+          </button>
+        </div>
+      )}
       <textarea
         className="plan-request-textarea"
-        placeholder="Describe what you want to accomplish…"
+        placeholder={followingUp ? "What do you want to do next?" : "Describe what you want to accomplish…"}
         value={goal}
         rows={3}
         onChange={e => setGoal(e.target.value)}
@@ -286,7 +297,7 @@ function PlanRequestForm({ activeFile, onRequest, onRequestFromDocument }: PlanR
         </label>
       )}
       <button className="plan-btn plan-btn--primary plan-btn--full" type="submit" disabled={!goal.trim()}>
-        <ClipboardList size={14} /> Create plan
+        <ClipboardList size={14} /> {followingUp ? "Create follow-up plan" : "Create plan"}
       </button>
     </form>
   );
@@ -334,6 +345,7 @@ export function PlanPanel({
   const [editing, setEditing] = useState(false);
   const [pausing, setPausing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [followingUp, setFollowingUp] = useState<{ id: string; goal: string } | null>(null);
 
   // Reset transitional states when the server confirms the transition
   useEffect(() => {
@@ -434,6 +446,12 @@ export function PlanPanel({
             <span className="plan-complete-message">
               <CheckCircle2 size={14} /> Complete ({doneCount}/{total} steps)
             </span>
+            <button
+              className="plan-btn plan-btn--primary plan-btn--sm"
+              onClick={() => { setFollowingUp({ id: plan.id, goal: plan.goal }); onNewPlan(); }}
+            >
+              Follow-up plan
+            </button>
             <button className="plan-btn plan-btn--ghost plan-btn--sm" onClick={onNewPlan}>
               New plan
             </button>
@@ -474,6 +492,8 @@ export function PlanPanel({
       {!plan && !isStructuring && (
         <PlanRequestForm
           activeFile={activeFile}
+          followingUp={followingUp}
+          onClearFollowup={() => setFollowingUp(null)}
           onRequest={onRequestPlan}
           onRequestFromDocument={onRequestPlanFromDocument}
         />
