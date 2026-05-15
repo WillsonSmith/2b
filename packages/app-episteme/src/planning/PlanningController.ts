@@ -193,6 +193,18 @@ export class PlanningController {
       .catch(err => logger.error("PlanningController", `approveStep: ${err}`));
   }
 
+  async editStepSummary(planId: string, stepId: string, summary: string): Promise<void> {
+    const plan = this.workspaceDb.getPlan(planId);
+    if (!plan) return;
+    const step = plan.steps.find(s => s.id === stepId && s.state === "complete");
+    if (!step) return;
+
+    this.workspaceDb.updatePlanStep(stepId, { contextSummary: summary });
+    const updated = this.workspaceDb.getPlan(planId)!;
+    this.planningPlugin.setActivePlan(updated);
+    this.broadcast({ type: "plan_updated", plan: updated });
+  }
+
   async amendSteps(planId: string, drafts: PlanStepDraft[]): Promise<void> {
     const plan = this.workspaceDb.getPlan(planId);
     if (!plan || plan.state !== "awaiting_approval") return;
