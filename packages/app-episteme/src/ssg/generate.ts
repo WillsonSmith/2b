@@ -776,12 +776,29 @@ async function generate(workspace: string, output: string): Promise<void> {
   // Pass 2: resolve wikilinks, render markdown, build FileInfo
   const files: FileInfo[] = [];
   for (const raw of rawFiles) {
-    const resolvedBody = resolveWikilinksInBody(raw.body, allRelPaths, raw.relPath);
+    // --- ADD THIS SECTION ---
+    // If the title was pulled from an H1 in the body, remove that H1 to avoid doubling
+    let processedBody = raw.body;
+    const h1Match = processedBody.match(/^#\s+(.+)$/m);
+
+    if (h1Match) {
+      // Replace only the first occurrence of that H1 line
+      processedBody = processedBody.replace(h1Match[0], "").trimStart();
+    }
+    // -------------------------
+
+    // Use processedBody instead of raw.body for the rest of the loop
+    const resolvedBody = resolveWikilinksInBody(processedBody, allRelPaths, raw.relPath);
     const html = await marked(resolvedBody);
+
     const depth = raw.relPath.split("/").length - 1;
     const htmlRelPath = raw.relPath.replace(/\.md$/, ".html");
-    const edges = extractEdgesForFile(raw.body, allRelPaths, htmlRelPath);
-    files.push({ ...raw, html, depth, htmlRelPath, edges });
+
+    // Note: Pass raw.body to extractEdges if you want to find links
+    // that might have existed in the H1, otherwise use processedBody.
+    const edges = extractEdgesForFile(processedBody, allRelPaths, htmlRelPath);
+
+    files.push({ ...raw, body: processedBody, html, depth, htmlRelPath, edges });
   }
 
   // Write individual pages
