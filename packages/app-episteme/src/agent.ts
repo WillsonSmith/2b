@@ -81,7 +81,7 @@ export function createEpistemAgent(
     workspaceDb,
   );
 
-  const plan = new PlanPlugin(planDbPath(workspaceRoot));
+  const plan = new PlanPlugin(planDbPath(workspaceRoot), llm);
 
   const shortTermMemory = new MemoryPlugin(llm, { minMessages: 10, maxMessages: 15 });
   agent.registerPlugin(shortTermMemory);

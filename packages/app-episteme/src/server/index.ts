@@ -20,13 +20,33 @@ import type { EpistemeConfig } from "../config.ts";
 import { saveConfig } from "../config.ts";
 import { AutocompleteRunner } from "../features/autocomplete.ts";
 import { LintRunner } from "../features/lint.ts";
-import { assertNever, type ClientMsg, type ServerMsg } from "../protocol.ts";
+import { assertNever, type ClientMsg, type ServerMsg, type WsPlan } from "../protocol.ts";
+import type { Plan } from "@2b/framework/core/types.ts";
 import index from "../index.html";
 import type { WsContext } from "./context.ts";
 import { handleFile } from "./handlers/file.ts";
 import { handleEditor } from "./handlers/editor.ts";
 import { handleResearch } from "./handlers/research.ts";
 import { handleMedia } from "./handlers/media.ts";
+
+function serializePlan(p: Plan | null): WsPlan | null {
+  if (!p) return null;
+  return {
+    id: p.id,
+    goal: p.goal,
+    status: p.status,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+    steps: p.steps.map(({ id, position, description, status, notes, data }) => ({
+      id,
+      position,
+      description,
+      status,
+      notes,
+      data,
+    })),
+  };
+}
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -116,6 +136,10 @@ async function dispatch(
     case "explain_code":
     case "voice_data":
       return handleMedia(msg, ctx, ws);
+
+    case "plan_request":
+      ctx.send(ws, { type: "plan_update", plan: serializePlan(ctx.plan.getActivePlan()) });
+      return;
 
     default:
       assertNever(msg);
@@ -233,11 +257,11 @@ export async function startEpistemServer(
   const FILE_MUTATING_TOOLS = new Set([
     "write_file", "append_file", "patch_file", "move_file", "delete_file", "create_file",
   ]);
+  const PLAN_TOOLS = new Set(["create_plan", "update_step", "complete_plan", "abandon_plan"]);
   agent.on("tool_result", (name) => {
     broadcast({ type: "tool_result", name });
-    if (FILE_MUTATING_TOOLS.has(name)) {
-      scheduleWorkspaceRefresh();
-    }
+    if (FILE_MUTATING_TOOLS.has(name)) scheduleWorkspaceRefresh();
+    if (PLAN_TOOLS.has(name)) broadcast({ type: "plan_update", plan: serializePlan(plan.getActivePlan()) });
   });
 
   const server = Bun.serve({
@@ -347,6 +371,7 @@ export async function startEpistemServer(
       open(ws) {
         clients.add(ws);
         send(ws, { type: "state_change", state: "idle" });
+        send(ws, { type: "plan_update", plan: serializePlan(plan.getActivePlan()) });
       },
       close(ws) {
         clients.delete(ws);

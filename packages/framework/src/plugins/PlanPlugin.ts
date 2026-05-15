@@ -22,6 +22,7 @@ import { appDataPath } from "../paths.ts";
 import { logger } from "../logger.ts";
 import { getPlatform } from "../platform/platform.ts";
 import type { IDatabase } from "../platform/IDatabase.ts";
+import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 
 const STEP_STATUSES: ReadonlySet<string> = new Set(["pending", "in_progress", "done", "skipped", "failed"]);
 const SCHEMA_VERSION = 2;
@@ -29,10 +30,12 @@ const SCHEMA_VERSION = 2;
 export class PlanPlugin implements AgentPlugin {
   name = "Plan";
   private db: IDatabase;
+  private llm?: LLMProvider;
 
-  constructor(dbPath?: string) {
+  constructor(dbPath?: string, llm?: LLMProvider) {
     const path = dbPath ?? join(appDataPath("data"), "plans.sqlite");
     this.db = getPlatform().openDatabase(path);
+    this.llm = llm;
     this.initSchema();
   }
 
@@ -178,12 +181,14 @@ export class PlanPlugin implements AgentPlugin {
     return [
       "## Planning",
       "You have a structured plan system. Use it for any multi-step goal (3+ ordered steps).",
+      "  draft_plan    — use AI to draft well-structured steps for a goal before calling create_plan",
       "  create_plan   — define a goal and ordered steps; replaces any active plan",
       "  update_step   — advance a step; `step_id` is the 8-char ID from the Step ID column of the plan table (e.g. `a1b2c3d4`); add human notes in `notes` and structured JSON output in `data` for downstream steps",
       "  complete_plan — mark the current plan completed when all steps are done",
       "  abandon_plan  — cancel the current plan",
       "  get_plan      — inspect the full plan including step data payloads",
       "The current plan is injected as a table every turn. The Step ID column contains the ID required by update_step — always use that value, never a position number.",
+      "Prefer draft_plan over creating ad-hoc plans — it produces better step structure.",
     ].join("\n");
   }
 
@@ -269,6 +274,27 @@ export class PlanPlugin implements AgentPlugin {
           },
         },
       },
+      {
+        name: "draft_plan",
+        description:
+          "Use AI to generate a well-structured list of steps for a goal before committing to a plan. " +
+          "Returns a numbered draft — review it, then call create_plan with the final steps.",
+        parameters: {
+          type: "object",
+          properties: {
+            goal: {
+              type: "string",
+              description: "The overall goal to plan for.",
+            },
+            context: {
+              type: "string",
+              description:
+                "Optional extra context — known constraints, available files, prior work — to inform the step structure.",
+            },
+          },
+          required: ["goal"],
+        },
+      },
     ];
   }
 
@@ -284,6 +310,8 @@ export class PlanPlugin implements AgentPlugin {
         return this.handleSetPlanStatus("abandoned", args.reason as string | undefined);
       case "get_plan":
         return this.handleGetPlan(args);
+      case "draft_plan":
+        return this.handleDraftPlan(args);
       default:
         return undefined;
     }
@@ -383,5 +411,62 @@ export class PlanPlugin implements AgentPlugin {
       }
     }
     return lines.join("\n");
+  }
+
+  private async handleDraftPlan(args: Record<string, unknown>): Promise<string> {
+    if (!this.llm) {
+      return "draft_plan error: no LLM provider configured. Pass an LLMProvider to the PlanPlugin constructor.";
+    }
+    const goal = String(args.goal ?? "").trim();
+    if (!goal) return "draft_plan error: goal is required.";
+    const context = typeof args.context === "string" ? args.context.trim() : "";
+
+    const systemPrompt = [
+      "You are a planning assistant. Given a goal, produce a precise ordered list of steps for an AI agent to execute.",
+      "",
+      "Rules:",
+      '- Each step is a single, atomic, verifiable action',
+      "- Steps are ordered with dependencies respected",
+      '- Use imperative language: "Read X", "Write Y to Z", "Analyse W"',
+      '- Where a step produces structured output a later step needs, append "(store result in step data field)"',
+      "- Aim for 3–10 steps; if the goal is large, chunk it into phases",
+      "- No pronouns that reference prior steps — each description must stand alone",
+      "",
+      "Return ONLY a numbered list. No preamble, no summary.",
+    ].join("\n");
+
+    const userMsg = context ? `Goal: ${goal}\n\nContext:\n${context}` : `Goal: ${goal}`;
+
+    try {
+      const { nonReasoningContent } = await this.llm.chat(
+        [{ role: "user", content: userMsg }],
+        systemPrompt,
+      );
+
+      const steps = this.parseNumberedList(nonReasoningContent);
+      if (steps.length === 0) {
+        return `draft_plan: LLM returned no parseable steps.\n\nRaw output:\n${nonReasoningContent}`;
+      }
+
+      return [
+        `Draft plan for: ${goal}`,
+        "",
+        ...steps.map((s, i) => `${i + 1}. ${s}`),
+        "",
+        "Review these steps. Adjust as needed, then call create_plan with the final goal and steps array.",
+      ].join("\n");
+    } catch (err) {
+      logger.error(this.name, "draft_plan LLM call failed", err);
+      return `draft_plan error: LLM call failed — ${String(err)}`;
+    }
+  }
+
+  private parseNumberedList(text: string): string[] {
+    const numbered = [...text.matchAll(/^\d+[.)]\s+(.+)$/gm)].map((m) => (m[1] ?? "").trim());
+    if (numbered.length > 0) return numbered;
+    return text
+      .split("\n")
+      .map((l) => l.replace(/^[-•*]\s+/, "").trim())
+      .filter((l) => l.length > 0);
   }
 }

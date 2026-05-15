@@ -16,6 +16,24 @@ import type { GraphData } from "./plugins/WorkspacePlugin.ts";
 
 export type AgentRunState = "idle" | "thinking";
 
+export interface WsPlanStep {
+  id: string;
+  position: number;
+  description: string;
+  status: "pending" | "in_progress" | "done" | "failed" | "skipped";
+  notes: string | null;
+  data: string | null;
+}
+
+export interface WsPlan {
+  id: string;
+  goal: string;
+  status: "active" | "completed" | "abandoned";
+  steps: WsPlanStep[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 export type ClientMsg =
   | { type: "send"; text: string }
   | { type: "interrupt" }
@@ -48,7 +66,8 @@ export type ClientMsg =
   | { type: "explain_code"; code: string; language: string }
   | { type: "voice_data"; audioBase64: string; mimeType: string }
   | { type: "lint_request"; content: string }
-  | { type: "open_in_finder"; path: string };
+  | { type: "open_in_finder"; path: string }
+  | { type: "plan_request" };
 
 export type ServerMsg =
   | { type: "speak"; text: string }
@@ -82,7 +101,8 @@ export type ServerMsg =
   | { type: "explain_code_result"; explanation: string }
   | { type: "transcript"; text: string }
   | { type: "file_externally_changed"; path: string; content: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "plan_update"; plan: WsPlan | null };
 
 export function assertNever(x: never): never {
   throw new Error(`Unhandled protocol message: ${JSON.stringify(x)}`);

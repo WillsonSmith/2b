@@ -8,6 +8,8 @@ import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { ResearchPanel } from "./components/ResearchPanel.tsx";
 import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
 import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
+import { PlanPanel } from "./components/PlanPanel.tsx";
+import type { WsPlan } from "./protocol.ts";
 import { PanelGroup, type PanelEntry } from "./components/PanelGroup.tsx";
 import { UnifiedSearch, type SearchCommand } from "./components/UnifiedSearch.tsx";
 import "./styles.css";
@@ -86,6 +88,8 @@ function App() {
     total: number;
   } | null>(null);
   const [workspaceRoot, setWorkspaceRoot] = useState("");
+  const [activePlan, setActivePlan] = useState<WsPlan | null>(null);
+  const [showPlan, setShowPlan] = useState(false);
 
   const ws = useWebSocket();
 
@@ -267,6 +271,7 @@ function App() {
       { id: "research", label: "Research Panel", description: "Search arXiv, Wikipedia & workspace", action: () => research.setShowResearch((v) => !v) },
       { id: "conflicts", label: "Conflicts Panel", description: "Detect contradictions", action: () => conflictsGraph.showConflicts ? conflictsGraph.setShowConflicts(false) : conflictsGraph.handleOpenConflicts() },
       { id: "graph", label: "Knowledge Graph", description: "Visualize note connections", action: () => conflictsGraph.showGraph ? conflictsGraph.setShowGraph(false) : conflictsGraph.handleOpenGraph() },
+      { id: "plan", label: "Plan Panel", description: "View the active AI plan and step progress", action: () => setShowPlan((v) => !v) },
       { id: "settings", label: "Settings", description: "Style guide & features", action: () => setShowSettings(true) },
       { id: "help", label: "Keyboard Shortcuts", description: "View all shortcuts", action: () => { setSettingsInitialTab("help"); setShowSettings(true); } },
       { id: "newfile", label: "New File", description: "Create a new note", action: () => fileManager.createFile("untitled.md") },
@@ -448,6 +453,10 @@ function App() {
       if (msg.total === 0 || msg.indexed >= msg.total) setIndexProgress(null);
       else setIndexProgress({ indexed: msg.indexed, total: msg.total });
     });
+    const unsubPlanUpdate = ws.subscribe("plan_update", (msg) => {
+      setActivePlan(msg.plan);
+      if (msg.plan) setShowPlan(true);
+    });
     const unsubContradictionNotif = ws.subscribe("contradiction_notification", (msg) => {
       const label = msg.count === 1 ? "1 contradiction" : `${msg.count} contradictions`;
       setMessages((prev) => [
@@ -476,6 +485,7 @@ function App() {
       unsubFileContent();
       unsubFileCreated();
       unsubIndex();
+      unsubPlanUpdate();
       unsubContradictionNotif();
     };
   }, [
@@ -831,6 +841,18 @@ function App() {
                 graphData={conflictsGraph.graphData}
                 pagination={conflictsGraph.graphPagination}
                 isLoading={conflictsGraph.isLoadingGraph}
+              />
+            ),
+          });
+          if (showPlan) panels.push({
+            id: "plan",
+            label: "Plan",
+            defaultWidth: 300,
+            onClose: () => setShowPlan(false),
+            content: (
+              <PlanPanel
+                plan={activePlan}
+                onClose={() => setShowPlan(false)}
               />
             ),
           });

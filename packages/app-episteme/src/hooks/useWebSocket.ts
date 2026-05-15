@@ -83,6 +83,7 @@ export function useWebSocket(): UseWebSocketReturn {
       case "transcript":
       case "file_externally_changed":
       case "error":
+      case "plan_update":
         break;
       default:
         assertNever(msg);

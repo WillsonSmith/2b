@@ -8,7 +8,7 @@ function makePlugin(): PlanPlugin {
 // ── Registration ───────────────────────────────────────────────────────────────
 
 describe("PlanPlugin - registration", () => {
-  test("exposes five tools", () => {
+  test("exposes six tools", () => {
     const plugin = makePlugin();
     const names = plugin.getTools().map(t => t.name);
     expect(names).toContain("create_plan");
@@ -16,12 +16,13 @@ describe("PlanPlugin - registration", () => {
     expect(names).toContain("complete_plan");
     expect(names).toContain("abandon_plan");
     expect(names).toContain("get_plan");
-    expect(names).toHaveLength(5);
+    expect(names).toContain("draft_plan");
+    expect(names).toHaveLength(6);
   });
 
-  test("getSystemPromptFragment mentions all five tools", () => {
+  test("getSystemPromptFragment mentions all six tools", () => {
     const fragment = makePlugin().getSystemPromptFragment();
-    ["create_plan", "update_step", "complete_plan", "abandon_plan", "get_plan"].forEach(t => {
+    ["draft_plan", "create_plan", "update_step", "complete_plan", "abandon_plan", "get_plan"].forEach(t => {
       expect(fragment).toContain(t);
     });
   });
