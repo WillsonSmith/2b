@@ -235,7 +235,7 @@ function App() {
   const onContinueFrom = useCallback((afterIndex, text) => {
     setMessages((prev) => prev.slice(0, afterIndex + 1));
     sendToAgent(text);
-  }, []);
+  }, [sendToAgent]);
 
   const onDeleteMessage = useCallback((index: number) => {
     setMessages((prev) => prev.filter((_, i) => i !== index));
