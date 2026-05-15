@@ -202,9 +202,8 @@ agent.registerPlugin(minimalToolsPlugin);
 agent.registerPlugin(new ScratchPlugin());
 agent.registerPlugin(new PlanPlugin());
 agent.registerPlugin(new DecisionPlugin(llm));
-agent.registerPlugin(
-  new MemoryPlugin(llm, { maxMessages: 25, minMessages: 10 }),
-);
+const shortTermMemory = new MemoryPlugin(llm, { maxMessages: 25, minMessages: 10 });
+agent.registerPlugin(shortTermMemory);
 // RetryPlugin last — dispatchTool routes through collectTools(), which must
 // include every plugin whose tools might be retried.
 agent.registerPlugin(new RetryPlugin());
@@ -222,6 +221,7 @@ if (useWeb) {
     memoryPlugin: agent.memoryPlugin,
     behaviorPlugin,
     sessionStore: new ChatSessionStore(),
+    shortTermMemory,
   });
 } else {
   await startTerminalUI({

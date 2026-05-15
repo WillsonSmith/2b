@@ -10,6 +10,7 @@
  *   { type: "send",              text }
  *   { type: "interrupt",         scope: "main"|"subagents"|"all" }
  *   { type: "clear" }
+ *   { type: "session_load",      sessionId } — seeds MemoryPlugin with recent history
  *   { type: "permission_response", response: "yes"|"always"|"no" }
  *   { type: "yield_response",    text }
  *   { type: "model_change",      model }
@@ -52,6 +53,7 @@ import type { CortexAgent } from "@2b/framework/core/CortexAgent.ts";
 import type { CortexMemoryPlugin } from "@2b/framework/plugins/CortexMemoryPlugin.ts";
 import type { BehaviorPlugin } from "@2b/framework/plugins/BehaviorPlugin.ts";
 import type { MemoryFilter } from "@2b/framework/plugins/CortexMemoryDatabase.ts";
+import type { MemoryPlugin } from "@2b/framework/plugins/MemoryPlugin.ts";
 import { ChatSession } from "../ChatSession.ts";
 import type { WebPermissionManager } from "./WebPermissionManager.ts";
 import { ChatSessionStore } from "./ChatSessionStore.ts";
@@ -68,6 +70,7 @@ interface StartWebUIOptions {
   memoryPlugin?: CortexMemoryPlugin;
   behaviorPlugin?: BehaviorPlugin;
   sessionStore?: ChatSessionStore;
+  shortTermMemory?: MemoryPlugin;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -94,6 +97,7 @@ export async function startWebUI({
   memoryPlugin,
   behaviorPlugin,
   sessionStore,
+  shortTermMemory,
 }: StartWebUIOptions): Promise<void> {
   await agent.start();
 
@@ -353,7 +357,21 @@ export async function startWebUI({
           }
           case "clear":
             session.clear();
+            shortTermMemory?.clear();
             break;
+          case "session_load": {
+            const sessionId = msg.sessionId;
+            if (typeof sessionId === "string" && sessionStore && shortTermMemory) {
+              const record = sessionStore.getSession(sessionId);
+              if (record) {
+                const messages = record.messages
+                  .filter((m) => m.role === "user" || m.role === "assistant")
+                  .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+                shortTermMemory.seed(messages);
+              }
+            }
+            break;
+          }
           case "permission_response": {
             const response = msg.response as "yes" | "always" | "no";
             const approved = response === "yes" || response === "always";
