@@ -38,6 +38,7 @@ export interface EpistemeAgentBundle {
   diagram: DiagramPlugin;
   contradiction: ContradictionPlugin;
   workspaceDb: WorkspaceDb;
+  shortTermMemory: MemoryPlugin;
 }
 
 export function createEpistemAgent(
@@ -78,9 +79,8 @@ export function createEpistemAgent(
     workspaceDb,
   );
 
-  agent.registerPlugin(
-    new MemoryPlugin(llm, { minMessages: 10, maxMessages: 15 }),
-  );
+  const shortTermMemory = new MemoryPlugin(llm, { minMessages: 10, maxMessages: 15 });
+  agent.registerPlugin(shortTermMemory);
   agent.registerPlugin(new BehaviorPlugin(agent.memoryPlugin, llm));
   agent.registerPlugin(new FileSystemPlugin({ allowedRoots: [workspaceRoot] }));
   agent.registerPlugin(editorContext);
@@ -107,5 +107,6 @@ export function createEpistemAgent(
     diagram,
     contradiction,
     workspaceDb,
+    shortTermMemory,
   };
 }
