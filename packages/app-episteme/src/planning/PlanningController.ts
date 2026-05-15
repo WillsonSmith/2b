@@ -275,6 +275,7 @@ export class PlanningController {
       this.workspaceDb.updatePlanState(plan.id, "executing");
       const updated = this.workspaceDb.getPlan(plan.id)!;
       this.planningPlugin.setActivePlan(updated);
+      this.broadcast({ type: "plan_updated", plan: updated });
       this.broadcast({ type: "state_change", state: "executing" });
       this.runAllSteps(updated).catch(err => logger.error("PlanningController", `resume: ${err}`));
     } else {
@@ -290,6 +291,27 @@ export class PlanningController {
       this.broadcast({ type: "plan_updated", plan: updated });
       this.broadcast({ type: "state_change", state: "awaiting_step" });
     }
+  }
+
+  async resumeAuto(): Promise<void> {
+    const plan = this.workspaceDb.getActivePlan();
+    if (!plan || !["paused", "awaiting_step"].includes(plan.state)) return;
+
+    this.paused = false;
+    this.cancelled = false;
+
+    // Any step waiting for per-step approval must go back to pending so runAllSteps picks it up
+    const waitingStep = plan.steps.find(s => s.state === "awaiting_approval");
+    if (waitingStep) {
+      this.workspaceDb.updatePlanStep(waitingStep.id, { state: "pending" });
+    }
+
+    this.workspaceDb.updatePlanState(plan.id, "executing");
+    const updated = this.workspaceDb.getPlan(plan.id)!;
+    this.planningPlugin.setActivePlan(updated);
+    this.broadcast({ type: "plan_updated", plan: updated });
+    this.broadcast({ type: "state_change", state: "executing" });
+    this.runAllSteps(updated).catch(err => logger.error("PlanningController", `resumeAuto: ${err}`));
   }
 
   cancel(): void {

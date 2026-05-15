@@ -133,6 +133,7 @@ async function dispatch(
     case "plan_amend_steps":
     case "plan_pause":
     case "plan_resume":
+    case "plan_resume_auto":
     case "plan_cancel":
       return handlePlan(msg, ctx, ws);
 

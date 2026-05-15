@@ -13,7 +13,9 @@ export interface UsePlanningReturn {
   amendSteps: (planId: string, steps: PlanStepDraft[]) => void;
   pausePlan: () => void;
   resumePlan: () => void;
+  resumeAuto: () => void;
   cancelPlan: () => void;
+  resetPlan: () => void;
 }
 
 export function usePlanning(
@@ -120,6 +122,14 @@ export function usePlanning(
     send({ type: "plan_cancel" });
   }, [send]);
 
+  const resumeAuto = useCallback(() => {
+    send({ type: "plan_resume_auto" });
+  }, [send]);
+
+  const resetPlan = useCallback(() => {
+    setPlan(null);
+  }, []);
+
   return {
     plan,
     requestPlan,
@@ -131,6 +141,8 @@ export function usePlanning(
     amendSteps,
     pausePlan,
     resumePlan,
+    resumeAuto,
     cancelPlan,
+    resetPlan,
   };
 }
