@@ -66,7 +66,7 @@ export type ClientMsg =
   | { type: "plan_skip_step"; planId: string; stepId: string }
   | { type: "plan_amend_steps"; planId: string; steps: PlanStepDraft[] }
   | { type: "plan_edit_step_summary"; planId: string; stepId: string; summary: string }
-  | { type: "plan_add_step"; planId: string; description: string }
+  | { type: "plan_add_step"; planId: string; description: string; insertAfterStepId?: string | null }
   | { type: "plan_reorder_step"; planId: string; stepId: string; direction: "up" | "down" }
   | { type: "plan_pause" }
   | { type: "plan_resume" }

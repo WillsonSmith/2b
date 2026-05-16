@@ -237,20 +237,42 @@ function StepEditor({ steps, onSave, onCancel }: StepEditorProps) {
 
 interface AddStepFormProps {
   isLoading: boolean;
-  onAdd: (description: string) => void;
+  existingSteps: EpistemePlanStep[];
+  onAdd: (description: string, insertAfterStepId?: string | null) => void;
   onCancel: () => void;
 }
 
-function AddStepForm({ isLoading, onAdd, onCancel }: AddStepFormProps) {
+function AddStepForm({ isLoading, existingSteps, onAdd, onCancel }: AddStepFormProps) {
   const [description, setDescription] = useState("");
+  const defaultPosition = existingSteps.length > 0 ? existingSteps[existingSteps.length - 1]!.id : null;
+  const [insertAfterStepId, setInsertAfterStepId] = useState<string | null>(defaultPosition);
 
   const handleSubmit = () => {
     if (!description.trim() || isLoading) return;
-    onAdd(description.trim());
+    onAdd(description.trim(), insertAfterStepId);
+  };
+
+  const handlePositionChange = (value: string) => {
+    setInsertAfterStepId(value === "__start__" ? null : value);
   };
 
   return (
     <div className="plan-add-step-form">
+      {existingSteps.length > 1 && (
+        <select
+          className="plan-add-step-position"
+          value={insertAfterStepId ?? "__start__"}
+          onChange={e => handlePositionChange(e.target.value)}
+          disabled={isLoading}
+        >
+          <option value="__start__">At the beginning</option>
+          {existingSteps.map((s, i) => (
+            <option key={s.id} value={s.id}>
+              After step {i + 1}: {s.title.length > 30 ? s.title.slice(0, 30) + "…" : s.title}
+            </option>
+          ))}
+        </select>
+      )}
       <textarea
         className="plan-editor-instruction-input"
         placeholder="Describe the step to add…"
@@ -380,7 +402,7 @@ export interface PlanPanelProps {
   onSkipStep: (planId: string, stepId: string) => void;
   onAmendSteps: (planId: string, steps: PlanStepDraft[]) => void;
   onEditStepSummary: (planId: string, stepId: string, summary: string) => void;
-  onAddStep: (planId: string, description: string) => void;
+  onAddStep: (planId: string, description: string, insertAfterStepId?: string | null) => void;
   onReorderStep: (planId: string, stepId: string, direction: "up" | "down") => void;
   onPause: () => void;
   onResume: () => void;
@@ -622,7 +644,8 @@ export function PlanPanel({
                 showAddForm ? (
                   <AddStepForm
                     isLoading={addingStep}
-                    onAdd={(desc) => { setAddingStep(true); onAddStep(plan.id, desc); }}
+                    existingSteps={plan.steps}
+                    onAdd={(desc, insertAfterStepId) => { setAddingStep(true); onAddStep(plan.id, desc, insertAfterStepId); }}
                     onCancel={() => { setShowAddForm(false); setAddingStep(false); }}
                   />
                 ) : (

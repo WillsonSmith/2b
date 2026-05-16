@@ -72,7 +72,7 @@ export async function handlePlan(
       return;
 
     case "plan_add_step":
-      await planning.addStep(msg.planId, msg.description);
+      await planning.addStep(msg.planId, msg.description, msg.insertAfterStepId);
       return;
 
     case "plan_reorder_step":

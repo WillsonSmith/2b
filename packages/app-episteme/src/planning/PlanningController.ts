@@ -240,7 +240,7 @@ export class PlanningController {
     this.broadcast({ type: "plan_updated", plan: updated });
   }
 
-  async addStep(planId: string, description: string): Promise<void> {
+  async addStep(planId: string, description: string, insertAfterStepId?: string | null): Promise<void> {
     const plan = this.workspaceDb.getPlan(planId);
     if (!plan || plan.state !== "awaiting_approval") return;
 
@@ -248,7 +248,30 @@ export class PlanningController {
       .map((s, i) => `${i + 1}. [${s.type}] ${s.title}: ${s.instruction.slice(0, 120)}`)
       .join("\n");
 
-    const prompt = `Plan goal: ${plan.goal}\n\nExisting steps:\n${stepList}\n\nDescription for new step: ${description}\n\nGenerate a step object.`;
+    // Build position context so the generator can write a well-targeted instruction
+    let positionContext = "";
+    if (insertAfterStepId === null) {
+      const nextStep = plan.steps[0];
+      positionContext = nextStep
+        ? `\nPosition: This step will be the FIRST step, running before "${nextStep.title}". Write the instruction accordingly.`
+        : `\nPosition: This will be the only step in the plan.`;
+    } else if (insertAfterStepId !== undefined) {
+      const afterIdx = plan.steps.findIndex(s => s.id === insertAfterStepId);
+      const prevStep = plan.steps[afterIdx];
+      const nextStep = plan.steps[afterIdx + 1];
+      if (prevStep && nextStep) {
+        positionContext = `\nPosition: This step will be inserted between "${prevStep.title}" (step ${afterIdx + 1}) and "${nextStep.title}" (step ${afterIdx + 2}). Write the instruction to bridge these two steps naturally.`;
+      } else if (prevStep) {
+        positionContext = `\nPosition: This step will run after "${prevStep.title}" (step ${afterIdx + 1}), at the end of the plan.`;
+      }
+    } else {
+      const lastStep = plan.steps[plan.steps.length - 1];
+      if (lastStep) {
+        positionContext = `\nPosition: This step will be appended at the END, running after "${lastStep.title}".`;
+      }
+    }
+
+    const prompt = `Plan goal: ${plan.goal}\n\nExisting steps:\n${stepList}\n\nDescription for new step: ${description}${positionContext}\n\nGenerate a step object.`;
 
     let raw: string;
     try {
@@ -268,18 +291,32 @@ export class PlanningController {
       throw new Error("Step generation returned invalid JSON.");
     }
 
+    // Determine insertion index
+    let insertIndex: number;
+    if (insertAfterStepId === null) {
+      insertIndex = 0;
+    } else if (insertAfterStepId !== undefined) {
+      const afterIdx = plan.steps.findIndex(s => s.id === insertAfterStepId);
+      insertIndex = afterIdx === -1 ? plan.steps.length : afterIdx + 1;
+    } else {
+      insertIndex = plan.steps.length;
+    }
+
     const newStep: EpistemePlanStep = {
       id: randomUUID(),
       planId,
-      index: plan.steps.length,
+      index: insertIndex,
       type: (VALID_STEP_TYPES.has(parsed.type ?? "") ? parsed.type : "research") as EpistemePlanStepType,
       title: String(parsed.title ?? description.slice(0, 60)),
       instruction: String(parsed.instruction ?? description),
       state: "pending",
     };
 
-    const updatedSteps = [...plan.steps, newStep];
-    this.workspaceDb.replacePlanSteps(planId, updatedSteps);
+    const spliced = [...plan.steps];
+    spliced.splice(insertIndex, 0, newStep);
+    const reindexed = spliced.map((s, i) => ({ ...s, index: i }));
+
+    this.workspaceDb.replacePlanSteps(planId, reindexed);
     const updated = this.workspaceDb.getPlan(planId)!;
     this.planningPlugin.setActivePlan(updated);
     this.broadcast({ type: "plan_updated", plan: updated });
