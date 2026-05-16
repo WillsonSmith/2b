@@ -132,6 +132,7 @@ async function dispatch(
     case "plan_skip_step":
     case "plan_amend_steps":
     case "plan_edit_step_summary":
+    case "plan_edit_step_instruction":
     case "plan_add_step":
     case "plan_reorder_step":
     case "plan_pause":

@@ -465,7 +465,8 @@
   opacity: 0;
   transition: opacity 0.1s, color 0.1s;
 }
-.plan-step-summary:hover .plan-step-summary-edit-btn {
+.plan-step-summary:hover .plan-step-summary-edit-btn,
+.plan-step-approve:hover .plan-step-summary-edit-btn {
   opacity: 1;
 }
 .plan-step-summary-edit-btn:hover {
