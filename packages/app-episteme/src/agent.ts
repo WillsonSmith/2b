@@ -12,6 +12,7 @@ import { StyleGuidePlugin } from "./plugins/StyleGuidePlugin.ts";
 import { DiagramPlugin } from "./plugins/DiagramPlugin.ts";
 import { CitationPlugin } from "./plugins/CitationPlugin.ts";
 import { ContradictionPlugin } from "./plugins/ContradictionPlugin.ts";
+import { PlanningPlugin } from "./plugins/PlanningPlugin.ts";
 import { workspaceDbPath } from "./paths.ts";
 import { WorkspaceDb } from "./db/workspaceDb.ts";
 import type { EpistemeConfig } from "./config.ts";
@@ -37,6 +38,7 @@ export interface EpistemeAgentBundle {
   citation: CitationPlugin;
   diagram: DiagramPlugin;
   contradiction: ContradictionPlugin;
+  planning: PlanningPlugin;
   workspaceDb: WorkspaceDb;
   shortTermMemory: MemoryPlugin;
 }
@@ -79,6 +81,8 @@ export function createEpistemAgent(
     workspaceDb,
   );
 
+  const planning = new PlanningPlugin(workspaceDb);
+
   const shortTermMemory = new MemoryPlugin(llm, { minMessages: 10, maxMessages: 15 });
   agent.registerPlugin(shortTermMemory);
   agent.registerPlugin(new BehaviorPlugin(agent.memoryPlugin, llm));
@@ -90,6 +94,7 @@ export function createEpistemAgent(
   agent.registerPlugin(citation);
   agent.registerPlugin(diagram);
   agent.registerPlugin(contradiction);
+  agent.registerPlugin(planning);
   agent.registerPlugin(
     new DynamicAgentPlugin(llm, {
       permissionManager,
@@ -106,6 +111,7 @@ export function createEpistemAgent(
     citation,
     diagram,
     contradiction,
+    planning,
     workspaceDb,
     shortTermMemory,
   };

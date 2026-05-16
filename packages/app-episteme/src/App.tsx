@@ -10,6 +10,8 @@ import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
 import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
 import { PanelGroup, type PanelEntry } from "./components/PanelGroup.tsx";
 import { UnifiedSearch, type SearchCommand } from "./components/UnifiedSearch.tsx";
+import { PlanPanel } from "./components/PlanPanel.tsx";
+import { usePlanning } from "./hooks/usePlanning.ts";
 import "./styles.css";
 import { getShell } from "./shell/index.ts";
 import { useWebSocket } from "./hooks/useWebSocket.ts";
@@ -19,6 +21,7 @@ import {
   Settings,
   AlignLeft,
   Circle,
+  ClipboardList,
 } from "lucide-react";
 import { useFileManager } from "./hooks/useFileManager.ts";
 import { useEditorFeatures } from "./hooks/useEditorFeatures.ts";
@@ -78,6 +81,7 @@ function App() {
   const [showToc, setShowToc] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [dismissedLargeFile, setDismissedLargeFile] = useState(false);
+  const [showPlan, setShowPlan] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [editorCounts, setEditorCounts] = useState({ words: 0, chars: 0 });
   const [editorMode, setEditorMode] = useState<"formatted" | "markdown">("formatted");
@@ -88,6 +92,12 @@ function App() {
   const [workspaceRoot, setWorkspaceRoot] = useState("");
 
   const ws = useWebSocket();
+  const planning = usePlanning(ws.wsRef, ws.subscribe);
+
+  // Auto-open the plan panel when a plan is created or already active on connect
+  useEffect(() => {
+    if (planning.plan) setShowPlan(true);
+  }, [planning.plan !== null]);
 
   const fileManager = useFileManager(ws.wsRef, ws.agentState, ws.subscribe);
   const editorFeatures = useEditorFeatures(
@@ -568,6 +578,13 @@ function App() {
           </button>
 
           <button
+            className={`header-research-btn${showPlan ? " active" : ""}`}
+            title="Plan panel"
+            onClick={() => setShowPlan((v) => !v)}
+          >
+            <ClipboardList size={16} />
+          </button>
+          <button
             className="header-research-btn"
             title="Settings"
             onClick={() => { setSettingsInitialTab("style"); setShowSettings(true); }}
@@ -813,6 +830,36 @@ function App() {
                 onRefresh={conflictsGraph.handleContradictionScan}
                 contradictions={conflictsGraph.contradictions}
                 isLoading={conflictsGraph.isScanning}
+              />
+            ),
+          });
+          if (showPlan) panels.push({
+            id: "plan",
+            label: "Plan",
+            defaultWidth: 300,
+            onClose: () => setShowPlan(false),
+            content: (
+              <PlanPanel
+                plan={planning.plan}
+                activeFile={fileManager.activeFile}
+                agentState={ws.agentState}
+                onClose={() => setShowPlan(false)}
+                onRequestPlan={planning.requestPlan}
+                onRequestPlanFromDocument={planning.requestPlanFromDocument}
+                onApprovePlan={planning.approvePlan}
+                onApproveStep={planning.approveStep}
+                onRetryStep={planning.retryStep}
+                onSkipStep={planning.skipStep}
+                onAmendSteps={planning.amendSteps}
+                onEditStepSummary={planning.editStepSummary}
+                onEditStepInstruction={planning.editStepInstruction}
+                onAddStep={planning.addStep}
+                onReorderStep={planning.reorderStep}
+                onPause={planning.pausePlan}
+                onResume={planning.resumePlan}
+                onResumeAuto={planning.resumeAuto}
+                onCancel={planning.cancelPlan}
+                onNewPlan={planning.resetPlan}
               />
             ),
           });

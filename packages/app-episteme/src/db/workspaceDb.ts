@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
+import type { EpistemePlan, EpistemePlanStep, PlanState, StepState, EpistemePlanStepType, PlanApprovalMode } from "../planning/types.ts";
 
 export interface WorkspaceFileRow {
   relPath: string;
@@ -128,7 +129,7 @@ interface TocEntryRecord {
   content_hash: string;
 }
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 7;
 
 /**
  * Structural data store for the Episteme workspace: files, link edges,
@@ -167,6 +168,14 @@ export class WorkspaceDb {
   private stmtSaveTocEntries!: ReturnType<Database["prepare"]>;
   private stmtDeleteTocEntries!: ReturnType<Database["prepare"]>;
   private stmtLoadTocEntries!: ReturnType<Database["prepare"]>;
+  private stmtInsertPlan!: ReturnType<Database["prepare"]>;
+  private stmtGetPlan!: ReturnType<Database["prepare"]>;
+  private stmtGetActivePlan!: ReturnType<Database["prepare"]>;
+  private stmtUpdatePlanState!: ReturnType<Database["prepare"]>;
+  private stmtInsertPlanStep!: ReturnType<Database["prepare"]>;
+  private stmtUpdatePlanStep!: ReturnType<Database["prepare"]>;
+  private stmtGetPlanSteps!: ReturnType<Database["prepare"]>;
+  private stmtDeletePlanSteps!: ReturnType<Database["prepare"]>;
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath, { create: true });
@@ -309,11 +318,47 @@ export class WorkspaceDb {
       )
     `);
 
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS ep_plans (
+        id            TEXT PRIMARY KEY,
+        goal          TEXT NOT NULL,
+        state         TEXT NOT NULL DEFAULT 'awaiting_approval',
+        approval_mode TEXT NOT NULL DEFAULT 'all',
+        trigger       TEXT NOT NULL DEFAULT 'user_goal',
+        trigger_doc   TEXT,
+        prior_context TEXT,
+        created_at    INTEGER NOT NULL,
+        started_at    INTEGER,
+        completed_at  INTEGER
+      )
+    `);
+
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS ep_plan_steps (
+        id              TEXT PRIMARY KEY,
+        plan_id         TEXT NOT NULL REFERENCES ep_plans(id) ON DELETE CASCADE,
+        step_index      INTEGER NOT NULL,
+        type            TEXT NOT NULL,
+        title           TEXT NOT NULL,
+        instruction     TEXT NOT NULL,
+        state           TEXT NOT NULL DEFAULT 'pending',
+        full_result     TEXT,
+        context_summary TEXT,
+        error           TEXT,
+        started_at      INTEGER,
+        completed_at    INTEGER
+      )
+    `);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_ep_plan_steps_plan ON ep_plan_steps(plan_id)`);
+
     if (previousVersion > 0 && previousVersion < 2) {
       this.db.run(`
         INSERT INTO ws_files_fts(rowid, rel_path, first_line, content)
         SELECT rowid, rel_path, first_line, content FROM ws_files
       `);
+    }
+    if (previousVersion > 0 && previousVersion < 7) {
+      try { this.db.run("ALTER TABLE ep_plans ADD COLUMN prior_context TEXT"); } catch {}
     }
     if (previousVersion > 0 && previousVersion < SCHEMA_VERSION) {
       this.db.run("UPDATE ws_schema_version SET version = ?", [SCHEMA_VERSION]);
@@ -435,6 +480,37 @@ export class WorkspaceDb {
     this.stmtLoadTocEntries = this.db.prepare(
       "SELECT * FROM toc_entries WHERE file_path = ? ORDER BY rowid ASC",
     );
+
+    this.stmtInsertPlan = this.db.prepare(`
+      INSERT INTO ep_plans (id, goal, state, approval_mode, trigger, trigger_doc, prior_context, created_at, started_at, completed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    this.stmtGetPlan = this.db.prepare("SELECT * FROM ep_plans WHERE id = ?");
+    this.stmtGetActivePlan = this.db.prepare(
+      `SELECT * FROM ep_plans WHERE state NOT IN ('complete', 'cancelled') ORDER BY created_at DESC LIMIT 1`,
+    );
+    this.stmtUpdatePlanState = this.db.prepare(
+      `UPDATE ep_plans SET state = ?, started_at = COALESCE(?, started_at), completed_at = COALESCE(?, completed_at) WHERE id = ?`,
+    );
+    this.stmtInsertPlanStep = this.db.prepare(`
+      INSERT INTO ep_plan_steps (id, plan_id, step_index, type, title, instruction, state, full_result, context_summary, error, started_at, completed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    this.stmtUpdatePlanStep = this.db.prepare(`
+      UPDATE ep_plan_steps SET
+        state           = COALESCE(?, state),
+        full_result     = COALESCE(?, full_result),
+        context_summary = COALESCE(?, context_summary),
+        error           = COALESCE(?, error),
+        started_at      = COALESCE(?, started_at),
+        completed_at    = COALESCE(?, completed_at),
+        instruction     = COALESCE(?, instruction)
+      WHERE id = ?
+    `);
+    this.stmtGetPlanSteps = this.db.prepare(
+      "SELECT * FROM ep_plan_steps WHERE plan_id = ? ORDER BY step_index ASC",
+    );
+    this.stmtDeletePlanSteps = this.db.prepare("DELETE FROM ep_plan_steps WHERE plan_id = ?");
   }
 
   // ── workspace files ──────────────────────────────────────────────────────
@@ -639,9 +715,145 @@ export class WorkspaceDb {
     }));
   }
 
+  // ── plans ─────────────────────────────────────────────────────────────────
+
+  createPlan(plan: EpistemePlan): void {
+    const tx = this.db.transaction(() => {
+      this.stmtInsertPlan.run(
+        plan.id, plan.goal, plan.state, plan.approvalMode,
+        plan.trigger, plan.triggerDocument ?? null,
+        plan.priorContext ?? null,
+        plan.createdAt, plan.startedAt ?? null, plan.completedAt ?? null,
+      );
+      for (const step of plan.steps) {
+        this.stmtInsertPlanStep.run(
+          step.id, step.planId, step.index, step.type, step.title,
+          step.instruction, step.state,
+          step.fullResult ?? null, step.contextSummary ?? null,
+          step.error ?? null, step.startedAt ?? null, step.completedAt ?? null,
+        );
+      }
+    });
+    tx();
+  }
+
+  getPlan(id: string): EpistemePlan | null {
+    const row = this.stmtGetPlan.get(id) as PlanRow | null;
+    if (!row) return null;
+    return this.hydratePlan(row);
+  }
+
+  getActivePlan(): EpistemePlan | null {
+    const row = this.stmtGetActivePlan.get() as PlanRow | null;
+    if (!row) return null;
+    return this.hydratePlan(row);
+  }
+
+  updatePlanState(
+    id: string,
+    state: PlanState,
+    extra: { startedAt?: number; completedAt?: number } = {},
+  ): void {
+    this.stmtUpdatePlanState.run(state, extra.startedAt ?? null, extra.completedAt ?? null, id);
+  }
+
+  updatePlanStep(
+    id: string,
+    updates: Partial<Pick<EpistemePlanStep, "state" | "fullResult" | "contextSummary" | "error" | "startedAt" | "completedAt" | "instruction">>,
+  ): void {
+    this.stmtUpdatePlanStep.run(
+      updates.state ?? null,
+      updates.fullResult ?? null,
+      updates.contextSummary ?? null,
+      "error" in updates ? (updates.error ?? null) : null,
+      updates.startedAt ?? null,
+      updates.completedAt ?? null,
+      updates.instruction ?? null,
+      id,
+    );
+  }
+
+  replacePlanSteps(planId: string, steps: EpistemePlanStep[]): void {
+    const tx = this.db.transaction(() => {
+      this.stmtDeletePlanSteps.run(planId);
+      for (const step of steps) {
+        this.stmtInsertPlanStep.run(
+          step.id, step.planId, step.index, step.type, step.title,
+          step.instruction, step.state,
+          step.fullResult ?? null, step.contextSummary ?? null,
+          step.error ?? null, step.startedAt ?? null, step.completedAt ?? null,
+        );
+      }
+    });
+    tx();
+  }
+
+  private hydratePlan(row: PlanRow): EpistemePlan {
+    const stepRows = this.stmtGetPlanSteps.all(row.id) as StepRow[];
+    const steps: EpistemePlanStep[] = stepRows.map(toStep);
+    return {
+      id: row.id,
+      goal: row.goal,
+      state: row.state as PlanState,
+      approvalMode: row.approval_mode as PlanApprovalMode,
+      trigger: row.trigger as "user_goal" | "document",
+      triggerDocument: row.trigger_doc ?? undefined,
+      priorContext: row.prior_context ?? undefined,
+      steps,
+      createdAt: row.created_at,
+      startedAt: row.started_at ?? undefined,
+      completedAt: row.completed_at ?? undefined,
+    };
+  }
+
   close(): void {
     this.db.close();
   }
+}
+
+interface PlanRow {
+  id: string;
+  goal: string;
+  state: string;
+  approval_mode: string;
+  trigger: string;
+  trigger_doc: string | null;
+  prior_context: string | null;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+}
+
+interface StepRow {
+  id: string;
+  plan_id: string;
+  step_index: number;
+  type: string;
+  title: string;
+  instruction: string;
+  state: string;
+  full_result: string | null;
+  context_summary: string | null;
+  error: string | null;
+  started_at: number | null;
+  completed_at: number | null;
+}
+
+function toStep(r: StepRow): EpistemePlanStep {
+  return {
+    id: r.id,
+    planId: r.plan_id,
+    index: r.step_index,
+    type: r.type as EpistemePlanStepType,
+    title: r.title,
+    instruction: r.instruction,
+    state: r.state as StepState,
+    fullResult: r.full_result ?? undefined,
+    contextSummary: r.context_summary ?? undefined,
+    error: r.error ?? undefined,
+    startedAt: r.started_at ?? undefined,
+    completedAt: r.completed_at ?? undefined,
+  };
 }
 
 function toWorkspaceFileRow(r: WsFileRecord): WorkspaceFileRow {
