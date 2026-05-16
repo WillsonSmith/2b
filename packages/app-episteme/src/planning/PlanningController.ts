@@ -577,13 +577,43 @@ export class PlanningController {
   }
 
   private finishPlan(plan: EpistemePlan): void {
-    this.workspaceDb.updatePlanState(plan.id, "complete", { completedAt: Date.now() });
+    const completedAt = Date.now();
+    this.workspaceDb.updatePlanState(plan.id, "complete", { completedAt });
     const completed = { ...plan, state: "complete" as const };
     this.planningPlugin.setActivePlan(null);
     this.planningPlugin.clearExecution();
+
+    const summary = this.buildCompletionSummary(plan, completedAt);
+    this.workspaceDb.appendChatMessage("assistant", summary);
+    this.broadcast({ type: "speak", text: summary });
+
     this.broadcast({ type: "plan_complete", planId: plan.id });
     this.broadcast({ type: "plan_updated", plan: completed });
     this.broadcast({ type: "state_change", state: "idle" });
+  }
+
+  private buildCompletionSummary(plan: EpistemePlan, completedAt: number): string {
+    const sorted = [...plan.steps].sort((a, b) => a.index - b.index);
+    const completedSteps = sorted.filter(s => s.state === "complete");
+    const skippedSteps = sorted.filter(s => s.state === "skipped");
+
+    const lines: string[] = [`**Plan complete:** "${plan.goal}"`, ""];
+
+    for (const step of completedSteps) {
+      lines.push(`**${step.index + 1}. ${step.title}** — ${step.contextSummary ?? "Completed."}`);
+    }
+    for (const step of skippedSteps) {
+      lines.push(`**${step.index + 1}. ${step.title}** — *(skipped)*`);
+    }
+
+    const footerParts = [`${completedSteps.length}/${plan.steps.length} steps completed`];
+    if (plan.startedAt) {
+      const secs = Math.round((completedAt - plan.startedAt) / 1000);
+      footerParts.push(secs >= 60 ? `${Math.floor(secs / 60)}m ${secs % 60}s` : `${secs}s`);
+    }
+    lines.push("", `_${footerParts.join(" · ")}_`);
+
+    return lines.join("\n\n");
   }
 
   private callAgent(instruction: string): Promise<string> {
