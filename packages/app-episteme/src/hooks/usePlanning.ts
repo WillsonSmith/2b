@@ -12,6 +12,8 @@ export interface UsePlanningReturn {
   skipStep: (planId: string, stepId: string) => void;
   amendSteps: (planId: string, steps: PlanStepDraft[]) => void;
   editStepSummary: (planId: string, stepId: string, summary: string) => void;
+  addStep: (planId: string, description: string) => void;
+  reorderStep: (planId: string, stepId: string, direction: "up" | "down") => void;
   pausePlan: () => void;
   resumePlan: () => void;
   resumeAuto: () => void;
@@ -115,6 +117,14 @@ export function usePlanning(
     send({ type: "plan_edit_step_summary", planId, stepId, summary });
   }, [send]);
 
+  const addStep = useCallback((planId: string, description: string) => {
+    send({ type: "plan_add_step", planId, description });
+  }, [send]);
+
+  const reorderStep = useCallback((planId: string, stepId: string, direction: "up" | "down") => {
+    send({ type: "plan_reorder_step", planId, stepId, direction });
+  }, [send]);
+
   const pausePlan = useCallback(() => {
     send({ type: "plan_pause" });
   }, [send]);
@@ -145,6 +155,8 @@ export function usePlanning(
     skipStep,
     amendSteps,
     editStepSummary,
+    addStep,
+    reorderStep,
     pausePlan,
     resumePlan,
     resumeAuto,

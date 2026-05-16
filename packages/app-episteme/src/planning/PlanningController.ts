@@ -43,6 +43,18 @@ Guidelines:
 
 const SUMMARIZE_SYSTEM = `You are a concise summarizer. Write 2-3 sentences summarizing what was accomplished in the step. Return only the summary, no preamble or labels.`;
 
+const STEP_GENERATOR_SYSTEM = `You are a planning assistant for Episteme, a Markdown research and writing tool.
+Given a plan goal, its existing steps, and a short description of a new step to add, generate a well-formed step object.
+
+Return ONLY valid JSON in this exact format, with no other text:
+{
+  "type": "research" | "outline" | "draft" | "edit" | "cite" | "analyze" | "organize",
+  "title": "short step title",
+  "instruction": "detailed, self-contained instruction for this step"
+}
+
+The instruction must be actionable and consistent with the surrounding steps in the plan.`;
+
 const VALID_STEP_TYPES = new Set<string>(["research", "outline", "draft", "edit", "cite", "analyze", "organize"]);
 
 export class PlanningController {
@@ -51,6 +63,7 @@ export class PlanningController {
   private cancelled = false;
   private structurer: HeadlessAgent;
   private summarizer: HeadlessAgent;
+  private stepGenerator: HeadlessAgent;
 
   constructor(
     llm: LLMProvider,
@@ -61,6 +74,7 @@ export class PlanningController {
   ) {
     this.structurer = new HeadlessAgent(llm, [], STRUCTURING_SYSTEM, { agentName: "PlanStructurer" });
     this.summarizer = new HeadlessAgent(llm, [], SUMMARIZE_SYSTEM, { agentName: "PlanSummarizer" });
+    this.stepGenerator = new HeadlessAgent(llm, [], STEP_GENERATOR_SYSTEM, { agentName: "PlanStepGenerator" });
   }
 
   /** True while the agent is processing a plan step — server should reject user `send` messages. */
@@ -221,6 +235,70 @@ export class PlanningController {
     if (!step) return;
 
     this.workspaceDb.updatePlanStep(stepId, { contextSummary: summary });
+    const updated = this.workspaceDb.getPlan(planId)!;
+    this.planningPlugin.setActivePlan(updated);
+    this.broadcast({ type: "plan_updated", plan: updated });
+  }
+
+  async addStep(planId: string, description: string): Promise<void> {
+    const plan = this.workspaceDb.getPlan(planId);
+    if (!plan || plan.state !== "awaiting_approval") return;
+
+    const stepList = plan.steps
+      .map((s, i) => `${i + 1}. [${s.type}] ${s.title}: ${s.instruction.slice(0, 120)}`)
+      .join("\n");
+
+    const prompt = `Plan goal: ${plan.goal}\n\nExisting steps:\n${stepList}\n\nDescription for new step: ${description}\n\nGenerate a step object.`;
+
+    let raw: string;
+    try {
+      raw = await this.stepGenerator.ask(prompt);
+    } catch (err) {
+      logger.error("PlanningController", `addStep generation failed: ${err}`);
+      throw err;
+    }
+
+    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonStr = fenceMatch ? fenceMatch[1] : raw;
+    let parsed: { type?: string; title?: string; instruction?: string };
+    try {
+      parsed = JSON.parse(jsonStr ?? raw);
+    } catch {
+      logger.error("PlanningController", `addStep: invalid JSON: ${raw.slice(0, 200)}`);
+      throw new Error("Step generation returned invalid JSON.");
+    }
+
+    const newStep: EpistemePlanStep = {
+      id: randomUUID(),
+      planId,
+      index: plan.steps.length,
+      type: (VALID_STEP_TYPES.has(parsed.type ?? "") ? parsed.type : "research") as EpistemePlanStepType,
+      title: String(parsed.title ?? description.slice(0, 60)),
+      instruction: String(parsed.instruction ?? description),
+      state: "pending",
+    };
+
+    const updatedSteps = [...plan.steps, newStep];
+    this.workspaceDb.replacePlanSteps(planId, updatedSteps);
+    const updated = this.workspaceDb.getPlan(planId)!;
+    this.planningPlugin.setActivePlan(updated);
+    this.broadcast({ type: "plan_updated", plan: updated });
+  }
+
+  reorderStep(planId: string, stepId: string, direction: "up" | "down"): void {
+    const plan = this.workspaceDb.getPlan(planId);
+    if (!plan || plan.state !== "awaiting_approval") return;
+
+    const idx = plan.steps.findIndex(s => s.id === stepId);
+    if (idx === -1) return;
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= plan.steps.length) return;
+
+    const reordered = [...plan.steps];
+    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx]!, reordered[idx]!];
+    const reindexed = reordered.map((s, i) => ({ ...s, index: i }));
+
+    this.workspaceDb.replacePlanSteps(planId, reindexed);
     const updated = this.workspaceDb.getPlan(planId)!;
     this.planningPlugin.setActivePlan(updated);
     this.broadcast({ type: "plan_updated", plan: updated });

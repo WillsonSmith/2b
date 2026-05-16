@@ -386,6 +386,40 @@
   flex-shrink: 0;
 }
 
+/* ── Step reorder buttons ─────────────────────────────────────────────────── */
+
+.plan-step-reorder-btns {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.plan-step-header:hover .plan-step-reorder-btns {
+  opacity: 1;
+}
+
+.plan-step-reorder-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 1px 2px;
+  border-radius: 2px;
+  line-height: 1;
+}
+.plan-step-reorder-btn:hover:not(:disabled) {
+  color: var(--text-muted);
+  background: var(--bg-highlight);
+}
+.plan-step-reorder-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
 /* ── Step expanded summary ────────────────────────────────────────────────── */
 
 .plan-step-summary {
@@ -627,4 +661,38 @@
   padding: 8px 10px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+/* ── Add step ─────────────────────────────────────────────────────────────── */
+
+.plan-add-step-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-top: 1px dashed var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+.plan-add-step-btn:hover {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.plan-add-step-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.plan-add-step-actions {
+  display: flex;
+  gap: 6px;
 }
