@@ -12,6 +12,7 @@ export interface UsePlanningReturn {
   skipStep: (planId: string, stepId: string) => void;
   amendSteps: (planId: string, steps: PlanStepDraft[]) => void;
   editStepSummary: (planId: string, stepId: string, summary: string) => void;
+  editStepInstruction: (planId: string, stepId: string, instruction: string) => void;
   addStep: (planId: string, description: string, insertAfterStepId?: string | null) => void;
   reorderStep: (planId: string, stepId: string, direction: "up" | "down") => void;
   pausePlan: () => void;
@@ -117,6 +118,10 @@ export function usePlanning(
     send({ type: "plan_edit_step_summary", planId, stepId, summary });
   }, [send]);
 
+  const editStepInstruction = useCallback((planId: string, stepId: string, instruction: string) => {
+    send({ type: "plan_edit_step_instruction", planId, stepId, instruction });
+  }, [send]);
+
   const addStep = useCallback((planId: string, description: string, insertAfterStepId?: string | null) => {
     send({ type: "plan_add_step", planId, description, insertAfterStepId });
   }, [send]);
@@ -155,6 +160,7 @@ export function usePlanning(
     skipStep,
     amendSteps,
     editStepSummary,
+    editStepInstruction,
     addStep,
     reorderStep,
     pausePlan,

@@ -228,6 +228,18 @@ export class PlanningController {
       .catch(err => logger.error("PlanningController", `approveStep: ${err}`));
   }
 
+  async editStepInstruction(planId: string, stepId: string, instruction: string): Promise<void> {
+    const plan = this.workspaceDb.getPlan(planId);
+    if (!plan) return;
+    const step = plan.steps.find(s => s.id === stepId && s.state === "awaiting_approval");
+    if (!step) return;
+
+    this.workspaceDb.updatePlanStep(stepId, { instruction });
+    const updated = this.workspaceDb.getPlan(planId)!;
+    this.planningPlugin.setActivePlan(updated);
+    this.broadcast({ type: "plan_updated", plan: updated });
+  }
+
   async editStepSummary(planId: string, stepId: string, summary: string): Promise<void> {
     const plan = this.workspaceDb.getPlan(planId);
     if (!plan) return;
@@ -242,7 +254,7 @@ export class PlanningController {
 
   async addStep(planId: string, description: string, insertAfterStepId?: string | null): Promise<void> {
     const plan = this.workspaceDb.getPlan(planId);
-    if (!plan || plan.state !== "awaiting_approval") return;
+    if (!plan || (plan.state !== "awaiting_approval" && plan.state !== "awaiting_step")) return;
 
     const stepList = plan.steps
       .map((s, i) => `${i + 1}. [${s.type}] ${s.title}: ${s.instruction.slice(0, 120)}`)
