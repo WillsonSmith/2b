@@ -14,6 +14,7 @@ export type PlanMsg = Extract<
       | "plan_skip_step"
       | "plan_amend_steps"
       | "plan_edit_step_summary"
+      | "plan_edit_step_instruction"
       | "plan_add_step"
       | "plan_reorder_step"
       | "plan_pause"
@@ -69,6 +70,10 @@ export async function handlePlan(
 
     case "plan_edit_step_summary":
       await planning.editStepSummary(msg.planId, msg.stepId, msg.summary);
+      return;
+
+    case "plan_edit_step_instruction":
+      await planning.editStepInstruction(msg.planId, msg.stepId, msg.instruction);
       return;
 
     case "plan_add_step":

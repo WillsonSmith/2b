@@ -47,14 +47,17 @@ interface StepRowProps {
   onRetry: (planId: string, stepId: string) => void;
   onSkip: (planId: string, stepId: string) => void;
   onEditSummary: (planId: string, stepId: string, summary: string) => void;
+  onEditInstruction: (planId: string, stepId: string, instruction: string) => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
 }
 
-function StepRow({ step, index, isCurrent, isFirst, isLast, planState, planId, onApproveStep, onRetry, onSkip, onEditSummary, onMoveUp, onMoveDown }: StepRowProps) {
+function StepRow({ step, index, isCurrent, isFirst, isLast, planState, planId, onApproveStep, onRetry, onSkip, onEditSummary, onEditInstruction, onMoveUp, onMoveDown }: StepRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [editingSummary, setEditingSummary] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
+  const [editingInstruction, setEditingInstruction] = useState(false);
+  const [instructionDraft, setInstructionDraft] = useState("");
   const Icon = STEP_TYPE_ICONS[step.type];
 
   const stateIcon = () => {
@@ -68,7 +71,7 @@ function StepRow({ step, index, isCurrent, isFirst, isLast, planState, planId, o
     }
   };
 
-  const isExpandable = step.state === "complete" && (step.contextSummary || step.fullResult);
+  const isExpandable = !!(step.instruction) || (step.state === "complete" && !!(step.contextSummary || step.fullResult));
 
   const startEditing = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -108,37 +111,41 @@ function StepRow({ step, index, isCurrent, isFirst, isLast, planState, planId, o
         )}
       </div>
 
-      {expanded && step.contextSummary && (
+      {expanded && (
         <div className="plan-step-summary">
-          {editingSummary ? (
-            <div className="plan-step-summary-editor">
-              <textarea
-                className="plan-editor-instruction-input"
-                value={summaryDraft}
-                rows={3}
-                autoFocus
-                onChange={e => setSummaryDraft(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) saveSummary();
-                  if (e.key === "Escape") cancelEditing();
-                }}
-              />
-              <div className="plan-step-summary-edit-actions">
-                <button className="plan-btn plan-btn--primary plan-btn--sm" onClick={saveSummary}>
-                  <Check size={11} /> Save
-                </button>
-                <button className="plan-btn plan-btn--ghost plan-btn--sm" onClick={cancelEditing}>
-                  Cancel
+          {step.state === "complete" && step.contextSummary ? (
+            editingSummary ? (
+              <div className="plan-step-summary-editor">
+                <textarea
+                  className="plan-editor-instruction-input"
+                  value={summaryDraft}
+                  rows={3}
+                  autoFocus
+                  onChange={e => setSummaryDraft(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) saveSummary();
+                    if (e.key === "Escape") cancelEditing();
+                  }}
+                />
+                <div className="plan-step-summary-edit-actions">
+                  <button className="plan-btn plan-btn--primary plan-btn--sm" onClick={saveSummary}>
+                    <Check size={11} /> Save
+                  </button>
+                  <button className="plan-btn plan-btn--ghost plan-btn--sm" onClick={cancelEditing}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="plan-step-summary-text">
+                <span>{step.contextSummary}</span>
+                <button className="plan-step-summary-edit-btn" onClick={startEditing} title="Edit context summary">
+                  <PencilLine size={11} />
                 </button>
               </div>
-            </div>
+            )
           ) : (
-            <div className="plan-step-summary-text">
-              <span>{step.contextSummary}</span>
-              <button className="plan-step-summary-edit-btn" onClick={startEditing} title="Edit context summary">
-                <PencilLine size={11} />
-              </button>
-            </div>
+            <p className="plan-step-instruction-preview">{step.instruction}</p>
           )}
         </div>
       )}
@@ -161,7 +168,46 @@ function StepRow({ step, index, isCurrent, isFirst, isLast, planState, planId, o
 
       {step.state === "awaiting_approval" && planState === "awaiting_step" && (
         <div className="plan-step-approve">
-          <p className="plan-step-instruction">{step.instruction}</p>
+          {editingInstruction ? (
+            <>
+              <textarea
+                className="plan-editor-instruction-input"
+                value={instructionDraft}
+                rows={3}
+                autoFocus
+                onChange={e => setInstructionDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    onEditInstruction(planId, step.id, instructionDraft.trim());
+                    setEditingInstruction(false);
+                  }
+                  if (e.key === "Escape") setEditingInstruction(false);
+                }}
+              />
+              <div className="plan-step-summary-edit-actions">
+                <button
+                  className="plan-btn plan-btn--primary plan-btn--sm"
+                  onClick={() => { onEditInstruction(planId, step.id, instructionDraft.trim()); setEditingInstruction(false); }}
+                >
+                  <Check size={11} /> Save
+                </button>
+                <button className="plan-btn plan-btn--ghost plan-btn--sm" onClick={() => setEditingInstruction(false)}>
+                  Cancel
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="plan-step-summary-text">
+              <span className="plan-step-instruction-preview">{step.instruction}</span>
+              <button
+                className="plan-step-summary-edit-btn"
+                onClick={() => { setInstructionDraft(step.instruction); setEditingInstruction(true); }}
+                title="Edit instruction"
+              >
+                <PencilLine size={11} />
+              </button>
+            </div>
+          )}
           <button className="plan-btn plan-btn--primary" onClick={() => onApproveStep(planId, step.id)}>
             <Play size={12} /> Run this step
           </button>
@@ -238,14 +284,17 @@ function StepEditor({ steps, onSave, onCancel }: StepEditorProps) {
 interface AddStepFormProps {
   isLoading: boolean;
   existingSteps: EpistemePlanStep[];
+  defaultInsertAfterStepId?: string | null;
   onAdd: (description: string, insertAfterStepId?: string | null) => void;
   onCancel: () => void;
 }
 
-function AddStepForm({ isLoading, existingSteps, onAdd, onCancel }: AddStepFormProps) {
+function AddStepForm({ isLoading, existingSteps, defaultInsertAfterStepId, onAdd, onCancel }: AddStepFormProps) {
   const [description, setDescription] = useState("");
-  const defaultPosition = existingSteps.length > 0 ? existingSteps[existingSteps.length - 1]!.id : null;
-  const [insertAfterStepId, setInsertAfterStepId] = useState<string | null>(defaultPosition);
+  const fallbackPosition = existingSteps.length > 0 ? existingSteps[existingSteps.length - 1]!.id : null;
+  const [insertAfterStepId, setInsertAfterStepId] = useState<string | null>(
+    defaultInsertAfterStepId !== undefined ? defaultInsertAfterStepId : fallbackPosition,
+  );
 
   const handleSubmit = () => {
     if (!description.trim() || isLoading) return;
@@ -402,6 +451,7 @@ export interface PlanPanelProps {
   onSkipStep: (planId: string, stepId: string) => void;
   onAmendSteps: (planId: string, steps: PlanStepDraft[]) => void;
   onEditStepSummary: (planId: string, stepId: string, summary: string) => void;
+  onEditStepInstruction: (planId: string, stepId: string, instruction: string) => void;
   onAddStep: (planId: string, description: string, insertAfterStepId?: string | null) => void;
   onReorderStep: (planId: string, stepId: string, direction: "up" | "down") => void;
   onPause: () => void;
@@ -426,7 +476,7 @@ export function PlanPanel({
   plan, activeFile, agentState,
   onClose, onRequestPlan, onRequestPlanFromDocument,
   onApprovePlan, onApproveStep, onRetryStep, onSkipStep,
-  onAmendSteps, onEditStepSummary, onAddStep, onReorderStep,
+  onAmendSteps, onEditStepSummary, onEditStepInstruction, onAddStep, onReorderStep,
   onPause, onResume, onResumeAuto, onCancel, onNewPlan,
 }: PlanPanelProps) {
   const [editing, setEditing] = useState(false);
@@ -636,15 +686,17 @@ export function PlanPanel({
                   onRetry={onRetryStep}
                   onSkip={onSkipStep}
                   onEditSummary={onEditStepSummary}
+                  onEditInstruction={onEditStepInstruction}
                   onMoveUp={() => onReorderStep(plan.id, step.id, "up")}
                   onMoveDown={() => onReorderStep(plan.id, step.id, "down")}
                 />
               ))}
-              {plan.state === "awaiting_approval" && (
+              {(plan.state === "awaiting_approval" || plan.state === "awaiting_step") && (
                 showAddForm ? (
                   <AddStepForm
                     isLoading={addingStep}
                     existingSteps={plan.steps}
+                    defaultInsertAfterStepId={plan.state === "awaiting_step" ? currentStepId : undefined}
                     onAdd={(desc, insertAfterStepId) => { setAddingStep(true); onAddStep(plan.id, desc, insertAfterStepId); }}
                     onCancel={() => { setShowAddForm(false); setAddingStep(false); }}
                   />

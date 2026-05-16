@@ -503,7 +503,8 @@ export class WorkspaceDb {
         context_summary = COALESCE(?, context_summary),
         error           = COALESCE(?, error),
         started_at      = COALESCE(?, started_at),
-        completed_at    = COALESCE(?, completed_at)
+        completed_at    = COALESCE(?, completed_at),
+        instruction     = COALESCE(?, instruction)
       WHERE id = ?
     `);
     this.stmtGetPlanSteps = this.db.prepare(
@@ -758,7 +759,7 @@ export class WorkspaceDb {
 
   updatePlanStep(
     id: string,
-    updates: Partial<Pick<EpistemePlanStep, "state" | "fullResult" | "contextSummary" | "error" | "startedAt" | "completedAt">>,
+    updates: Partial<Pick<EpistemePlanStep, "state" | "fullResult" | "contextSummary" | "error" | "startedAt" | "completedAt" | "instruction">>,
   ): void {
     this.stmtUpdatePlanStep.run(
       updates.state ?? null,
@@ -767,6 +768,7 @@ export class WorkspaceDb {
       "error" in updates ? (updates.error ?? null) : null,
       updates.startedAt ?? null,
       updates.completedAt ?? null,
+      updates.instruction ?? null,
       id,
     );
   }
