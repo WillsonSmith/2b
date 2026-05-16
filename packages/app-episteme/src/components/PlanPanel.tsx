@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   X, Play, Pause, SkipForward, RotateCcw, Ban,
   Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen,
-  ChevronDown, ChevronRight, Loader2, CheckCircle2, AlertCircle, Circle,
+  ChevronDown, ChevronRight, ChevronUp, Plus, Loader2, CheckCircle2, AlertCircle, Circle,
   ClipboardList, PencilLine, Check,
 } from "lucide-react";
 import type { EpistemePlan, EpistemePlanStep, EpistemePlanStepType, PlanStepDraft, PlanApprovalMode } from "../planning/types.ts";
@@ -39,15 +39,19 @@ interface StepRowProps {
   step: EpistemePlanStep;
   index: number;
   isCurrent: boolean;
+  isFirst: boolean;
+  isLast: boolean;
   planState: EpistemePlan["state"];
   planId: string;
   onApproveStep: (planId: string, stepId: string) => void;
   onRetry: (planId: string, stepId: string) => void;
   onSkip: (planId: string, stepId: string) => void;
   onEditSummary: (planId: string, stepId: string, summary: string) => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
 }
 
-function StepRow({ step, index, isCurrent, planState, planId, onApproveStep, onRetry, onSkip, onEditSummary }: StepRowProps) {
+function StepRow({ step, index, isCurrent, isFirst, isLast, planState, planId, onApproveStep, onRetry, onSkip, onEditSummary, onMoveUp, onMoveDown }: StepRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [editingSummary, setEditingSummary] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
@@ -87,6 +91,16 @@ function StepRow({ step, index, isCurrent, planState, planId, onApproveStep, onR
         <span className="plan-step-type-icon"><Icon size={13} /></span>
         <span className="plan-step-title">{step.title}</span>
         <span className="plan-step-type-label">{STEP_TYPE_LABELS[step.type]}</span>
+        {planState === "awaiting_approval" && (
+          <span className="plan-step-reorder-btns" onClick={e => e.stopPropagation()}>
+            <button className="plan-step-reorder-btn" onClick={onMoveUp} disabled={isFirst} title="Move up">
+              <ChevronUp size={11} />
+            </button>
+            <button className="plan-step-reorder-btn" onClick={onMoveDown} disabled={isLast} title="Move down">
+              <ChevronDown size={11} />
+            </button>
+          </span>
+        )}
         {isExpandable && (
           <span className="plan-step-expand-icon">
             {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -219,6 +233,54 @@ function StepEditor({ steps, onSave, onCancel }: StepEditorProps) {
   );
 }
 
+// ── Add step form ─────────────────────────────────────────────────────────────
+
+interface AddStepFormProps {
+  isLoading: boolean;
+  onAdd: (description: string) => void;
+  onCancel: () => void;
+}
+
+function AddStepForm({ isLoading, onAdd, onCancel }: AddStepFormProps) {
+  const [description, setDescription] = useState("");
+
+  const handleSubmit = () => {
+    if (!description.trim() || isLoading) return;
+    onAdd(description.trim());
+  };
+
+  return (
+    <div className="plan-add-step-form">
+      <textarea
+        className="plan-editor-instruction-input"
+        placeholder="Describe the step to add…"
+        value={description}
+        rows={2}
+        autoFocus
+        onChange={e => setDescription(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSubmit();
+          if (e.key === "Escape") onCancel();
+        }}
+      />
+      <div className="plan-add-step-actions">
+        <button
+          className="plan-btn plan-btn--primary plan-btn--sm"
+          onClick={handleSubmit}
+          disabled={!description.trim() || isLoading}
+        >
+          {isLoading
+            ? <><Loader2 size={11} className="plan-step-icon-spin" /> Adding…</>
+            : <><Plus size={11} /> Add step</>}
+        </button>
+        <button className="plan-btn plan-btn--ghost plan-btn--sm" onClick={onCancel} disabled={isLoading}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Plan request form ─────────────────────────────────────────────────────────
 
 interface PlanRequestFormProps {
@@ -318,6 +380,8 @@ export interface PlanPanelProps {
   onSkipStep: (planId: string, stepId: string) => void;
   onAmendSteps: (planId: string, steps: PlanStepDraft[]) => void;
   onEditStepSummary: (planId: string, stepId: string, summary: string) => void;
+  onAddStep: (planId: string, description: string) => void;
+  onReorderStep: (planId: string, stepId: string, direction: "up" | "down") => void;
   onPause: () => void;
   onResume: () => void;
   onResumeAuto: () => void;
@@ -340,12 +404,16 @@ export function PlanPanel({
   plan, activeFile, agentState,
   onClose, onRequestPlan, onRequestPlanFromDocument,
   onApprovePlan, onApproveStep, onRetryStep, onSkipStep,
-  onAmendSteps, onEditStepSummary, onPause, onResume, onResumeAuto, onCancel, onNewPlan,
+  onAmendSteps, onEditStepSummary, onAddStep, onReorderStep,
+  onPause, onResume, onResumeAuto, onCancel, onNewPlan,
 }: PlanPanelProps) {
   const [editing, setEditing] = useState(false);
   const [pausing, setPausing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [followingUp, setFollowingUp] = useState<{ id: string; goal: string } | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addingStep, setAddingStep] = useState(false);
+  const prevStepsLenRef = useRef(plan?.steps.length ?? 0);
 
   // Reset transitional states when the server confirms the transition
   useEffect(() => {
@@ -355,6 +423,16 @@ export function PlanPanel({
   useEffect(() => {
     if (plan?.state === "cancelled") setCancelling(false);
   }, [plan?.state]);
+
+  // Auto-close add-step form when server confirms the new step arrived
+  useEffect(() => {
+    const len = plan?.steps.length ?? 0;
+    if (addingStep && len > prevStepsLenRef.current) {
+      setShowAddForm(false);
+      setAddingStep(false);
+    }
+    prevStepsLenRef.current = len;
+  }, [plan?.steps.length, addingStep]);
 
   const currentStepId = plan?.steps.find(
     s => s.state === "running" || s.state === "awaiting_approval",
@@ -528,14 +606,31 @@ export function PlanPanel({
                   step={step}
                   index={i}
                   isCurrent={step.id === currentStepId}
+                  isFirst={i === 0}
+                  isLast={i === plan.steps.length - 1}
                   planState={plan.state}
                   planId={plan.id}
                   onApproveStep={onApproveStep}
                   onRetry={onRetryStep}
                   onSkip={onSkipStep}
                   onEditSummary={onEditStepSummary}
+                  onMoveUp={() => onReorderStep(plan.id, step.id, "up")}
+                  onMoveDown={() => onReorderStep(plan.id, step.id, "down")}
                 />
               ))}
+              {plan.state === "awaiting_approval" && (
+                showAddForm ? (
+                  <AddStepForm
+                    isLoading={addingStep}
+                    onAdd={(desc) => { setAddingStep(true); onAddStep(plan.id, desc); }}
+                    onCancel={() => { setShowAddForm(false); setAddingStep(false); }}
+                  />
+                ) : (
+                  <button className="plan-add-step-btn" onClick={() => setShowAddForm(true)}>
+                    <Plus size={12} /> Add step
+                  </button>
+                )
+              )}
             </div>
           )}
 
