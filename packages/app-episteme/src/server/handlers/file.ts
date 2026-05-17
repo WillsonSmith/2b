@@ -1,13 +1,79 @@
 import type { ServerWebSocket } from "bun";
-import { dirname, join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 import { rename as fsRename, mkdir } from "node:fs/promises";
 import type { ClientMsg } from "../../protocol.ts";
 import type { WsContext } from "../context.ts";
+import { rewriteLinksForRename, isLocalLink } from "../../features/links.ts";
+import type { BacklinkItem } from "../../features/links.ts";
 
+const MARKDOWN_LINK_RE = /\[([^\]]*)\]\(([^)]*)\)/g;
+
+async function rewriteLinksAfterRename(
+  absRoot: string,
+  oldRelPath: string,
+  newRelPath: string,
+  collectMarkdownFiles: () => Promise<string[]>,
+): Promise<void> {
+  const files = await collectMarkdownFiles();
+  for (const relPath of files) {
+    if (relPath === newRelPath) continue; // skip the renamed file itself
+    const absPath = join(absRoot, relPath);
+    try {
+      const original = await Bun.file(absPath).text();
+      const rewritten = rewriteLinksForRename(original, relPath, oldRelPath, newRelPath);
+      if (rewritten !== original) {
+        await Bun.write(absPath, rewritten);
+      }
+    } catch {
+      // skip unreadable files
+    }
+  }
+}
+
+async function scanBacklinks(
+  absRoot: string,
+  targetRelPath: string,
+  collectMarkdownFiles: () => Promise<string[]>,
+): Promise<BacklinkItem[]> {
+  const files = await collectMarkdownFiles();
+  const results: BacklinkItem[] = [];
+
+  for (const relPath of files) {
+    if (relPath === targetRelPath) continue;
+    const absPath = join(absRoot, relPath);
+    try {
+      const content = await Bun.file(absPath).text();
+      const lines = content.split("\n");
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i] ?? "";
+        for (const m of line.matchAll(new RegExp(MARKDOWN_LINK_RE.source, "g"))) {
+          const href = m[2];
+          if (!href || !isLocalLink(href)) continue;
+          // Resolve href relative to relPath's directory
+          const sourceDir = dirname(relPath);
+          const resolved = normalize(
+            sourceDir === "." ? href.replace(/\.md$/i, "") : join(sourceDir, href.replace(/\.md$/i, "")),
+          ).replace(/\\/g, "/");
+          const resolvedWithMd = resolved.endsWith(".md") ? resolved : resolved + ".md";
+          if (resolvedWithMd === targetRelPath) {
+            const snippet = line.trim().slice(0, 200);
+            results.push({ sourcePath: relPath, snippet });
+            break; // one result per line is enough; move to next line
+          }
+        }
+      }
+    } catch {
+      // skip unreadable files
+    }
+  }
+
+  return results;
+}
 
 export type FileMsg = Extract<
   ClientMsg,
-  { type: "list_workspace" | "file_open" | "file_save" | "file_create" | "folder_create" | "folder_rename" | "file_rename" | "open_in_finder" }
+  { type: "list_workspace" | "file_open" | "file_save" | "file_create" | "folder_create" | "folder_rename" | "file_rename" | "open_in_finder" | "backlinks_request" }
 >;
 
 export async function handleFile(
@@ -119,9 +185,21 @@ export async function handleFile(
         return;
       }
       try {
+        // Collect files inside the old folder before the rename
+        const allBefore = await collectMarkdownFiles();
+        const oldFolderPrefix = msg.oldPath.endsWith("/") ? msg.oldPath : msg.oldPath + "/";
+        const movedFiles = allBefore.filter((f) => f.startsWith(oldFolderPrefix));
+
         await mkdir(dirname(absNew), { recursive: true });
         await fsRename(absOld, absNew);
         await sendWorkspaceFiles();
+
+        // Rewrite links for each file that moved
+        const newFolderPrefix = msg.newPath.endsWith("/") ? msg.newPath : msg.newPath + "/";
+        for (const oldRelPath of movedFiles) {
+          const newRelPath = newFolderPrefix + oldRelPath.slice(oldFolderPrefix.length);
+          await rewriteLinksAfterRename(absRoot, oldRelPath, newRelPath, collectMarkdownFiles);
+        }
       } catch {
         send(ws, { type: "error", message: `Cannot move folder: ${msg.oldPath}` });
       }
@@ -142,9 +220,18 @@ export async function handleFile(
         const relNew = absNew.slice(absRoot.length + 1);
         send(ws, { type: "file_renamed", oldPath: relOld, newPath: relNew });
         await sendWorkspaceFiles();
+        // Rewrite links in all other files that pointed to the old path
+        await rewriteLinksAfterRename(absRoot, relOld, relNew, collectMarkdownFiles);
       } catch {
         send(ws, { type: "error", message: `Cannot rename: ${msg.oldPath}` });
       }
+      return;
+    }
+
+    case "backlinks_request": {
+      const targetRel = msg.path;
+      const items = await scanBacklinks(absRoot, targetRel, collectMarkdownFiles);
+      send(ws, { type: "backlinks_result", path: targetRel, items });
       return;
     }
 

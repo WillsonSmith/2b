@@ -1,5 +1,8 @@
 export const WIKILINK_RE = /\[\[([^\]|\n]+?)(?:\|([^\]\n]+))?\]\]/g;
 
+// Re-exported so existing imports from wikilinks.ts continue to work.
+export type { BacklinkItem } from "./links.ts";
+
 export interface WikilinkMatch {
   raw: string;
   target: string;

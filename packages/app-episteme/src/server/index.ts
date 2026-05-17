@@ -94,6 +94,7 @@ async function dispatch(
     case "folder_rename":
     case "file_rename":
     case "open_in_finder":
+    case "backlinks_request":
       return handleFile(msg, ctx, ws);
 
     case "editor_context":
