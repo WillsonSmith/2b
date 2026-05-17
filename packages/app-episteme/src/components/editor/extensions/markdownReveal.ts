@@ -7,6 +7,7 @@ const MARK_SYNTAX: Record<string, { open: string; close: string }> = {
   italic: { open: "_", close: "_" },
   strike: { open: "~~", close: "~~" },
   code: { open: "`", close: "`" },
+  link: { open: "[", close: "]" },
 };
 
 const pluginKey = new PluginKey("markdownReveal");
