@@ -329,6 +329,14 @@ export async function startEpistemServer(
       "/api/chat-history": {
         GET: () => json(workspaceDb.listChatMessages(200)),
       },
+      "/api/chat-history/:id": {
+        DELETE: (req: Request) => {
+          const id = parseInt((req as Request & { params: Record<string, string> }).params.id, 10);
+          if (isNaN(id)) return json({ error: "Invalid id" }, 400);
+          workspaceDb.deleteChatMessage(id);
+          return json({ ok: true });
+        },
+      },
       "/api/file-content": {
         GET: async (req: Request) => {
           const url = new URL(req.url);
