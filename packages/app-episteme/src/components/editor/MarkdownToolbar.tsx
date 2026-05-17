@@ -1,6 +1,6 @@
 import {
   Undo2, Redo2, Mic, Square, Quote, Code2, Minus, List, ListOrdered,
-  FileCode, Loader2, Table, CheckSquare, Network,
+  FileCode, Loader2, Table, CheckSquare, Network, Link,
 } from "lucide-react";
 import type { Editor } from "@tiptap/react";
 
@@ -37,6 +37,7 @@ interface MarkdownToolbarProps {
   onToggleRecording?: () => void;
   isRecording?: boolean;
   onOpenDiagramBar?: () => void;
+  onOpenLinkPicker?: () => void;
 }
 
 export function MarkdownToolbar({
@@ -46,6 +47,7 @@ export function MarkdownToolbar({
   onToggleRecording,
   isRecording,
   onOpenDiagramBar,
+  onOpenLinkPicker,
 }: MarkdownToolbarProps) {
   return (
     <div className="editor-toolbar">
@@ -176,6 +178,21 @@ export function MarkdownToolbar({
       >
         <Redo2 size={14} />
       </ToolbarButton>
+
+      <div className="toolbar-sep" />
+
+      {onOpenLinkPicker && (
+        <ToolbarButton
+          onClick={onOpenLinkPicker}
+          title="Insert link (⌘K)"
+          active={false}
+        >
+          <span className="icon-inline">
+            <Link size={14} />
+            Link
+          </span>
+        </ToolbarButton>
+      )}
 
       <div className="toolbar-sep" />
 

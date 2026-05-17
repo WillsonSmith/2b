@@ -1,5 +1,5 @@
 import { RotateCw, X } from "lucide-react";
-import type { BacklinkItem } from "../features/wikilinks.ts";
+import type { BacklinkItem } from "../features/links.ts";
 
 interface BacklinksPanelProps {
   path: string | null;

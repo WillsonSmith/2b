@@ -12,7 +12,19 @@
   cursor: help;
 }
 
-/* ── Wikilink decorations ────────────────────────────────────────────── */
+/* ── Broken link decoration ──────────────────────────────────────────── */
+.link-broken {
+  color: var(--text-muted);
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: var(--text-dim);
+  cursor: pointer;
+}
+.link-broken:hover {
+  color: var(--text);
+}
+
+/* Legacy wikilink decorations (kept for any remaining [[wikilink]] content) */
 .wikilink {
   color: var(--accent);
   border-bottom: 1px solid var(--accent-soft);
@@ -29,6 +41,25 @@
 .wikilink-broken:hover {
   color: var(--text);
   border-bottom-color: var(--text-muted);
+}
+
+/* ── Link picker popup ───────────────────────────────────────────────── */
+.link-picker-input {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 13px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  margin-bottom: 4px;
+  outline: none;
+}
+.link-picker-input::placeholder {
+  color: var(--text-dim);
+}
+.link-picker {
+  min-width: 260px;
 }
 
 .wikilink-popup {

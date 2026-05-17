@@ -91,6 +91,7 @@ export function useWebSocket(): UseWebSocketReturn {
       case "explain_code_result":
       case "transcript":
       case "file_externally_changed":
+      case "backlinks_result":
       case "error":
       case "plan_created":
       case "plan_updated":

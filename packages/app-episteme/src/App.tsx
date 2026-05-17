@@ -723,6 +723,7 @@ function App() {
             workspaceFiles={fileManager.workspaceFiles}
             onCountsChange={handleCountsChange}
             editorMode={editorMode}
+            currentFilePath={fileManager.activeFile ?? ""}
           />
 
           {/* Status bar */}
