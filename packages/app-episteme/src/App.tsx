@@ -183,10 +183,10 @@ function App() {
                 .then((r) => r.json())
                 .then(
                   (
-                    rows: Array<{ role: "user" | "assistant"; text: string }>,
+                    rows: Array<{ id: number; role: "user" | "assistant"; text: string }>,
                   ) => {
                     setMessages(
-                      rows.map((r) => ({ role: r.role, text: r.text })),
+                      rows.map((r) => ({ role: r.role, text: r.text, id: r.id })),
                     );
                   },
                 )
@@ -268,7 +268,13 @@ function App() {
   }, [sendToAgent]);
 
   const onDeleteMessage = useCallback((index: number) => {
-    setMessages((prev) => prev.filter((_, i) => i !== index));
+    setMessages((prev) => {
+      const msg = prev[index];
+      if (msg && (msg.role === "user" || msg.role === "assistant") && msg.id !== undefined) {
+        fetch(`/api/chat-history/${msg.id}`, { method: "DELETE" }).catch(() => {});
+      }
+      return prev.filter((_, i) => i !== index);
+    });
   }, []);
 
   const searchCommands = useMemo<SearchCommand[]>(

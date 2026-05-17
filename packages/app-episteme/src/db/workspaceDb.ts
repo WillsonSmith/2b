@@ -165,6 +165,7 @@ export class WorkspaceDb {
   private stmtSetMeta!: ReturnType<Database["prepare"]>;
   private stmtAppendChatMessage!: ReturnType<Database["prepare"]>;
   private stmtListChatMessages!: ReturnType<Database["prepare"]>;
+  private stmtDeleteChatMessage!: ReturnType<Database["prepare"]>;
   private stmtSaveTocEntries!: ReturnType<Database["prepare"]>;
   private stmtDeleteTocEntries!: ReturnType<Database["prepare"]>;
   private stmtLoadTocEntries!: ReturnType<Database["prepare"]>;
@@ -466,6 +467,9 @@ export class WorkspaceDb {
     this.stmtListChatMessages = this.db.prepare(
       "SELECT * FROM (SELECT * FROM chat_messages ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
     );
+    this.stmtDeleteChatMessage = this.db.prepare(
+      "DELETE FROM chat_messages WHERE id = ?",
+    );
 
     this.stmtSaveTocEntries = this.db.prepare(`
       INSERT INTO toc_entries (file_path, heading_text, description, content_hash)
@@ -681,6 +685,10 @@ export class WorkspaceDb {
 
   appendChatMessage(role: "user" | "assistant", text: string): void {
     this.stmtAppendChatMessage.run(role, text, Date.now());
+  }
+
+  deleteChatMessage(id: number): void {
+    this.stmtDeleteChatMessage.run(id);
   }
 
   listChatMessages(limit: number = 200): ChatMessageRow[] {
