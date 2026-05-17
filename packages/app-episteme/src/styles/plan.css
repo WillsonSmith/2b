@@ -220,7 +220,6 @@
   gap: 5px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
 }
 
 .plan-goal-text {
@@ -228,6 +227,21 @@
   font-weight: 600;
   color: var(--text);
   line-height: 1.4;
+}
+.plan-goal-text p {
+  margin: 0 0 4px;
+}
+.plan-goal-text p:last-child {
+  margin-bottom: 0;
+}
+.plan-goal-text strong { font-weight: 700; }
+.plan-goal-text em { font-style: italic; }
+.plan-goal-text code {
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 3px;
 }
 
 .plan-state-badge {
@@ -293,11 +307,19 @@
   transition: width 0.4s ease;
 }
 
+/* ── Scrollable body ──────────────────────────────────────────────────────── */
+
+.plan-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* ── Step list ────────────────────────────────────────────────────────────── */
 
 .plan-steps {
-  flex: 1;
-  overflow-y: auto;
   padding: 4px 0;
 }
 
@@ -581,15 +603,11 @@
 /* ── Step editor ──────────────────────────────────────────────────────────── */
 
 .plan-editor {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .plan-editor-steps {
-  flex: 1;
-  overflow-y: auto;
   padding: 6px 0;
   display: flex;
   flex-direction: column;
