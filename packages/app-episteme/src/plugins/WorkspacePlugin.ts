@@ -52,7 +52,7 @@ export class WorkspacePlugin implements AgentPlugin {
   getSystemPromptFragment(): string {
     const fileCount = this.workspaceDb.listWorkspaceFiles().length;
     const indexed = fileCount > 0 ? ` (${fileCount} files indexed)` : " (not yet indexed)";
-    return `You have access to a Markdown workspace at: ${this.root}${indexed}\nUse workspace tools to index, search, and read files in the workspace.`;
+    return `You have access to a Markdown workspace at: ${this.root}${indexed}\nUse workspace tools to index, search, and read files in the workspace.\nFor large Markdown files, use search_workspace to locate relevant content by keyword, then get_workspace_section to read a specific section by heading. Use read_file with offset and limit for precise line ranges.`;
   }
 
   getTools(): ToolDefinition[] {
@@ -77,14 +77,16 @@ export class WorkspacePlugin implements AgentPlugin {
         },
       },
       {
-        name: "get_workspace_file",
-        description: "Read the full content of a file in the workspace by its relative path.",
+        name: "get_workspace_section",
+        description:
+          "Read a specific section of a Markdown file by heading text. Use search_workspace to find which file and heading contains relevant content, then call this to read just that section. Preferred over read_file for large documents.",
         parameters: {
           type: "object",
           properties: {
             path: { type: "string", description: "Relative path to the file (e.g. 'notes/intro.md')" },
+            heading: { type: "string", description: "Heading text to find (case-insensitive, partial match supported)" },
           },
-          required: ["path"],
+          required: ["path", "heading"],
         },
       },
       {
@@ -110,7 +112,7 @@ export class WorkspacePlugin implements AgentPlugin {
   async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
     if (name === "index_workspace") return this.index();
     if (name === "search_workspace") return this.searchWorkspace(String(args.query ?? ""), Number(args.limit ?? 8));
-    if (name === "get_workspace_file") return this.getFile(String(args.path ?? ""));
+    if (name === "get_workspace_section") return this.getSection(String(args.path ?? ""), String(args.heading ?? ""));
     if (name === "list_workspace_files") return this.listFiles();
     if (name === "fact_check") return this.factCheck(String(args.claim ?? ""));
   }
@@ -250,16 +252,53 @@ export class WorkspacePlugin implements AgentPlugin {
     };
   }
 
-  private async getFile(relativePath: string): Promise<unknown> {
+  private async getSection(relativePath: string, heading: string): Promise<unknown> {
     if (!relativePath) return { error: "No path provided." };
+    if (!heading) return { error: "No heading provided." };
+
     const absolute = resolve(join(this.root, relativePath));
-    if (absolute !== this.root && !absolute.startsWith(this.root + "/")) return { error: "Path escapes workspace boundary." };
+    if (absolute !== this.root && !absolute.startsWith(this.root + "/")) {
+      return { error: "Path escapes workspace boundary." };
+    }
+
+    let content: string;
     try {
-      const content = await Bun.file(absolute).text();
-      return { path: relativePath, content };
+      content = await Bun.file(absolute).text();
     } catch {
       return { error: `File not found: ${relativePath}` };
     }
+
+    const lines = content.split("\n");
+    const normalizedTarget = heading.toLowerCase().trim();
+    let startLine = -1;
+    let headingLevel = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i]!.match(/^(#{1,6})\s+(.+)$/);
+      if (m && m[2]!.trim().toLowerCase().includes(normalizedTarget)) {
+        startLine = i;
+        headingLevel = m[1]!.length;
+        break;
+      }
+    }
+
+    if (startLine === -1) {
+      return { error: `Heading "${heading}" not found in ${relativePath}.` };
+    }
+
+    const sectionLines = [lines[startLine]!];
+    for (let i = startLine + 1; i < lines.length; i++) {
+      const m = lines[i]!.match(/^(#{1,6})\s/);
+      if (m && m[1]!.length <= headingLevel) break;
+      sectionLines.push(lines[i]!);
+    }
+
+    return {
+      path: relativePath,
+      heading: lines[startLine]!,
+      level: headingLevel,
+      content: sectionLines.join("\n"),
+    };
   }
 
   private factCheck(claim: string): unknown {

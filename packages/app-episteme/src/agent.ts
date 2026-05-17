@@ -86,7 +86,7 @@ export function createEpistemAgent(
   const shortTermMemory = new MemoryPlugin(llm, { minMessages: 10, maxMessages: 15 });
   agent.registerPlugin(shortTermMemory);
   agent.registerPlugin(new BehaviorPlugin(agent.memoryPlugin, llm));
-  agent.registerPlugin(new FileSystemPlugin({ allowedRoots: [workspaceRoot] }));
+  agent.registerPlugin(new FileSystemPlugin({ allowedRoots: [workspaceRoot], maxReadBytes: 25 * 1024 }));
   agent.registerPlugin(editorContext);
   agent.registerPlugin(workspace);
   agent.registerPlugin(research);
