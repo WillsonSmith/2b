@@ -8,6 +8,7 @@
 
 import type { Tone } from "./features/tone.ts";
 import type { LintIssue } from "./features/lint.ts";
+import type { BacklinkItem } from "./features/links.ts";
 import type { TocEntry } from "./features/toc.ts";
 import type { UnifiedSearchResponse } from "./plugins/ResearchPlugin.ts";
 import type { CitationCheckResult } from "./plugins/CitationPlugin.ts";
@@ -58,6 +59,7 @@ export type ClientMsg =
   | { type: "voice_data"; audioBase64: string; mimeType: string }
   | { type: "lint_request"; content: string }
   | { type: "open_in_finder"; path: string }
+  | { type: "backlinks_request"; path: string }
   | { type: "plan_request"; goal: string; approvalMode: "all" | "per_step"; previousPlanId?: string }
   | { type: "plan_from_document"; path: string; goal: string; approvalMode: "all" | "per_step"; previousPlanId?: string }
   | { type: "plan_approve"; planId: string }
@@ -106,6 +108,7 @@ export type ServerMsg =
   | { type: "explain_code_result"; explanation: string }
   | { type: "transcript"; text: string }
   | { type: "file_externally_changed"; path: string; content: string }
+  | { type: "backlinks_result"; path: string; items: BacklinkItem[] }
   | { type: "error"; message: string }
   | { type: "plan_created"; plan: EpistemePlan }
   | { type: "plan_updated"; plan: EpistemePlan }

@@ -13,23 +13,27 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { ChevronUp, ChevronDown, X } from "lucide-react";
 import type { Tone } from "../../features/tone.ts";
 import type { LintIssue } from "../../features/lint.ts";
-import { resolveWikilinkTarget, wikilinkCreatePath, rankFilesForWikilink } from "../../features/wikilinks.ts";
+import {
+  isLocalLink,
+  resolveLocalHref,
+  computeRelativeHref,
+  rankFilesForLink,
+} from "../../features/links.ts";
+import type { LinkSuggestionItem } from "../../features/links.ts";
 import { GhostTextExtension } from "./extensions/ghostText.ts";
 import { LintExtension, resolveIssuePositions, type ResolvedIssue } from "./extensions/lint.ts";
 import { FindExtension, resolveFindMatches, type FindMatch, type FindState } from "./extensions/find.ts";
 import { MarkdownRevealExtension } from "./extensions/markdownReveal.ts";
 import {
-  WikilinkExtension,
-  WikilinkPopupExtension,
-  resolveWikilinks,
-  type ResolvedWikilink,
-  type WikilinkPopupKeyHandlers,
-} from "./extensions/wikilinks.ts";
+  MarkdownLinkDecorationExtension,
+  resolveMarkdownLinks,
+  type ResolvedLocalLink,
+} from "./extensions/markdownLinks.ts";
 import { DiagramCommandExtension } from "./extensions/diagramCommand.ts";
 import { MermaidCodeBlock } from "./extensions/mermaid.tsx";
 import { DiagramPlaceholderExtension } from "./extensions/diagramPlaceholder.tsx";
 import { EditorBubbleMenu } from "./BubbleMenu.tsx";
-import { WikilinkPopup } from "./SlashCommand.tsx";
+import { LinkPicker } from "./LinkPicker.tsx";
 import { MarkdownToolbar } from "./MarkdownToolbar.tsx";
 import { FrontmatterPanel } from "./FrontmatterPanel.tsx";
 import { useImagePaste } from "./imagePaste.ts";
@@ -37,7 +41,7 @@ import { parseFrontmatter } from "../../features/frontmatter.ts";
 
 // prosemirror-markdown's esc() escapes every [ and ] in text nodes, turning
 // [[wikilink]] into \[\[wikilink\]\] on save. Unescape double-bracket patterns
-// after serialization so wikilinks are stored correctly on disk.
+// after serialization so any remaining wikilinks survive round-trips.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getMarkdown(ed: any): string {
   return (ed.storage.markdown.getMarkdown() as string).replace(/\\\[\\\[([^\n]*?)\\\]\\\]/g, "[[$1]]");
@@ -77,6 +81,7 @@ interface EditorProps {
   workspaceFiles?: string[];
   onCountsChange?: (words: number, chars: number) => void;
   editorMode?: "formatted" | "markdown";
+  currentFilePath?: string;
 }
 
 interface FindBarProps {
@@ -226,19 +231,16 @@ export function Editor({
   workspaceFiles = [],
   onCountsChange,
   editorMode: editorModeProp = "formatted",
+  currentFilePath = "",
 }: EditorProps) {
   const ghostRef = useRef(ghostText);
   const lintRef = useRef<ResolvedIssue[]>([]);
-  const wikilinkRef = useRef<ResolvedWikilink[]>([]);
+  const localLinksRef = useRef<ResolvedLocalLink[]>([]);
   const filesRef = useRef<string[]>(workspaceFiles);
   filesRef.current = workspaceFiles;
-  const popupKeysRef = useRef<WikilinkPopupKeyHandlers>({
-    open: false,
-    onArrowUp: () => {},
-    onArrowDown: () => {},
-    onEnter: () => false,
-    onEscape: () => false,
-  });
+  const currentFileRef = useRef(currentFilePath);
+  currentFileRef.current = currentFilePath;
+
   const findStateRef = useRef<FindState>({ matches: [], activeIndex: 0 });
   const [frontmatter, setFrontmatter] = useState<string | null>(
     () => parseFrontmatter(content).yaml,
@@ -256,16 +258,15 @@ export function Editor({
   const [findCaseSensitive, setFindCaseSensitive] = useState(false);
   const findInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [wikiPopup, setWikiPopup] = useState<{
-    query: string;
-    from: number;
-    top: number;
-    left: number;
-  } | null>(null);
-  const [wikiSelectedIndex, setWikiSelectedIndex] = useState(0);
+  // Link picker state
+  const [linkPickerOpen, setLinkPickerOpen] = useState(false);
+  const [linkPickerQuery, setLinkPickerQuery] = useState("");
+  const [linkPickerPos, setLinkPickerPos] = useState<{ top: number; left: number } | null>(null);
+  const [linkPickerSelection, setLinkPickerSelection] = useState<{ from: number; to: number } | null>(null);
+  const [linkPickerSelectedIndex, setLinkPickerSelectedIndex] = useState(0);
 
-  const wikiMatches = wikiPopup
-    ? rankFilesForWikilink(workspaceFiles, wikiPopup.query)
+  const linkPickerMatches: LinkSuggestionItem[] = linkPickerOpen
+    ? rankFilesForLink(filesRef.current, linkPickerQuery)
     : [];
 
   const [codeHover, setCodeHover] = useState<{
@@ -306,11 +307,10 @@ export function Editor({
       TableCell,
       GhostTextExtension(ghostRef, handleAccept, handleDismiss),
       LintExtension(lintRef),
-      WikilinkExtension(wikilinkRef),
-      WikilinkPopupExtension(popupKeysRef),
       FindExtension(findStateRef),
       MarkdownRevealExtension,
       DiagramCommandExtension(diagramCallbackRef),
+      MarkdownLinkDecorationExtension(localLinksRef),
     ],
     content: parseFrontmatter(content).body.trimStart(),
     onUpdate({ editor }) {
@@ -340,9 +340,10 @@ export function Editor({
     const current = getMarkdown(editor);
     if (current !== trimmedBody) {
       editor.commands.setContent(trimmedBody, { emitUpdate: false });
-      wikilinkRef.current = resolveWikilinks(editor.state.doc, filesRef.current);
-      editor.view.dispatch(editor.state.tr.setMeta("wikilink-refresh", true));
     }
+    // Refresh link decorations after content load
+    localLinksRef.current = resolveMarkdownLinks(editor.state.doc, filesRef.current, currentFileRef.current);
+    editor.view.dispatch(editor.state.tr.setMeta("markdown-link-refresh", true));
   }, [content]);
 
   useEffect(() => {
@@ -411,16 +412,17 @@ export function Editor({
     editor.view.dispatch(tr.setMeta("lint-refresh", true));
   }, [lintIssues, editor]);
 
+  // Refresh link decorations when files list or current file changes
   useEffect(() => {
     if (!editor) return;
     const refresh = () => {
-      wikilinkRef.current = resolveWikilinks(editor.state.doc, filesRef.current);
-      editor.view.dispatch(editor.state.tr.setMeta("wikilink-refresh", true));
+      localLinksRef.current = resolveMarkdownLinks(editor.state.doc, filesRef.current, currentFileRef.current);
+      editor.view.dispatch(editor.state.tr.setMeta("markdown-link-refresh", true));
     };
     refresh();
     editor.on("update", refresh);
     return () => { editor.off("update", refresh); };
-  }, [editor, workspaceFiles]);
+  }, [editor, workspaceFiles, currentFilePath]);
 
   useEffect(() => {
     function handler(e: KeyboardEvent) {
@@ -500,6 +502,52 @@ export function Editor({
     setDiagramBarInput("");
   }, [diagramBarInput, editor, onDiagramRequest]);
 
+  // ── Link picker ──────────────────────────────────────────────────────────────
+
+  const openLinkPicker = useCallback(() => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    const coords = editor.view.coordsAtPos(from);
+    setLinkPickerSelection({ from, to });
+    setLinkPickerQuery("");
+    setLinkPickerSelectedIndex(0);
+    setLinkPickerPos({ top: coords.bottom + 6, left: coords.left });
+    setLinkPickerOpen(true);
+  }, [editor]);
+
+  const acceptLinkSuggestion = useCallback((targetPath: string) => {
+    if (!editor || !linkPickerSelection) return;
+    const href = currentFileRef.current
+      ? computeRelativeHref(currentFileRef.current, targetPath)
+      : targetPath;
+    const basename = targetPath.split("/").at(-1)?.replace(/\.md$/i, "") ?? targetPath;
+    const { from, to } = linkPickerSelection;
+
+    if (from === to) {
+      // No selection — insert link with basename as text
+      editor.chain().focus().insertContentAt(from, {
+        type: "text",
+        text: basename,
+        marks: [{ type: "link", attrs: { href } }],
+      }).run();
+    } else {
+      // Wrap selection in link
+      editor.chain().focus()
+        .setTextSelection({ from, to })
+        .setLink({ href })
+        .run();
+    }
+    setLinkPickerOpen(false);
+    editor.commands.focus();
+  }, [editor, linkPickerSelection]);
+
+  const closeLinkPicker = useCallback(() => {
+    setLinkPickerOpen(false);
+    editor?.commands.focus();
+  }, [editor]);
+
+  // ── Autocomplete ─────────────────────────────────────────────────────────────
+
   const autocompleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleAutocomplete = useCallback(() => {
     if (!onAutocompleteRequest || !editor) return;
@@ -521,91 +569,16 @@ export function Editor({
     }
   }, [editor, onGhostDismiss]);
 
-  const handleWikiPopupUpdate = useCallback(() => {
-    if (!editor) return;
-    const { from, to } = editor.state.selection;
-    if (from !== to) { setWikiPopup(null); return; }
-
-    const $pos = editor.state.doc.resolve(from);
-    for (let d = $pos.depth; d >= 0; d--) {
-      if ($pos.node(d).type.name === "codeBlock") { setWikiPopup(null); return; }
-    }
-    if ($pos.marks().some((m) => m.type.name === "code")) { setWikiPopup(null); return; }
-
-    const before = editor.state.doc.textBetween(Math.max(0, from - 500), from, "\n");
-    const m = before.match(/\[\[([^\]\n]*)$/);
-    if (!m) { setWikiPopup(null); return; }
-
-    const query = m[1] ?? "";
-    const startPos = from - m[0].length;
-    const coords = editor.view.coordsAtPos(from);
-    setWikiPopup((prev) =>
-      prev && prev.query === query && prev.from === startPos
-        ? prev
-        : { query, from: startPos, top: coords.bottom + 4, left: coords.left },
-    );
-    onGhostDismiss?.();
-  }, [editor, onGhostDismiss]);
-
   useEffect(() => {
     if (!editor) return;
     editor.on("update", handleAutocomplete);
-    editor.on("update", handleWikiPopupUpdate);
     editor.on("selectionUpdate", handleSelectionUpdate);
-    editor.on("selectionUpdate", handleWikiPopupUpdate);
     return () => {
       editor.off("update", handleAutocomplete);
-      editor.off("update", handleWikiPopupUpdate);
       editor.off("selectionUpdate", handleSelectionUpdate);
-      editor.off("selectionUpdate", handleWikiPopupUpdate);
       if (autocompleteTimer.current) clearTimeout(autocompleteTimer.current);
     };
-  }, [editor, handleAutocomplete, handleSelectionUpdate, handleWikiPopupUpdate]);
-
-  useEffect(() => {
-    setWikiSelectedIndex(0);
-  }, [wikiPopup?.query]);
-
-  const acceptWikiSuggestion = useCallback((basename: string) => {
-    if (!editor || !wikiPopup) return;
-    const replacement = `[[${basename}]]`;
-    const cursor = editor.state.selection.from;
-
-    // If cursor is inside an existing [[...]], consume the rest of the target + closing ]]
-    const docSize = editor.state.doc.content.size;
-    const textAfter = editor.state.doc.textBetween(cursor, Math.min(docSize, cursor + 300), "\n");
-    const trailingMatch = textAfter.match(/^([^\]\n]*)\]\]/);
-    const to = trailingMatch ? cursor + trailingMatch[0].length : cursor;
-
-    editor
-      .chain()
-      .focus()
-      .insertContentAt({ from: wikiPopup.from, to }, replacement)
-      .run();
-    setWikiPopup(null);
-  }, [editor, wikiPopup]);
-
-  useEffect(() => {
-    popupKeysRef.current = {
-      open: wikiPopup !== null && wikiMatches.length > 0,
-      onArrowDown: () =>
-        setWikiSelectedIndex((i) => (wikiMatches.length === 0 ? 0 : (i + 1) % wikiMatches.length)),
-      onArrowUp: () =>
-        setWikiSelectedIndex((i) =>
-          wikiMatches.length === 0 ? 0 : (i - 1 + wikiMatches.length) % wikiMatches.length,
-        ),
-      onEnter: () => {
-        const item = wikiMatches[wikiSelectedIndex];
-        if (!item) return false;
-        acceptWikiSuggestion(item.basename);
-        return true;
-      },
-      onEscape: () => {
-        setWikiPopup(null);
-        return true;
-      },
-    };
-  }, [wikiPopup, wikiMatches, wikiSelectedIndex, acceptWikiSuggestion]);
+  }, [editor, handleAutocomplete, handleSelectionUpdate]);
 
   useImagePaste(editor, onImagePaste);
 
@@ -614,30 +587,25 @@ export function Editor({
   const onCreateFileRef = useRef(onCreateFile);
   onCreateFileRef.current = onCreateFile;
 
+  // ── Click handling (links + wikilinks) ──────────────────────────────────────
+
   useEffect(() => {
     if (!editor) return;
     const dom = editor.view.dom;
     const handleClick = (e: MouseEvent) => {
-      const wl = (e.target as HTMLElement).closest(".wikilink, .wikilink-broken");
-      if (wl) {
-        const target = wl.getAttribute("data-target") ?? "";
-        if (!target) return;
-        e.preventDefault();
-        const resolved = resolveWikilinkTarget(target, filesRef.current);
-        if (resolved) {
-          onNavigateRef.current?.(resolved);
-        } else {
-          onCreateFileRef.current?.(wikilinkCreatePath(target));
-        }
-        return;
-      }
       if (!onNavigateRef.current) return;
       const anchor = (e.target as HTMLElement).closest("a");
       if (!anchor) return;
       const href = anchor.getAttribute("href") ?? "";
-      if (!href || href.startsWith("http") || href.startsWith("mailto:") || href.startsWith("#")) return;
+      if (!href) return;
+      if (!isLocalLink(href)) return;
       e.preventDefault();
-      onNavigateRef.current(href);
+      const resolved = resolveLocalHref(href, currentFileRef.current, filesRef.current);
+      if (resolved) {
+        onNavigateRef.current(resolved);
+      } else {
+        onCreateFileRef.current?.(href.replace(/\.md$/i, "").trim() + ".md");
+      }
     };
     dom.addEventListener("click", handleClick);
     return () => dom.removeEventListener("click", handleClick);
@@ -754,6 +722,7 @@ export function Editor({
         onToggleRecording={onToggleRecording}
         isRecording={isRecording}
         onOpenDiagramBar={openDiagramBar}
+        onOpenLinkPicker={openLinkPicker}
       />
 
       <div className="editor-scroll">
@@ -764,6 +733,7 @@ export function Editor({
             onSummarizeRequest={onSummarizeRequest}
             onTableRequest={onTableRequest}
             onAskAboutSelection={onAskAboutSelection}
+            onOpenLinkPicker={openLinkPicker}
           />
         )}
 
@@ -785,14 +755,17 @@ export function Editor({
         )}
       </div>
 
-      {wikiPopup && wikiMatches.length > 0 && (
-        <WikilinkPopup
-          top={wikiPopup.top}
-          left={wikiPopup.left}
-          matches={wikiMatches}
-          selectedIndex={wikiSelectedIndex}
-          onHover={setWikiSelectedIndex}
-          onAccept={acceptWikiSuggestion}
+      {linkPickerOpen && linkPickerPos && (
+        <LinkPicker
+          top={linkPickerPos.top}
+          left={linkPickerPos.left}
+          query={linkPickerQuery}
+          onQueryChange={(q) => { setLinkPickerQuery(q); setLinkPickerSelectedIndex(0); }}
+          matches={linkPickerMatches}
+          selectedIndex={linkPickerSelectedIndex}
+          onHover={setLinkPickerSelectedIndex}
+          onAccept={acceptLinkSuggestion}
+          onClose={closeLinkPicker}
         />
       )}
 

@@ -2,6 +2,31 @@ import * as path from "path";
 import { WIKILINK_RE, resolveWikilinkTarget } from "../features/wikilinks";
 import { CSS, MERMAID_SCRIPT, THEME_INIT_SCRIPT, THEME_TOGGLE_SCRIPT } from "./assets";
 
+// Matches standard markdown links: [text](href)
+const MARKDOWN_LINK_RE = /\[([^\]]*)\]\(([^)]*)\)/g;
+
+function isLocalHref(href: string): boolean {
+  if (!href) return false;
+  if (href.startsWith("http://") || href.startsWith("https://")) return false;
+  if (href.startsWith("mailto:") || href.startsWith("#") || href.startsWith("//")) return false;
+  return true;
+}
+
+function resolveMarkdownLinkInSsg(
+  href: string,
+  currentRelPath: string,
+  allRelPaths: string[],
+): string | null {
+  const [hrefNoFrag] = href.split("#");
+  if (!hrefNoFrag) return null;
+  const dir = path.dirname(currentRelPath);
+  const raw = path.normalize(path.join(dir === "." ? "" : dir, hrefNoFrag));
+  if (allRelPaths.includes(raw)) return raw;
+  const withMd = raw.endsWith(".md") ? raw : raw + ".md";
+  if (allRelPaths.includes(withMd)) return withMd;
+  return null;
+}
+
 export interface RawFile {
   relPath: string;
   body: string;
@@ -55,6 +80,23 @@ export function relativeHref(fromRelPath: string, toRelPath: string): string {
 export function extractEdgesForFile(body: string, allRelPaths: string[], currentHtmlRelPath: string): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
+  const currentRelPath = currentHtmlRelPath.replace(/\.html$/, ".md");
+
+  // Standard markdown links
+  for (const match of body.matchAll(new RegExp(MARKDOWN_LINK_RE.source, "g"))) {
+    const href = match[2];
+    if (!href || !isLocalHref(href)) continue;
+    const resolved = resolveMarkdownLinkInSsg(href, currentRelPath, allRelPaths);
+    if (resolved) {
+      const htmlPath = resolved.replace(/\.md$/, ".html");
+      if (!seen.has(htmlPath) && htmlPath !== currentHtmlRelPath) {
+        seen.add(htmlPath);
+        result.push(htmlPath);
+      }
+    }
+  }
+
+  // Legacy wikilinks — still extract edges for existing content
   for (const match of body.matchAll(new RegExp(WIKILINK_RE.source, "g"))) {
     const target = match[1];
     if (!target) continue;
@@ -67,6 +109,7 @@ export function extractEdgesForFile(body: string, allRelPaths: string[], current
       }
     }
   }
+
   return result;
 }
 

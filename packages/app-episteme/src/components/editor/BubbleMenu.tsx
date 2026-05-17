@@ -8,6 +8,7 @@ interface BubbleMenuProps {
   onSummarizeRequest?: (text: string, insertPos: number) => void;
   onTableRequest?: (text: string, insertPos: number) => void;
   onAskAboutSelection?: (text: string) => void;
+  onOpenLinkPicker?: () => void;
 }
 
 export function EditorBubbleMenu({
@@ -16,16 +17,42 @@ export function EditorBubbleMenu({
   onSummarizeRequest,
   onTableRequest,
   onAskAboutSelection,
+  onOpenLinkPicker,
 }: BubbleMenuProps) {
+  const isLink = editor.isActive("link");
+
   return (
     <TiptapBubbleMenu
       editor={editor}
       shouldShow={({ editor: ed }) => {
         const { from, to } = ed.state.selection;
-        return from !== to;
+        return from !== to || ed.isActive("link");
       }}
     >
       <div className="bubble-menu">
+        {onOpenLinkPicker && (
+          <>
+            <button
+              className={`bubble-btn${isLink ? " active" : ""}`}
+              title={isLink ? "Edit link" : "Insert link"}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onOpenLinkPicker}
+            >
+              Link
+            </button>
+            {isLink && (
+              <button
+                className="bubble-btn"
+                title="Remove link"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => editor.chain().focus().unsetLink().run()}
+              >
+                Unlink
+              </button>
+            )}
+            <div className="bubble-sep" />
+          </>
+        )}
         {(["professional", "casual", "academic"] as Tone[]).map((tone) => (
           <button
             key={tone}

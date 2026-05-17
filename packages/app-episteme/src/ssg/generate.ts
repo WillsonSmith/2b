@@ -18,12 +18,21 @@ import {
   graphPage,
 } from "./render";
 
-// Render mermaid fenced blocks as <div class="mermaid"> instead of <pre><code>
+// Render mermaid fenced blocks as <div class="mermaid"> and rewrite local .md
+// hrefs to .html so links work in the static output.
 marked.use({
   renderer: {
     code({ text, lang }) {
       if (lang === "mermaid") return `<div class="mermaid">${text}</div>\n`;
       return false;
+    },
+    link({ href, text, title }: { href: string | null; text: string; title?: string | null }) {
+      if (href && !href.startsWith("http") && !href.startsWith("mailto:") && !href.startsWith("#") && !href.startsWith("//")) {
+        // Rewrite .md extension to .html, preserving any fragment
+        href = href.replace(/\.md(#[^)]*)?$/, (_, frag) => `.html${frag ?? ""}`);
+      }
+      const titleAttr = title ? ` title="${title}"` : "";
+      return `<a href="${href ?? ""}"${titleAttr}>${text}</a>`;
     },
   },
 });
