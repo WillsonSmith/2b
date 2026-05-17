@@ -506,7 +506,38 @@ export function Editor({
 
   const openLinkPicker = useCallback(() => {
     if (!editor) return;
-    const { from, to } = editor.state.selection;
+    let { from, to } = editor.state.selection;
+
+    // If cursor is inside a link mark, expand selection to the full link extent
+    if (editor.isActive("link")) {
+      const { doc } = editor.state;
+      const linkType = editor.schema.marks.link;
+      // Walk backward to find the start of the link mark
+      let linkFrom = from;
+      let probe = from - 1;
+      while (probe >= 0) {
+        const $probe = doc.resolve(probe);
+        const nodeAfter = $probe.nodeAfter;
+        if (!nodeAfter || !nodeAfter.isText) break;
+        if (!nodeAfter.marks.some((m) => m.type === linkType)) break;
+        linkFrom = probe;
+        probe -= nodeAfter.nodeSize;
+      }
+      // Walk forward to find the end of the link mark
+      let linkTo = to;
+      probe = from;
+      while (probe <= doc.content.size) {
+        const $probe = doc.resolve(probe);
+        const nodeAfter = $probe.nodeAfter;
+        if (!nodeAfter || !nodeAfter.isText) break;
+        if (!nodeAfter.marks.some((m) => m.type === linkType)) break;
+        linkTo = probe + nodeAfter.nodeSize;
+        probe += nodeAfter.nodeSize;
+      }
+      from = linkFrom;
+      to = linkTo;
+    }
+
     const coords = editor.view.coordsAtPos(from);
     setLinkPickerSelection({ from, to });
     setLinkPickerQuery("");
