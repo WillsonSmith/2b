@@ -464,7 +464,7 @@ export class WorkspaceDb {
       "INSERT INTO chat_messages (role, text, created_at) VALUES (?, ?, ?)",
     );
     this.stmtListChatMessages = this.db.prepare(
-      "SELECT * FROM chat_messages ORDER BY id ASC LIMIT ?",
+      "SELECT * FROM (SELECT * FROM chat_messages ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
     );
 
     this.stmtSaveTocEntries = this.db.prepare(`
