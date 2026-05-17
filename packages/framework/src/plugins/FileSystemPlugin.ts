@@ -135,6 +135,7 @@ function isBinary(sample: Uint8Array): boolean {
 
 export interface FileSystemPluginOptions {
   allowedRoots?: string[];
+  maxReadBytes?: number;
 }
 
 type DirEntry = {
@@ -146,10 +147,12 @@ type DirEntry = {
 export class FileSystemPlugin implements AgentPlugin {
   name = "FileSystem";
   private readonly allowedRoots: string[];
+  private readonly maxReadBytes: number;
 
   constructor(options?: FileSystemPluginOptions) {
     this.allowedRoots =
       options?.allowedRoots?.map((r) => resolve(r)) ?? [process.cwd()];
+    this.maxReadBytes = options?.maxReadBytes ?? MAX_READ_BYTES;
   }
 
   /**
@@ -170,7 +173,7 @@ export class FileSystemPlugin implements AgentPlugin {
   getSystemPromptFragment(): string {
     return [
       "You have direct access to the local filesystem. Paths can be absolute or relative to the working directory.",
-      "- read_file: Read text content from a file (max 1 MB). Use offset and limit to page through large files. Binary files are rejected.",
+      `- read_file: Read text content from a file (max ${Math.round(this.maxReadBytes / 1024)} KB). Use offset and limit to page through large files. Binary files are rejected.`,
       "- write_file: Write or overwrite a file with text content. Creates parent directories automatically.",
       "- append_file: Append text to the end of a file, or create it if missing.",
       "- list_directory: List files and subdirectories with names, types, and sizes.",
@@ -694,9 +697,10 @@ export class FileSystemPlugin implements AgentPlugin {
       );
     }
 
-    if (offset === undefined && limit === undefined && size > MAX_READ_BYTES) {
+    if (offset === undefined && limit === undefined && size > this.maxReadBytes) {
+      const kb = Math.round(this.maxReadBytes / 1024);
       throw new Error(
-        `File is ${size} bytes, which exceeds the 1 MB read limit. Use offset and limit to page through it.`,
+        `File is ${size} bytes, which exceeds the ${kb} KB read limit. Use offset and limit to page through it.`,
       );
     }
 
