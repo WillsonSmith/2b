@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { marked } from "marked";
 import {
   X, Play, Pause, SkipForward, RotateCcw, Ban,
   Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen,
@@ -506,6 +507,12 @@ export function PlanPanel({
     prevStepsLenRef.current = len;
   }, [plan?.steps.length, addingStep]);
 
+  const goalHtml = useMemo(() => {
+    if (!plan) return "";
+    const result = marked.parse(plan.goal);
+    return typeof result === "string" ? result : "";
+  }, [plan?.goal]);
+
   const currentStepId = plan?.steps.find(
     s => s.state === "running" || s.state === "awaiting_approval",
   )?.id;
@@ -632,89 +639,94 @@ export function PlanPanel({
         </button>
       </div>
 
-      {isStructuring && (
-        <div className="plan-structuring">
-          <Loader2 size={16} className="plan-step-icon-spin" />
-          <span>Structuring plan…</span>
-        </div>
-      )}
-
-      {!plan && !isStructuring && (
-        <PlanRequestForm
-          activeFile={activeFile}
-          followingUp={followingUp}
-          onClearFollowup={() => setFollowingUp(null)}
-          onRequest={onRequestPlan}
-          onRequestFromDocument={onRequestPlanFromDocument}
-        />
-      )}
-
-      {plan && (
-        <>
-          <div className="plan-goal">
-            <span className="plan-goal-text">{plan.goal}</span>
-            <span className={`plan-state-badge plan-state-badge--${plan.state}`}>
-              {PLAN_STATE_LABELS[plan.state] ?? plan.state}
-            </span>
+      <div className="plan-panel-body">
+        {isStructuring && (
+          <div className="plan-structuring">
+            <Loader2 size={16} className="plan-step-icon-spin" />
+            <span>Structuring plan…</span>
           </div>
+        )}
 
-          {total > 0 && (
-            <div className="plan-progress-bar">
-              <div className="plan-progress-fill" style={{ width: `${progress}%` }} />
+        {!plan && !isStructuring && (
+          <PlanRequestForm
+            activeFile={activeFile}
+            followingUp={followingUp}
+            onClearFollowup={() => setFollowingUp(null)}
+            onRequest={onRequestPlan}
+            onRequestFromDocument={onRequestPlanFromDocument}
+          />
+        )}
+
+        {plan && (
+          <>
+            <div className="plan-goal">
+              <div
+                className="plan-goal-text"
+                dangerouslySetInnerHTML={{ __html: goalHtml }}
+              />
+              <span className={`plan-state-badge plan-state-badge--${plan.state}`}>
+                {PLAN_STATE_LABELS[plan.state] ?? plan.state}
+              </span>
             </div>
-          )}
 
-          {editing ? (
-            <StepEditor
-              steps={plan.steps}
-              onSave={(drafts) => { onAmendSteps(plan.id, drafts); setEditing(false); }}
-              onCancel={() => setEditing(false)}
-            />
-          ) : (
-            <div className="plan-steps">
-              {plan.steps.map((step, i) => (
-                <StepRow
-                  key={step.id}
-                  step={step}
-                  index={i}
-                  isCurrent={step.id === currentStepId}
-                  isFirst={i === 0}
-                  isLast={i === plan.steps.length - 1}
-                  planState={plan.state}
-                  planId={plan.id}
-                  onApproveStep={onApproveStep}
-                  onRetry={onRetryStep}
-                  onSkip={onSkipStep}
-                  onEditSummary={onEditStepSummary}
-                  onEditInstruction={onEditStepInstruction}
-                  onMoveUp={() => onReorderStep(plan.id, step.id, "up")}
-                  onMoveDown={() => onReorderStep(plan.id, step.id, "down")}
-                />
-              ))}
-              {(plan.state === "awaiting_approval" || plan.state === "awaiting_step") && (
-                showAddForm ? (
-                  <AddStepForm
-                    isLoading={addingStep}
-                    existingSteps={plan.steps}
-                    defaultInsertAfterStepId={plan.state === "awaiting_step" ? currentStepId : undefined}
-                    onAdd={(desc, insertAfterStepId) => { setAddingStep(true); onAddStep(plan.id, desc, insertAfterStepId); }}
-                    onCancel={() => { setShowAddForm(false); setAddingStep(false); }}
+            {total > 0 && (
+              <div className="plan-progress-bar">
+                <div className="plan-progress-fill" style={{ width: `${progress}%` }} />
+              </div>
+            )}
+
+            {editing ? (
+              <StepEditor
+                steps={plan.steps}
+                onSave={(drafts) => { onAmendSteps(plan.id, drafts); setEditing(false); }}
+                onCancel={() => setEditing(false)}
+              />
+            ) : (
+              <div className="plan-steps">
+                {plan.steps.map((step, i) => (
+                  <StepRow
+                    key={step.id}
+                    step={step}
+                    index={i}
+                    isCurrent={step.id === currentStepId}
+                    isFirst={i === 0}
+                    isLast={i === plan.steps.length - 1}
+                    planState={plan.state}
+                    planId={plan.id}
+                    onApproveStep={onApproveStep}
+                    onRetry={onRetryStep}
+                    onSkip={onSkipStep}
+                    onEditSummary={onEditStepSummary}
+                    onEditInstruction={onEditStepInstruction}
+                    onMoveUp={() => onReorderStep(plan.id, step.id, "up")}
+                    onMoveDown={() => onReorderStep(plan.id, step.id, "down")}
                   />
-                ) : (
-                  <button className="plan-add-step-btn" onClick={() => setShowAddForm(true)}>
-                    <Plus size={12} /> Add step
-                  </button>
-                )
-              )}
-            </div>
-          )}
+                ))}
+                {(plan.state === "awaiting_approval" || plan.state === "awaiting_step") && (
+                  showAddForm ? (
+                    <AddStepForm
+                      isLoading={addingStep}
+                      existingSteps={plan.steps}
+                      defaultInsertAfterStepId={plan.state === "awaiting_step" ? currentStepId : undefined}
+                      onAdd={(desc, insertAfterStepId) => { setAddingStep(true); onAddStep(plan.id, desc, insertAfterStepId); }}
+                      onCancel={() => { setShowAddForm(false); setAddingStep(false); }}
+                    />
+                  ) : (
+                    <button className="plan-add-step-btn" onClick={() => setShowAddForm(true)}>
+                      <Plus size={12} /> Add step
+                    </button>
+                  )
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
-          {actionBarContent && (
-            <div className="plan-actions">
-              {actionBarContent}
-            </div>
-          )}
-        </>
+      {actionBarContent && (
+        <div className="plan-actions">
+          {actionBarContent}
+        </div>
       )}
     </div>
   );
