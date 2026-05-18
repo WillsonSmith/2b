@@ -23,6 +23,7 @@
   }
 }
 .toolbar-btn {
+  text-wrap: nowrap;
   display: flex;
   align-items: center;
   justify-content: center;
