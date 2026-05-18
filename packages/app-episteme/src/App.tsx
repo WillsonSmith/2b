@@ -420,7 +420,12 @@ function App() {
             m.status === "calling"
           ) {
             const next = [...prev];
-            next[i] = { role: "tool", name: msg.name, status: "done" };
+            next[i] = {
+              role: "tool",
+              name: msg.name,
+              status: msg.error ? "error" : "done",
+              error: msg.error,
+            };
             return next;
           }
         }

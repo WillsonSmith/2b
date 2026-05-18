@@ -80,7 +80,7 @@ export type ServerMsg =
   | { type: "speak"; text: string }
   | { type: "state_change"; state: AgentRunState }
   | { type: "tool_call"; name: string; args: Record<string, unknown> }
-  | { type: "tool_result"; name: string }
+  | { type: "tool_result"; name: string; error?: string }
   | { type: "file_content"; path: string; content: string }
   | { type: "workspace_files"; files: string[]; folders: string[] }
   | { type: "index_progress"; indexed: number; total: number }

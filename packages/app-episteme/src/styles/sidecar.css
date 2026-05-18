@@ -238,6 +238,41 @@
 .sidecar-tool-row.calling .sidecar-tool-status {
   color: var(--accent);
 }
+.sidecar-tool-row.error .sidecar-tool-status,
+.sidecar-tool-row .icon-error {
+  color: var(--red);
+}
+
+/* Expandable details for completed/failed tool rows */
+details.sidecar-tool-row {
+  display: block;
+  padding: 0;
+}
+details.sidecar-tool-row > .sidecar-tool-summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  list-style: none;
+  cursor: pointer;
+}
+details.sidecar-tool-row > .sidecar-tool-summary::-webkit-details-marker {
+  display: none;
+}
+details.sidecar-tool-row[open] {
+  opacity: 1;
+}
+.sidecar-tool-detail {
+  padding: 6px 10px 6px 22px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sidecar-tool-error-text {
+  color: var(--red);
+}
 
 /* Message action buttons (Execute / Continue) */
 .sidecar-msg-actions {

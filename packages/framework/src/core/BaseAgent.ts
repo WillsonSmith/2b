@@ -473,7 +473,7 @@ export class BaseAgent extends EventEmitter {
               if (lastError !== null) {
                 const msg = lastError instanceof Error ? lastError.message : String(lastError);
                 this.emit("log", `[Tool error] ${toolName} failed after ${maxAttempts} attempt(s): ${msg}`);
-                this.emit("tool_result", toolName);
+                this.emit("tool_result", toolName, `Tool error after ${maxAttempts} attempt(s): ${msg}`);
                 return `Tool error after ${maxAttempts} attempt(s): ${msg}`;
               }
               // ── End retry loop ───────────────────────────────────────────
@@ -483,7 +483,7 @@ export class BaseAgent extends EventEmitter {
                   const vr = await rawTool.verifyAfter(args as Record<string, unknown>, toolResult);
                   if (!vr.passed) {
                     this.emit("log", `[Verification failed] ${toolName}: ${vr.message}`);
-                    this.emit("tool_result", toolName);
+                    this.emit("tool_result", toolName, `Verification failed: ${vr.message}`);
                     const resultStr = typeof toolResult === "string"
                       ? toolResult
                       : JSON.stringify(toolResult);
