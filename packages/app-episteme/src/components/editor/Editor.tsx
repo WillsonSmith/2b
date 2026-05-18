@@ -11,7 +11,6 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { ChevronUp, ChevronDown, X } from "lucide-react";
-import type { Tone } from "../../features/tone.ts";
 import type { LintIssue } from "../../features/lint.ts";
 import {
   isLocalLink,
@@ -54,8 +53,6 @@ interface EditorProps {
   ghostText?: string;
   onGhostAccept?: (text: string) => void;
   onGhostDismiss?: () => void;
-  onToneRequest?: (text: string, tone: Tone, from: number, to: number) => void;
-  onSummarizeRequest?: (text: string, insertPos: number) => void;
   toneReplacement?: { text: string; from: number; to: number } | null;
   summarizeResult?: { text: string; insertPos: number } | null;
   onToneApplied?: () => void;
@@ -63,7 +60,6 @@ interface EditorProps {
   lintIssues?: LintIssue[];
   onMetadataRequest?: () => void;
   isGeneratingMetadata?: boolean;
-  onTableRequest?: (text: string, insertPos: number) => void;
   onDiagramRequest?: (description: string, placeholderId: string) => void;
   diagramResult?: { code: string; placeholderId: string } | null;
   onDiagramApplied?: () => void;
@@ -75,7 +71,7 @@ interface EditorProps {
   onExplainCode?: (code: string, language: string) => void;
   isRecording?: boolean;
   onToggleRecording?: () => void;
-  onAskAboutSelection?: (text: string) => void;
+  onSendToChat?: (selectionRef: string) => void;
   onNavigate?: (path: string) => void;
   onCreateFile?: (path: string) => void;
   workspaceFiles?: string[];
@@ -204,8 +200,6 @@ export function Editor({
   ghostText = "",
   onGhostAccept,
   onGhostDismiss,
-  onToneRequest,
-  onSummarizeRequest,
   toneReplacement,
   summarizeResult,
   onToneApplied,
@@ -213,7 +207,6 @@ export function Editor({
   lintIssues = [],
   onMetadataRequest,
   isGeneratingMetadata,
-  onTableRequest,
   onDiagramRequest,
   diagramResult,
   onDiagramApplied,
@@ -225,7 +218,7 @@ export function Editor({
   onExplainCode,
   isRecording,
   onToggleRecording,
-  onAskAboutSelection,
+  onSendToChat,
   onNavigate,
   onCreateFile,
   workspaceFiles = [],
@@ -760,11 +753,9 @@ export function Editor({
         {editor && (
           <EditorBubbleMenu
             editor={editor}
-            onToneRequest={onToneRequest}
-            onSummarizeRequest={onSummarizeRequest}
-            onTableRequest={onTableRequest}
-            onAskAboutSelection={onAskAboutSelection}
             onOpenLinkPicker={openLinkPicker}
+            onSendToChat={onSendToChat}
+            currentFilePath={currentFilePath}
           />
         )}
 
