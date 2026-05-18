@@ -43,14 +43,8 @@ const { OllamaProvider } = await import("./OllamaProvider");
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeProvider(
-  strategy: "native" | "structured_output" = "native",
-  numCtx?: number,
-) {
-  return new OllamaProvider("test-model", "http://127.0.0.1:11434", {
-    toolCallingStrategy: strategy,
-    numCtx,
-  });
+function makeProvider(numCtx?: number) {
+  return new OllamaProvider("test-model", "http://127.0.0.1:11434", { numCtx });
 }
 
 /**
@@ -92,32 +86,8 @@ describe("system prompt handling", () => {
     expect(messages.every((m) => m.role !== "system")).toBe(true);
   });
 
-  test("structured_output strategy injects tool schema into system prompt", async () => {
-    const provider = makeProvider("structured_output");
-    const tools = [
-      {
-        name: "ping",
-        description: "Ping tool",
-        parameters: { type: "object", properties: {} },
-        implementation: async () => "pong",
-      },
-    ];
-
-    // Make the structured loop return a terminal message on first call
-    mockChat.mockImplementationOnce(async () => ({
-      message: { role: "assistant", content: '{"type":"message","content":"done"}' },
-    }));
-
-    await provider.chat([], "base prompt", undefined, tools as any);
-
-    const messages = (mockChat.mock.calls[0]?.[0] as any).messages as MockMessage[];
-    const systemMsg = messages.find((m) => m.role === "system");
-    expect(systemMsg?.content).toContain("base prompt");
-    expect(systemMsg?.content).toContain("ping");
-  });
-
-  test("native strategy does NOT inject tool schema into system prompt", async () => {
-    const provider = makeProvider("native");
+  test("tool schema is NOT injected into system prompt", async () => {
+    const provider = makeProvider();
     const tools = [
       {
         name: "ping",
@@ -128,9 +98,7 @@ describe("system prompt handling", () => {
     ];
 
     // Return a non-tool response so actWithTools exits cleanly
-    mockChat.mockImplementationOnce(async () => ({
-      message: { role: "assistant", content: "done", tool_calls: [] },
-    }));
+    mockChat.mockImplementationOnce(async () => streamOf({ role: "assistant", content: "done" }));
 
     await provider.chat([], "base prompt", undefined, tools as any);
 
@@ -226,7 +194,7 @@ describe("native tool calling", () => {
   });
 
   test("tools are sent in OpenAI function format", async () => {
-    const provider = makeProvider("native");
+    const provider = makeProvider();
     const tools = [
       {
         name: "search",
@@ -236,9 +204,7 @@ describe("native tool calling", () => {
       },
     ];
 
-    mockChat.mockImplementationOnce(async () => ({
-      message: { role: "assistant", content: "done", tool_calls: [] },
-    }));
+    mockChat.mockImplementationOnce(async () => streamOf({ role: "assistant", content: "done" }));
 
     await provider.chat([], "", undefined, tools as any);
 
@@ -250,7 +216,7 @@ describe("native tool calling", () => {
   });
 
   test("tool is called and result appended before final response", async () => {
-    const provider = makeProvider("native");
+    const provider = makeProvider();
     const impl = mock(async () => "tool-output");
     const tools = [
       {
@@ -286,7 +252,7 @@ describe("native tool calling", () => {
   });
 
   test("tool implementation error is returned as error JSON, not thrown", async () => {
-    const provider = makeProvider("native");
+    const provider = makeProvider();
     const tools = [
       {
         name: "bad",
@@ -316,7 +282,7 @@ describe("native tool calling", () => {
   });
 
   test("reasoning from final round is returned in reasoningText", async () => {
-    const provider = makeProvider("native");
+    const provider = makeProvider();
     const tools = [
       {
         name: "noop",
@@ -344,7 +310,7 @@ describe("native tool calling", () => {
   });
 
   test("all tool implementations are invoked when multiple calls arrive in a single round", async () => {
-    const provider = makeProvider("native");
+    const provider = makeProvider();
     const impl1 = mock(async () => "result1");
     const impl2 = mock(async () => "result2");
     const tools = [
@@ -371,7 +337,7 @@ describe("native tool calling", () => {
   });
 
   test("multiple tool implementations run concurrently, not sequentially", async () => {
-    const provider = makeProvider("native");
+    const provider = makeProvider();
     const order: string[] = [];
 
     const tools = [
@@ -417,7 +383,7 @@ describe("native tool calling", () => {
   });
 
   test("tool results are appended to history in original call order regardless of completion order", async () => {
-    const provider = makeProvider("native");
+    const provider = makeProvider();
 
     const tools = [
       {
@@ -460,7 +426,7 @@ describe("native tool calling", () => {
   });
 
   test("onToken called with final response content after tool rounds", async () => {
-    const provider = makeProvider("native");
+    const provider = makeProvider();
     const tools = [
       {
         name: "noop",
@@ -494,14 +460,14 @@ describe("num_ctx option", () => {
   });
 
   test("num_ctx is passed in options when set", async () => {
-    const provider = makeProvider("native", 8192);
+    const provider = makeProvider(8192);
     await provider.chat([{ role: "user", content: "hi" }], "");
     const opts = (mockChat.mock.calls[0]?.[0] as any).options;
     expect(opts?.num_ctx).toBe(8192);
   });
 
   test("options field is omitted when numCtx is not set", async () => {
-    const provider = makeProvider("native", undefined);
+    const provider = makeProvider(undefined);
     await provider.chat([{ role: "user", content: "hi" }], "");
     const opts = (mockChat.mock.calls[0]?.[0] as any).options;
     expect(opts).toBeUndefined();
@@ -509,24 +475,22 @@ describe("num_ctx option", () => {
 });
 
 describe("error handling", () => {
-  test("connection error returns graceful message, does not throw", async () => {
+  test("connection error propagates as a thrown error", async () => {
     mockChat.mockImplementationOnce(async () => {
       throw new Error("ECONNREFUSED: connection refused");
     });
     const provider = makeProvider();
-    const result = await provider.chat([{ role: "user", content: "hi" }], "");
-    expect(result.response).toContain("Ollama error:");
-    expect(result.response).not.toBe("");
+    await expect(
+      provider.chat([{ role: "user", content: "hi" }], ""),
+    ).rejects.toThrow("ECONNREFUSED: connection refused");
   });
 
-  test("error message is emitted via onToken", async () => {
+  test("timeout error propagates as a thrown error", async () => {
     mockChat.mockImplementationOnce(async () => {
       throw new Error("timeout");
     });
     const provider = makeProvider();
-    const tokens: string[] = [];
-    await provider.chat([], "", undefined, undefined, (t) => tokens.push(t));
-    expect(tokens.join("")).toContain("Ollama error:");
+    await expect(provider.chat([], "")).rejects.toThrow("timeout");
   });
 });
 

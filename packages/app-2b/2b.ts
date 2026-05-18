@@ -6,7 +6,7 @@
  * plugins in dependency order, then delegates to either the terminal or web UI.
  *
  * Depends on:
- *   - MODEL env var (overridden by --model flag) — LMStudio model identifier
+ *   - MODEL env var (overridden by --model flag) — Ollama model name
  *   - PORT env var (overridden by --port flag) — web UI port, default 3000
  *   - DEBUG_TOKENS env var or --debug-tokens flag — streams raw tokens to stdout
  *

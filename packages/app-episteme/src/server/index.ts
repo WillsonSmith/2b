@@ -257,6 +257,7 @@ export async function startEpistemServer(
     }
   });
 
+  agent.on("error", (err: Error) => broadcast({ type: "error", message: err.message }));
   agent.on("speak", (text) => {
     workspaceDb.appendChatMessage("assistant", text);
     broadcast({ type: "speak", text });

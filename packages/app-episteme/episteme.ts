@@ -11,7 +11,7 @@
  *
  * Environment variables:
  *   MODEL        Chat model name (default from createProvider)
- *   PROVIDER     "lmstudio" (default) or "ollama"
+ *   PROVIDER     (unused — Ollama is the only backend)
  *   PORT         HTTP port (default: 4000; overridden by --port)
  */
 import { resolve, join } from "node:path";
