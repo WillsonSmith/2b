@@ -23,7 +23,7 @@ export interface AgentEventMap {
   log: [message: string];
   speak: [response: string];
   tool_call: [name: string, args: Record<string, unknown>];
-  tool_result: [name: string];
+  tool_result: [name: string, error?: string];
   subagent_tool_call: [agentName: string, agentToolName: string, toolName: string, args: Record<string, unknown>];
   subagent_token: [agentName: string, token: string, isReasoning: boolean];
   tool_call_blocked: [name: string, args: Record<string, unknown>, reason: string];

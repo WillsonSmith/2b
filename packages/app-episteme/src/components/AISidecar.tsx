@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import { Copy, Check, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2 } from "lucide-react";
+import { Copy, Check, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2, AlertCircle } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
 import { usePanelResize } from "../hooks/usePanelResize.ts";
 
@@ -8,7 +8,7 @@ import { usePanelResize } from "../hooks/usePanelResize.ts";
 export type SidecarMessage =
   | { role: "user"; text: string; id?: number }
   | { role: "assistant"; text: string; id?: number }
-  | { role: "tool"; name: string; status: "calling" | "done" }
+  | { role: "tool"; name: string; status: "calling" | "done" | "error"; error?: string }
   | { role: "notification"; text: string; actionLabel: string; onAction: () => void };
 
 interface AISidecarProps {
@@ -101,14 +101,32 @@ const MessageList = memo(function MessageList({ messages, isThinking, onSend, en
 
       {messages.map((m, i) => {
         if (m.role === "tool") {
+          if (m.status === "calling") {
+            return (
+              <div key={i} className="sidecar-tool-row calling">
+                <span className="sidecar-tool-arrow"><CornerDownRight size={10} /></span>
+                <span className="sidecar-tool-name">{toolDisplayName(m.name)}</span>
+                <span className="sidecar-tool-status"><Loader2 size={11} className="icon-spin" /></span>
+              </div>
+            );
+          }
           return (
-            <div key={i} className={`sidecar-tool-row ${m.status}`}>
-              <span className="sidecar-tool-arrow"><CornerDownRight size={10} /></span>
-              <span className="sidecar-tool-name">{toolDisplayName(m.name)}</span>
-              <span className="sidecar-tool-status">
-                {m.status === "calling" ? <Loader2 size={11} className="icon-spin" /> : <Check size={11} />}
-              </span>
-            </div>
+            <details key={i} className={`sidecar-tool-row ${m.status}`}>
+              <summary className="sidecar-tool-summary">
+                <span className="sidecar-tool-arrow"><CornerDownRight size={10} /></span>
+                <span className="sidecar-tool-name">{toolDisplayName(m.name)}</span>
+                <span className="sidecar-tool-status">
+                  {m.status === "error"
+                    ? <AlertCircle size={11} className="icon-error" />
+                    : <Check size={11} />}
+                </span>
+              </summary>
+              <div className="sidecar-tool-detail">
+                {m.error
+                  ? <span className="sidecar-tool-error-text">{m.error}</span>
+                  : <span className="sidecar-tool-ok-text">Completed successfully</span>}
+              </div>
+            </details>
           );
         }
 

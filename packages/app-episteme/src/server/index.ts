@@ -267,9 +267,9 @@ export async function startEpistemServer(
   const FILE_MUTATING_TOOLS = new Set([
     "write_file", "append_file", "patch_file", "move_file", "delete_file", "create_file",
   ]);
-  agent.on("tool_result", (name) => {
-    broadcast({ type: "tool_result", name });
-    if (FILE_MUTATING_TOOLS.has(name)) {
+  agent.on("tool_result", (name: string, error?: string) => {
+    broadcast({ type: "tool_result", name, error });
+    if (!error && FILE_MUTATING_TOOLS.has(name)) {
       scheduleWorkspaceRefresh();
     }
   });
