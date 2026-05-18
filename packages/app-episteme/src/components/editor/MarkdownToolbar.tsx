@@ -1,6 +1,6 @@
 import {
   Undo2, Redo2, Mic, Square, Quote, Code2, Minus, List, ListOrdered,
-  FileCode, Loader2, Table, CheckSquare, Network, Link,
+  FileCode, Loader2, Table, CheckSquare, Network, Link, Sparkles,
 } from "lucide-react";
 import type { Editor } from "@tiptap/react";
 
@@ -38,6 +38,7 @@ interface MarkdownToolbarProps {
   isRecording?: boolean;
   onOpenDiagramBar?: () => void;
   onOpenLinkPicker?: () => void;
+  onProcessAllFills?: () => void;
 }
 
 export function MarkdownToolbar({
@@ -48,6 +49,7 @@ export function MarkdownToolbar({
   isRecording,
   onOpenDiagramBar,
   onOpenLinkPicker,
+  onProcessAllFills,
 }: MarkdownToolbarProps) {
   return (
     <div className="editor-toolbar">
@@ -216,6 +218,18 @@ export function MarkdownToolbar({
           <span className="icon-inline">
             <Network size={14} />
             Diagram
+          </span>
+        </ToolbarButton>
+      )}
+      {onProcessAllFills && (
+        <ToolbarButton
+          onClick={onProcessAllFills}
+          title="Generate content for all AI Fill blocks in this document"
+          active={false}
+        >
+          <span className="icon-inline">
+            <Sparkles size={14} />
+            Process Fills
           </span>
         </ToolbarButton>
       )}

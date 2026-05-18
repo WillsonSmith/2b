@@ -45,6 +45,7 @@ export type ClientMsg =
   | { type: "metadata_request"; title: string; preview: string }
   | { type: "toc_request"; markdown: string; file?: string }
   | { type: "diagram_request"; description: string; placeholderId: string }
+  | { type: "ai_fill_request"; id: string; instruction: string; document: string; mentions: Array<{ path: string; content: string }> }
   | { type: "table_request"; text: string; insertPos: number }
   | { type: "search_request"; query: string }
   | { type: "detect_gaps_request"; topic: string }
@@ -96,6 +97,7 @@ export type ServerMsg =
   | { type: "toc_result"; entries: TocEntry[] }
   | { type: "toc_stored"; file: string; entries: TocEntry[] }
   | { type: "diagram_result"; code: string; placeholderId: string }
+  | { type: "ai_fill_result"; id: string; content: string; error?: string }
   | { type: "table_result"; text: string; insertPos: number }
   | { type: "search_result"; results: UnifiedSearchResponse }
   | { type: "detect_gaps_result"; markdown: string }

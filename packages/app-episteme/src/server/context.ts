@@ -7,6 +7,7 @@ import type { WorkspacePlugin } from "../plugins/WorkspacePlugin.ts";
 import type { ResearchPlugin } from "../plugins/ResearchPlugin.ts";
 import type { CitationPlugin } from "../plugins/CitationPlugin.ts";
 import type { DiagramPlugin } from "../plugins/DiagramPlugin.ts";
+import type { AIFillPlugin } from "../plugins/AIFillPlugin.ts";
 import type { StyleGuidePlugin } from "../plugins/StyleGuidePlugin.ts";
 import type { ContradictionPlugin } from "../plugins/ContradictionPlugin.ts";
 import type { PlanningController } from "../planning/PlanningController.ts";
@@ -26,6 +27,7 @@ export interface WsContext {
   research: ResearchPlugin;
   citation: CitationPlugin;
   diagram: DiagramPlugin;
+  aiFill: AIFillPlugin;
   styleGuide: StyleGuidePlugin;
   contradiction: ContradictionPlugin;
   planning: PlanningController;
