@@ -80,11 +80,8 @@ function App() {
   const [messages, setMessages] = useState<SidecarMessage[]>([]);
   const [sidecarCollapsed, setSidecarCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    const saved = (localStorage.getItem("episteme-theme") as "dark" | "light") ?? "dark";
-    document.documentElement.dataset.theme = saved;
-    return saved;
-  });
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const themeReady = useRef(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<"style" | "models" | "help">("style");
   const [showToc, setShowToc] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -142,8 +139,18 @@ function App() {
   // ── Theme ────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    getShell().getPreference("episteme-theme").then((saved) => {
+      const initial = (saved as "dark" | "light") ?? "dark";
+      document.documentElement.dataset.theme = initial;
+      themeReady.current = true;
+      setTheme(initial);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!themeReady.current) return;
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("episteme-theme", theme);
+    getShell().setPreference("episteme-theme", theme);
   }, [theme]);
 
   const toggleTheme = useCallback(() => {

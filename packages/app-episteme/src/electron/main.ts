@@ -7,6 +7,7 @@ import * as os from "os";
 const CONFIG_DIR = path.join(os.homedir(), ".config", "episteme");
 const LAST_WORKSPACE_FILE = path.join(CONFIG_DIR, "last-workspace");
 const RECENT_WORKSPACES_FILE = path.join(CONFIG_DIR, "recent-workspaces.json");
+const PREFERENCES_FILE = path.join(CONFIG_DIR, "preferences.json");
 const MAX_RECENT = 10;
 
 interface WindowState {
@@ -459,6 +460,26 @@ ipcMain.handle("create-project", async (event) => {
 ipcMain.handle("get-recent-folders", () => readRecentWorkspaces());
 
 ipcMain.handle("get-app-version", () => app.getVersion());
+
+ipcMain.handle("get-preference", (_event, key: string): string | null => {
+  try {
+    const data = fs.readFileSync(PREFERENCES_FILE, "utf8");
+    const prefs = JSON.parse(data);
+    return prefs[key] ?? null;
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle("set-preference", (_event, key: string, value: string): void => {
+  let prefs: Record<string, string> = {};
+  try {
+    prefs = JSON.parse(fs.readFileSync(PREFERENCES_FILE, "utf8"));
+  } catch {}
+  prefs[key] = value;
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  fs.writeFileSync(PREFERENCES_FILE, JSON.stringify(prefs), "utf8");
+});
 
 // --- App lifecycle ---
 

@@ -3,5 +3,7 @@ export interface IShell {
   createProject(): Promise<string | null>;
   getRecentFolders(): Promise<string[]>;
   getAppVersion(): Promise<string>;
+  getPreference(key: string): Promise<string | null>;
+  setPreference(key: string, value: string): Promise<void>;
   platform(): "electron" | "tauri" | "browser";
 }

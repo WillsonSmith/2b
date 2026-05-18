@@ -13,6 +13,13 @@ export class BrowserShell implements IShell {
   getAppVersion(): Promise<string> {
     return Promise.resolve("dev");
   }
+  getPreference(key: string): Promise<string | null> {
+    return Promise.resolve(localStorage.getItem(key));
+  }
+  setPreference(key: string, value: string): Promise<void> {
+    localStorage.setItem(key, value);
+    return Promise.resolve();
+  }
   platform(): "browser" {
     return "browser";
   }
