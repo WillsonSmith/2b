@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import { Copy, Check, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2, AlertCircle } from "lucide-react";
+import { Copy, Check, CheckCircle2, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2, AlertCircle, Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
 import { usePanelResize } from "../hooks/usePanelResize.ts";
+import type { EpistemePlanStepType } from "../planning/types.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -9,7 +10,17 @@ export type SidecarMessage =
   | { role: "user"; text: string; id?: number }
   | { role: "assistant"; text: string; id?: number }
   | { role: "tool"; name: string; status: "calling" | "done" | "error"; error?: string }
-  | { role: "notification"; text: string; actionLabel: string; onAction: () => void };
+  | { role: "notification"; text: string; actionLabel: string; onAction: () => void }
+  | {
+      role: "plan_step";
+      planId: string;
+      stepId: string;
+      stepTitle: string;
+      stepType: EpistemePlanStepType;
+      state: "running" | "complete" | "failed";
+      summary?: string;
+      error?: string;
+    };
 
 interface AISidecarProps {
   messages: SidecarMessage[];
@@ -57,6 +68,18 @@ const QUICK_ACTIONS: Array<{ label: string; prompt: string }> = [
 function toolDisplayName(name: string): string {
   return name.replace(/_/g, " ");
 }
+
+// ── Plan step icons (compact, local copy — kept independent from PlanPanel.tsx)
+
+const PLAN_STEP_TYPE_ICONS: Record<EpistemePlanStepType, React.FC<{ size?: number; className?: string }>> = {
+  research: ({ size = 11, className }) => <Search size={size} className={className} />,
+  outline:  ({ size = 11, className }) => <List size={size} className={className} />,
+  draft:    ({ size = 11, className }) => <PenLine size={size} className={className} />,
+  edit:     ({ size = 11, className }) => <Pencil size={size} className={className} />,
+  cite:     ({ size = 11, className }) => <Quote size={size} className={className} />,
+  analyze:  ({ size = 11, className }) => <BarChart2 size={size} className={className} />,
+  organize: ({ size = 11, className }) => <FolderOpen size={size} className={className} />,
+};
 
 // ── CopyButton ────────────────────────────────────────────────────────────────
 
@@ -137,6 +160,42 @@ const MessageList = memo(function MessageList({ messages, isThinking, onSend, en
             <div key={i} className="sidecar-msg notification">
               <span className="sidecar-notification-text">{m.text}</span>
               <button className="sidecar-action-btn" onClick={m.onAction}>{m.actionLabel}</button>
+            </div>
+          );
+        }
+
+        if (m.role === "plan_step") {
+          const TypeIcon = PLAN_STEP_TYPE_ICONS[m.stepType];
+          const stateIcon = () => {
+            switch (m.state) {
+              case "running":  return <Loader2 size={11} className="icon-spin" />;
+              case "complete": return <CheckCircle2 size={11} className="sidecar-plan-step-done" />;
+              case "failed":   return <AlertCircle size={11} className="sidecar-plan-step-fail" />;
+            }
+          };
+
+          const isExpandable = !!(m.summary || m.error);
+
+          return isExpandable ? (
+            <details key={i} className={`sidecar-plan-step sidecar-plan-step--${m.state}`}>
+              <summary className="sidecar-plan-step-summary">
+                <span className="sidecar-plan-step-state">{stateIcon()}</span>
+                <span className="sidecar-plan-step-type-icon"><TypeIcon /></span>
+                <span className="sidecar-plan-step-title">{m.stepTitle}</span>
+                <span className="sidecar-plan-step-type">{m.stepType}</span>
+              </summary>
+              <div className="sidecar-plan-step-detail">
+                {m.error
+                  ? <span className="sidecar-plan-step-error">{m.error}</span>
+                  : <span className="sidecar-plan-step-result">{m.summary}</span>}
+              </div>
+            </details>
+          ) : (
+            <div key={i} className={`sidecar-plan-step sidecar-plan-step--${m.state}`}>
+              <span className="sidecar-plan-step-state">{stateIcon()}</span>
+              <span className="sidecar-plan-step-type-icon"><TypeIcon /></span>
+              <span className="sidecar-plan-step-title">{m.stepTitle}</span>
+              <span className="sidecar-plan-step-type">{m.stepType}</span>
             </div>
           );
         }

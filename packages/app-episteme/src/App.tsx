@@ -100,6 +100,9 @@ function App() {
   const ws = useWebSocket();
   const planning = usePlanning(ws.wsRef, ws.subscribe);
 
+  const planRef = useRef(planning.plan);
+  useEffect(() => { planRef.current = planning.plan; }, [planning.plan]);
+
   // Auto-open the plan panel when a plan is created or already active on connect
   useEffect(() => {
     if (planning.plan) setShowPlan(true);
@@ -506,6 +509,40 @@ function App() {
       ]);
       setSidecarCollapsed(false);
     });
+    const unsubStepStarted = ws.subscribe("plan_step_started", (msg) => {
+      const plan = planRef.current;
+      const step = plan?.steps.find((s) => s.id === msg.stepId);
+      if (!step) return;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "plan_step",
+          planId: msg.planId,
+          stepId: msg.stepId,
+          stepTitle: step.title,
+          stepType: step.type,
+          state: "running",
+        },
+      ]);
+    });
+    const unsubStepCompleted = ws.subscribe("plan_step_completed", (msg) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.role === "plan_step" && m.stepId === msg.stepId
+            ? { ...m, state: "complete", summary: msg.summary }
+            : m,
+        ),
+      );
+    });
+    const unsubStepFailed = ws.subscribe("plan_step_failed", (msg) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.role === "plan_step" && m.stepId === msg.stepId
+            ? { ...m, state: "failed", error: msg.error }
+            : m,
+        ),
+      );
+    });
     return () => {
       unsubSpeak();
       unsubToolCall();
@@ -519,6 +556,9 @@ function App() {
       unsubFileCreated();
       unsubIndex();
       unsubContradictionNotif();
+      unsubStepStarted();
+      unsubStepCompleted();
+      unsubStepFailed();
     };
   }, [
     ws.subscribe,
