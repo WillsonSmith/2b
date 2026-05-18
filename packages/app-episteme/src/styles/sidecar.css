@@ -56,18 +56,18 @@
   word-break: break-word;
 }
 .sidecar-msg.user {
-  background: #1e2336;
+  background: var(--sidecar-user-bg);
   border-left: 2px solid var(--accent);
 }
 .sidecar-msg.assistant {
-  background: #1e2a1e;
+  background: var(--sidecar-assistant-bg);
   border-left: 2px solid var(--green);
 }
 .sidecar-msg.notification {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #1e2336;
+  background: var(--sidecar-user-bg);
   border-left: 2px solid var(--accent);
   padding: 6px 10px;
 }
@@ -124,7 +124,7 @@
   opacity: 1;
 }
 .sidecar-delete-btn:hover {
-  color: var(--danger, #e05c5c);
+  color: var(--red);
   background: var(--bg-highlight);
 }
 .sidecar-thinking {

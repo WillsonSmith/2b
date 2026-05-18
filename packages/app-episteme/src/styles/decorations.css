@@ -1,14 +1,14 @@
 /* ── Lint decorations ────────────────────────────────────────────────── */
 .lint-clarity {
-  border-bottom: 2px solid #6699dd;
+  border-bottom: 2px solid var(--accent);
   cursor: help;
 }
 .lint-conciseness {
-  border-bottom: 2px solid #cc9944;
+  border-bottom: 2px solid var(--yellow);
   cursor: help;
 }
 .lint-fluff {
-  border-bottom: 2px solid #cc5555;
+  border-bottom: 2px solid var(--red);
   cursor: help;
 }
 

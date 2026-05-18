@@ -624,12 +624,12 @@
   justify-content: center;
 }
 .conflict-source-a .conflict-source-label {
-  background: #1a365d;
-  color: #90cdf4;
+  background: var(--conflict-a-bg);
+  color: var(--conflict-a-text);
 }
 .conflict-source-b .conflict-source-label {
-  background: #3a1a1a;
-  color: #fc8181;
+  background: var(--conflict-b-bg);
+  color: var(--conflict-b-text);
 }
 .conflict-source-text {
   font-size: 11px;

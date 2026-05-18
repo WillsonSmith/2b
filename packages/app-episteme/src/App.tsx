@@ -23,6 +23,8 @@ import {
   Circle,
   ClipboardList,
   Sparkles,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { useFileManager } from "./hooks/useFileManager.ts";
 import { useEditorFeatures } from "./hooks/useEditorFeatures.ts";
@@ -78,6 +80,8 @@ function App() {
   const [messages, setMessages] = useState<SidecarMessage[]>([]);
   const [sidecarCollapsed, setSidecarCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const themeReady = useRef(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<"style" | "models" | "help">("style");
   const [showToc, setShowToc] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -131,6 +135,27 @@ function App() {
     onMicError,
     ws.subscribe,
   );
+
+  // ── Theme ────────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    getShell().getPreference("episteme-theme").then((saved) => {
+      const initial = (saved as "dark" | "light") ?? "dark";
+      document.documentElement.dataset.theme = initial;
+      themeReady.current = true;
+      setTheme(initial);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!themeReady.current) return;
+    document.documentElement.dataset.theme = theme;
+    getShell().setPreference("episteme-theme", theme);
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((t) => (t === "dark" ? "light" : "dark"));
+  }, []);
 
   // ── Electron detection ───────────────────────────────────────────────────────
 
@@ -590,6 +615,13 @@ function App() {
             onClick={() => setShowPlan((v) => !v)}
           >
             <ClipboardList size={16} />
+          </button>
+          <button
+            className="header-research-btn"
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            onClick={toggleTheme}
+          >
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
           <button
             className="header-research-btn"

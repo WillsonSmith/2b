@@ -13,6 +13,12 @@ export class ElectronShell implements IShell {
   getAppVersion(): Promise<string> {
     return (window as any).__electronShell.getAppVersion();
   }
+  getPreference(key: string): Promise<string | null> {
+    return (window as any).__electronShell.getPreference(key);
+  }
+  setPreference(key: string, value: string): Promise<void> {
+    return (window as any).__electronShell.setPreference(key, value);
+  }
   platform(): "electron" {
     return "electron";
   }

@@ -220,16 +220,16 @@
   gap: 14px;
 }
 .export-warning {
-  background: #3a2a1a;
-  border: 1px solid #664422;
+  background: var(--banner-warning-bg);
+  border: 1px solid var(--banner-warning-border);
   border-radius: 5px;
   padding: 8px 12px;
   font-size: 12px;
-  color: #cc8844;
+  color: var(--banner-warning-text);
   line-height: 1.5;
 }
 .export-warning code {
-  color: #eebb66;
+  color: var(--banner-warning-code);
   font-size: 11px;
 }
 .export-field {
