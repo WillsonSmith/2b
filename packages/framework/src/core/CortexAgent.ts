@@ -14,7 +14,7 @@
  * setup (plugin registration order, systemPrompt augmentation) affect all agents.
  *
  * Depends on:
- *   - LLMProvider — the LLM connection (LMStudio by default)
+ *   - LLMProvider — the LLM connection (Ollama via createProvider)
  *   - AgentConfig.cortexName / .name — determines SQLite filename for memory
  *   - AgentConfig.memoryDbPath — override to ":memory:" in tests
  */

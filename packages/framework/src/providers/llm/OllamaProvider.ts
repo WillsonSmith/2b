@@ -7,12 +7,8 @@ import type { LLMProvider, ChatResponse } from "./LLMProvider.ts";
 import type { ToolDefinition } from "../../core/Plugin.ts";
 import type { Message } from "../../core/types.ts";
 import { logger } from "../../logger.ts";
-import { buildToolSystemPromptAddition } from "./StructuredToolCaller.ts";
 
 export interface OllamaProviderOptions {
-  /** How tools are called. "native" uses Ollama's built-in tool protocol.
-   *  "structured_output" uses constrained JSON decoding — works with any model. */
-  toolCallingStrategy?: "native" | "structured_output";
   /** Which embedding model to use with getEmbedding(). Defaults to "nomic-embed-text". */
   embeddingModel?: string;
   /**
@@ -31,21 +27,8 @@ export interface OllamaProviderOptions {
   think?: boolean | "high" | "medium" | "low";
 }
 
-const STRUCTURED_RESPONSE_SCHEMA = {
-  type: "object",
-  properties: {
-    type: { type: "string", enum: ["tool_call", "message"] },
-    tool: { type: "string" },
-    args: { type: "object", additionalProperties: true },
-    content: { type: "string" },
-  },
-  required: ["type"],
-  additionalProperties: false,
-} as const;
-
 export class OllamaProvider implements LLMProvider {
   private client: Ollama;
-  private toolCallingStrategy: "native" | "structured_output";
   private embeddingModel: string;
   private numCtx: number | undefined;
   private think: boolean | "high" | "medium" | "low";
@@ -56,7 +39,6 @@ export class OllamaProvider implements LLMProvider {
     options: OllamaProviderOptions = {},
   ) {
     this.client = new Ollama({ host: endpoint });
-    this.toolCallingStrategy = options.toolCallingStrategy ?? "native";
     this.embeddingModel = options.embeddingModel ?? "nomic-embed-text";
     this.numCtx = options.numCtx;
     this.think = options.think ?? true;
@@ -72,31 +54,21 @@ export class OllamaProvider implements LLMProvider {
   ): Promise<ChatResponse> {
     logger.info(
       "Ollama",
-      `chat() model=${this.model} strategy=${this.toolCallingStrategy} tools=${tools?.length ?? 0} messages=${messages.length}`,
+      `chat() model=${this.model} tools=${tools?.length ?? 0} messages=${messages.length}`,
     );
 
     try {
       const hasTools = tools && tools.length > 0;
       const ollamaMessages: OllamaMessage[] = [];
 
-      let effectiveSystemPrompt = systemPrompt;
-      if (hasTools && this.toolCallingStrategy === "structured_output") {
-        effectiveSystemPrompt = [
-          systemPrompt,
-          buildToolSystemPromptAddition(tools),
-        ]
-          .filter(Boolean)
-          .join("\n\n");
-      }
-
-      if (effectiveSystemPrompt) {
-        ollamaMessages.push({ role: "system", content: effectiveSystemPrompt });
+      if (systemPrompt) {
+        ollamaMessages.push({ role: "system", content: systemPrompt });
       }
       for (const msg of messages) {
         ollamaMessages.push({ role: msg.role, content: msg.content });
       }
 
-      if (hasTools && this.toolCallingStrategy === "native") {
+      if (hasTools) {
         const ollamaTools: OllamaTool[] = tools.map((t) => ({
           type: "function",
           function: {
@@ -114,28 +86,10 @@ export class OllamaProvider implements LLMProvider {
         );
       }
 
-      if (hasTools && this.toolCallingStrategy === "structured_output") {
-        const result = await this.callWithStructuredTools(
-          ollamaMessages,
-          tools,
-          abortSignal,
-        );
-        return {
-          response: result,
-          nonReasoningContent: result,
-          reasoningText: "",
-        };
-      }
-
       return await this.respond(ollamaMessages, onToken, abortSignal);
     } catch (error) {
       logger.error("Ollama", "Error communicating with Ollama server:", error);
-      const msg =
-        error instanceof Error
-          ? `Ollama error: ${error.message}`
-          : "I'm having trouble thinking right now. Is the Ollama server running?";
-      onToken?.(msg, false);
-      return { response: msg, nonReasoningContent: msg, reasoningText: "" };
+      throw error;
     }
   }
 
@@ -319,96 +273,6 @@ export class OllamaProvider implements LLMProvider {
     const msg = `Tool call loop reached the maximum of ${MAX_ROUNDS} rounds without a final response.`;
     logger.warn("Ollama", msg);
     return { response: msg, nonReasoningContent: msg, reasoningText: "" };
-  }
-
-  /**
-   * Structured-output tool-calling loop for models without native tool support.
-   * Uses Ollama's `format` parameter to constrain output to a JSON envelope,
-   * mirroring the approach in `StructuredToolCaller` for LMStudio.
-   */
-  private async callWithStructuredTools(
-    messages: OllamaMessage[],
-    tools: ToolDefinition[],
-    abortSignal?: AbortSignal,
-  ): Promise<string> {
-    const MAX_ITERATIONS = 10;
-    const toolMap = new Map(tools.map((t) => [t.name, t]));
-    const history = [...messages];
-
-    for (let i = 0; i < MAX_ITERATIONS; i++) {
-      if (abortSignal?.aborted) return "Interrupted.";
-      const response = await this.client.chat({
-        model: this.model,
-        messages: history,
-        format: STRUCTURED_RESPONSE_SCHEMA,
-        stream: false,
-        ...(this.numCtx !== undefined
-          ? { options: { num_ctx: this.numCtx } }
-          : {}),
-        ...(abortSignal !== undefined ? { signal: abortSignal } : {}),
-      });
-
-      const content = response.message.content;
-
-      let parsed: {
-        type: string;
-        tool?: string;
-        args?: Record<string, unknown>;
-        content?: string;
-      };
-      try {
-        parsed = JSON.parse(content) as typeof parsed;
-      } catch {
-        return content;
-      }
-
-      if (parsed.type === "message") {
-        return parsed.content ?? "";
-      }
-
-      if (parsed.type === "tool_call") {
-        if (!parsed.tool) {
-          history.push({
-            role: "user",
-            content: 'Tool error: response was missing the "tool" field.',
-          });
-          continue;
-        }
-
-        const tool = toolMap.get(parsed.tool);
-        if (!tool?.implementation) {
-          history.push({
-            role: "user",
-            content: `Tool "${parsed.tool}" not found or has no implementation.`,
-          });
-          continue;
-        }
-
-        let result: string;
-        try {
-          const raw = await tool.implementation(parsed.args ?? {});
-          result = typeof raw === "string" ? raw : JSON.stringify(raw);
-        } catch (e) {
-          const errMsg = e instanceof Error ? e.message : String(e);
-          result = `Tool "${parsed.tool}" threw: ${errMsg}`;
-        }
-
-        history.push({ role: "assistant", content });
-        history.push({
-          role: "user",
-          content: `Tool result for ${parsed.tool}: ${result}`,
-        });
-      } else {
-        history.push({
-          role: "user",
-          content: `Unexpected response type "${parsed.type}". Respond with "tool_call" or "message".`,
-        });
-      }
-    }
-
-    throw new Error(
-      `Ollama structured tool-call loop reached the maximum of ${MAX_ITERATIONS} iterations.`,
-    );
   }
 
   public getModel(): string {

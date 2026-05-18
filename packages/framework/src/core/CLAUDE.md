@@ -142,7 +142,6 @@ interface AgentConfig {
   model: string;
   embeddingModel?: string;
   systemPrompt: string;
-  toolCallingStrategy?: "native" | "structured_output"; // default: "native"
   heartbeatInterval?: number;  // ms, default 3000
   historyLimit?: number;
   name?: string;

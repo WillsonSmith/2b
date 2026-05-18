@@ -6,7 +6,7 @@ Backend adapters for LLM inference and audio capture/transcription. Nothing in t
 
 | Directory | Purpose |
 |-----------|---------|
-| `llm/` | `LLMProvider` interface + `LMStudioProvider` + `StructuredToolCaller` |
+| `llm/` | `LLMProvider` interface + `OllamaProvider` + `ModelCapabilityProvider` |
 | `audio/` | Microphone capture, voice activity detection, and Whisper transcription |
 
 ## Dependencies
