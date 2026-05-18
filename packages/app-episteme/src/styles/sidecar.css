@@ -10,6 +10,7 @@
 }
 
 .ai-sidecar {
+  height: 100%;
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
