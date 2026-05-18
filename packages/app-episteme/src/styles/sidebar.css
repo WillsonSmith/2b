@@ -122,13 +122,13 @@
   box-sizing: border-box;
 }
 .file-tree-rename-input:focus {
-  border-color: var(--accent, #6699dd);
+  border-color: var(--accent);
 }
 
 .file-tree-context-menu {
   position: fixed;
   z-index: 200;
-  background: var(--bg-panel, #1e1e2e);
+  background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);

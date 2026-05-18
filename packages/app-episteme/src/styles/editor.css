@@ -295,7 +295,7 @@
 }
 
 .tiptap .mermaid-remove--confirm {
-  color: var(--color-error, #e53e3e);
+  color: var(--red);
   opacity: 1;
 }
 
@@ -316,7 +316,7 @@
 }
 
 .tiptap .mermaid-source--error {
-  border-color: var(--color-error, #e53e3e);
+  border-color: var(--red);
 }
 
 .tiptap .diagram-generating {
@@ -489,12 +489,12 @@
 }
 
 .find-match {
-  background: rgba(255, 200, 70, 0.25);
+  background: var(--find-match-bg);
   border-radius: 2px;
 }
 .find-match-active {
-  background: rgba(255, 200, 70, 0.65);
-  outline: 1px solid rgba(255, 200, 70, 0.95);
+  background: var(--find-match-active-bg);
+  outline: 1px solid var(--find-match-outline);
 }
 
 /* ── Mermaid diagram blocks ──────────────────────────────────────────── */
@@ -682,7 +682,7 @@
 .fm-input[type="date"] {
   font-family: var(--font-mono, monospace);
   font-size: 12px;
-  color-scheme: dark;
+  color-scheme: var(--color-scheme);
 }
 .fm-delete {
   background: none;

@@ -1,0 +1,77 @@
+/* ── Dark theme (explicit, matches :root defaults in base.css) ─────────────── */
+[data-theme="dark"] {
+  --bg: #181818;
+  --bg-raised: #202020;
+  --bg-highlight: #2a2a2a;
+  --bg-active: #2e3a50;
+  --border: #333333;
+  --border-light: #3d3d3d;
+  --text: #d4d4d4;
+  --text-muted: #888888;
+  --text-dim: #555555;
+  --accent: #6699dd;
+  --accent-soft: #3d5a90;
+  --green: #4caf70;
+  --red: #cc5555;
+  --yellow: #cc9944;
+  --color-scheme: dark;
+  --banner-error-bg: #2a1a1a;
+  --banner-error-border: #664444;
+  --banner-warning-bg: #2a2210;
+  --banner-warning-border: #554422;
+  --banner-warning-text: #cc9944;
+  --banner-warning-code: #eebb66;
+  --banner-warning-btn-hover: rgba(85, 68, 34, 0.4);
+  --sidecar-user-bg: #1e2336;
+  --sidecar-assistant-bg: #1e2a1e;
+  --conflict-a-bg: #1a365d;
+  --conflict-a-text: #90cdf4;
+  --conflict-b-bg: #3a1a1a;
+  --conflict-b-text: #fc8181;
+  --scrollbar-thumb: #444;
+  --scrollbar-thumb-hover: #555;
+  --find-match-bg: rgba(255, 200, 70, 0.25);
+  --find-match-active-bg: rgba(255, 200, 70, 0.65);
+  --find-match-outline: rgba(255, 200, 70, 0.95);
+  --hover-tint: rgba(255, 255, 255, 0.025);
+  --hover-tint-sm: rgba(255, 255, 255, 0.02);
+}
+
+/* ── Light theme ───────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg: #f8f8f8;
+  --bg-raised: #ffffff;
+  --bg-highlight: #efefef;
+  --bg-active: #dce8f8;
+  --border: #d8d8d8;
+  --border-light: #c8c8c8;
+  --text: #1a1a1a;
+  --text-muted: #5a5a5a;
+  --text-dim: #9a9a9a;
+  --accent: #3366bb;
+  --accent-soft: #d4e0f5;
+  --green: #267a48;
+  --red: #b83232;
+  --yellow: #8a6500;
+  --color-scheme: light;
+  --banner-error-bg: #fff0f0;
+  --banner-error-border: #f0b0b0;
+  --banner-warning-bg: #fffbeb;
+  --banner-warning-border: #d8b860;
+  --banner-warning-text: #7a5600;
+  --banner-warning-code: #5a3a00;
+  --banner-warning-btn-hover: rgba(180, 130, 0, 0.1);
+  --sidecar-user-bg: #eef3fc;
+  --sidecar-assistant-bg: #edf7ee;
+  --conflict-a-bg: #dde8f8;
+  --conflict-a-text: #1a4a8a;
+  --conflict-b-bg: #fce8e8;
+  --conflict-b-text: #8a1a1a;
+  --scrollbar-thumb: #c0c0c0;
+  --scrollbar-thumb-hover: #a8a8a8;
+  --find-match-bg: rgba(180, 130, 0, 0.2);
+  --find-match-active-bg: rgba(180, 130, 0, 0.45);
+  --find-match-outline: rgba(180, 130, 0, 0.9);
+  --hover-tint: rgba(0, 0, 0, 0.025);
+  --hover-tint-sm: rgba(0, 0, 0, 0.02);
+}
