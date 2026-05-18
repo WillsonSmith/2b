@@ -22,6 +22,7 @@ import {
   AlignLeft,
   Circle,
   ClipboardList,
+  Sparkles,
 } from "lucide-react";
 import { useFileManager } from "./hooks/useFileManager.ts";
 import { useEditorFeatures } from "./hooks/useEditorFeatures.ts";
@@ -597,6 +598,13 @@ function App() {
           >
             <Settings size={16} />
           </button>
+          <button
+            className={`header-research-btn${!sidecarCollapsed ? " active" : ""}`}
+            title={sidecarCollapsed ? "Show AI" : "Hide AI"}
+            onClick={() => setSidecarCollapsed((c) => !c)}
+          >
+            <Sparkles size={16} />
+          </button>
           {indexProgress && (
             <span
               className="app-header-index-progress"
@@ -895,7 +903,6 @@ function App() {
           isThinking={ws.agentState === "thinking"}
           agentState={ws.agentState}
           collapsed={sidecarCollapsed}
-          onToggle={() => setSidecarCollapsed((c) => !c)}
           onSend={sendToAgent}
           onInterrupt={interrupt}
           onNavigate={fileManager.openFile}

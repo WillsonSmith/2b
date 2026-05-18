@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import { Copy, Check, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, ChevronLeft, ChevronRight, X, Square, Circle, CircleDashed, CircleDot, Trash2 } from "lucide-react";
+import { Copy, Check, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2 } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
 import { usePanelResize } from "../hooks/usePanelResize.ts";
 
@@ -16,7 +16,6 @@ interface AISidecarProps {
   isThinking: boolean;
   agentState: string;
   collapsed: boolean;
-  onToggle: () => void;
   onSend: (text: string) => void;
   onInterrupt: () => void;
   onNavigate?: (path: string) => void;
@@ -454,7 +453,6 @@ export function AISidecar({
   isThinking,
   agentState,
   collapsed,
-  onToggle,
   onSend,
   onInterrupt,
   onNavigate,
@@ -492,13 +490,13 @@ export function AISidecar({
   return (
     <>
       <div
-        className={`ai-sidecar${collapsed ? " collapsed" : ""}`}
-        style={collapsed ? undefined : { width, minWidth: width, transition: isDragging ? "none" : undefined }}
+        className={`ai-sidecar-track${collapsed ? " collapsed" : ""}`}
+        style={collapsed ? undefined : { width, transition: isDragging ? "none" : undefined }}
       >
-        {!collapsed && <div className="panel-drag-handle" onMouseDown={handleMouseDown} />}
-        <div className="sidecar-header">
-          {!collapsed && <span className="sidecar-title">Episteme AI</span>}
-          {!collapsed && (
+        <div className="ai-sidecar" style={{ width, minWidth: width }}>
+          {!collapsed && <div className="panel-drag-handle" onMouseDown={handleMouseDown} />}
+          <div className="sidecar-header">
+            <span className="sidecar-title">Episteme AI</span>
             <button
               className="header-icon-btn"
               onClick={() => setExpanded(true)}
@@ -506,30 +504,18 @@ export function AISidecar({
             >
               <Maximize2 size={13} />
             </button>
-          )}
-          <button
-            className="header-icon-btn"
-            onClick={onToggle}
-            title={collapsed ? "Expand" : "Collapse"}
-          >
-            {collapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-          </button>
+          </div>
+          <MessageList
+            messages={messages}
+            isThinking={isThinking}
+            onSend={stableSend}
+            endRef={endRef}
+            onNavigate={stableNavigate}
+            onContinueFrom={stableContinueFrom}
+            onDeleteMessage={stableDeleteMessage}
+          />
+          <ChatInput isThinking={isThinking} agentState={agentState} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
         </div>
-
-        {!collapsed && (
-          <>
-            <MessageList
-              messages={messages}
-              isThinking={isThinking}
-              onSend={stableSend}
-              endRef={endRef}
-              onNavigate={stableNavigate}
-              onContinueFrom={stableContinueFrom}
-              onDeleteMessage={stableDeleteMessage}
-            />
-            <ChatInput isThinking={isThinking} agentState={agentState} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
-          </>
-        )}
       </div>
 
       {expanded && (

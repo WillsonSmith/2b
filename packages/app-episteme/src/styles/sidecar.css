@@ -1,20 +1,22 @@
 /* ── AI Sidecar ──────────────────────────────────────────────────────── */
+.ai-sidecar-track {
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: width 0.2s ease;
+}
+.ai-sidecar-track.collapsed {
+  width: 0;
+  min-width: 0;
+}
+
 .ai-sidecar {
-  width: var(--sidecar-w);
-  min-width: var(--sidecar-w);
+  height: 100%;
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   background: var(--bg);
   overflow: hidden;
   position: relative;
-  transition:
-    width 0.2s,
-    min-width 0.2s;
-}
-.ai-sidecar.collapsed {
-  width: 36px;
-  min-width: 36px;
 }
 
 .sidecar-header {
