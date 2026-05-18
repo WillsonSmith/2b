@@ -2,7 +2,7 @@
  * Model capability registry.
  *
  * Maps model name patterns to capabilities that apply regardless of which
- * backend (Ollama, LMStudio, etc.) is serving the model.
+ * backend is serving the model.
  *
  * To add a capability for a new model, append an entry to REGISTRY.
  */

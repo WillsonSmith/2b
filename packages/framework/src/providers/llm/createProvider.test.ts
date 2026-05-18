@@ -3,20 +3,11 @@ import { test, expect, describe, beforeEach, afterEach, mock } from "bun:test";
 // ---------------------------------------------------------------------------
 // Module mocks — only mock external packages, never TypeScript source files.
 //
-// Mocking source files (LMStudioProvider.ts, OllamaProvider.ts,
-// ModelCapabilityProvider.ts) at module-load time pollutes Bun's module cache
-// and breaks those files' own test suites. Bun loads all test file module-level
-// code before running any tests, so afterAll restores are always too late.
-//
-// Instead we mock the underlying SDK packages to prevent real network
-// connections, then inspect constructor args and private fields directly.
+// Mocking OllamaProvider.ts at module-load time pollutes Bun's module cache
+// and breaks that file's own test suite. Instead we mock the underlying SDK
+// package to prevent real network connections, then inspect constructor args
+// and private fields directly.
 // ---------------------------------------------------------------------------
-
-// Spy on LMStudioClient constructor to capture which URL is passed.
-const MockLMStudioClient = mock(function (this: any, _opts: unknown) {
-  this.llm = { model: async () => ({}) };
-  this.embedding = { model: async () => ({}) };
-});
 
 // Spy on Ollama constructor to capture which host is passed.
 const MockOllamaClient = mock(function (this: any, _opts: unknown) {
@@ -24,11 +15,6 @@ const MockOllamaClient = mock(function (this: any, _opts: unknown) {
   this.embed = async () => ({ embeddings: [[]] });
 });
 
-mock.module("@lmstudio/sdk", () => ({
-  LMStudioClient: MockLMStudioClient,
-  Chat: { from: () => ({ append: () => {} }) },
-  rawFunctionTool: (x: unknown) => x,
-}));
 mock.module("ollama", () => ({ Ollama: MockOllamaClient }));
 
 const { createProvider, defaultModel } = await import("./createProvider.ts");
@@ -48,68 +34,22 @@ function innerOf(provider: unknown): any {
 }
 
 // ---------------------------------------------------------------------------
-// LMStudio (default backend)
-// ---------------------------------------------------------------------------
-
-describe("LMStudio backend (default)", () => {
-  beforeEach(() => {
-    MockLMStudioClient.mockClear?.();
-    MockOllamaClient.mockClear?.();
-    clearEnv("PROVIDER", "LM_STUDIO_URL", "OLLAMA_URL", "OLLAMA_NUM_CTX", "OLLAMA_THINK");
-  });
-
-  test("uses LMStudioProvider when PROVIDER is unset", () => {
-    createProvider("test-model");
-    expect(MockLMStudioClient).toHaveBeenCalledTimes(1);
-    expect(MockOllamaClient).not.toHaveBeenCalled();
-  });
-
-  test("uses LMStudioProvider when PROVIDER=lmstudio", () => {
-    process.env.PROVIDER = "lmstudio";
-    createProvider("test-model");
-    expect(MockLMStudioClient).toHaveBeenCalledTimes(1);
-  });
-
-  test("uses default LMStudio URL when LM_STUDIO_URL is unset", () => {
-    createProvider("test-model");
-    const opts = (MockLMStudioClient.mock.calls[0] as any[])[0] as any;
-    expect(opts.baseUrl).toBe("ws://127.0.0.1:1234");
-  });
-
-  test("uses LM_STUDIO_URL when set", () => {
-    process.env.LM_STUDIO_URL = "ws://192.168.1.10:1234";
-    createProvider("test-model");
-    const opts = (MockLMStudioClient.mock.calls[0] as any[])[0] as any;
-    expect(opts.baseUrl).toBe("ws://192.168.1.10:1234");
-  });
-
-  test("wraps provider in ModelCapabilityProvider", () => {
-    const provider = createProvider("my-model");
-    expect(provider).toBeInstanceOf(ModelCapabilityProvider);
-    expect((provider as any).model).toBe("my-model");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Ollama backend
 // ---------------------------------------------------------------------------
 
 describe("Ollama backend", () => {
   beforeEach(() => {
-    process.env.PROVIDER = "ollama";
-    MockLMStudioClient.mockClear?.();
     MockOllamaClient.mockClear?.();
-    clearEnv("OLLAMA_URL", "OLLAMA_NUM_CTX", "OLLAMA_THINK");
+    clearEnv("PROVIDER", "OLLAMA_URL", "OLLAMA_NUM_CTX", "OLLAMA_THINK");
   });
 
   afterEach(() => {
     clearEnv("PROVIDER", "OLLAMA_URL", "OLLAMA_NUM_CTX", "OLLAMA_THINK");
   });
 
-  test("uses OllamaProvider when PROVIDER=ollama", () => {
+  test("uses OllamaProvider", () => {
     createProvider("test-model");
     expect(MockOllamaClient).toHaveBeenCalledTimes(1);
-    expect(MockLMStudioClient).not.toHaveBeenCalled();
   });
 
   test("uses default Ollama URL when OLLAMA_URL is unset", () => {
@@ -208,19 +148,7 @@ describe("Ollama backend", () => {
 // ---------------------------------------------------------------------------
 
 describe("defaultModel()", () => {
-  afterEach(() => clearEnv("PROVIDER"));
-
-  test("returns lmstudio model when PROVIDER is unset", () => {
-    expect(defaultModel()).toBe("qwen/qwen3.5-35b-a3b");
-  });
-
-  test("returns lmstudio model when PROVIDER=lmstudio", () => {
-    process.env.PROVIDER = "lmstudio";
-    expect(defaultModel()).toBe("qwen/qwen3.5-35b-a3b");
-  });
-
-  test("returns ollama model when PROVIDER=ollama", () => {
-    process.env.PROVIDER = "ollama";
-    expect(defaultModel()).toBe("qwen3.5:35b");
+  test("returns ollama model", () => {
+    expect(defaultModel()).toBe("gemma4:26b");
   });
 });

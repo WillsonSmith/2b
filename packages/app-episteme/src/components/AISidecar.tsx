@@ -6,8 +6,8 @@ import { usePanelResize } from "../hooks/usePanelResize.ts";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type SidecarMessage =
-  | { role: "user"; text: string }
-  | { role: "assistant"; text: string }
+  | { role: "user"; text: string; id?: number }
+  | { role: "assistant"; text: string; id?: number }
   | { role: "tool"; name: string; status: "calling" | "done" }
   | { role: "notification"; text: string; actionLabel: string; onAction: () => void };
 

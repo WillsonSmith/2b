@@ -33,7 +33,7 @@ type TreeItem =
 function buildItems(
   files: string[],
   folders: string[],
-  collapsedDirs: Set<string>,
+  expandedDirs: Set<string>,
   creatingInDir: string | null,
   creatingFolderInDir: string | null,
 ): TreeItem[] {
@@ -70,7 +70,7 @@ function buildItems(
 
   function addDir(dirPath: string, depth: number) {
     result.push({ type: "dir", label: basename(dirPath) + "/", path: dirPath, depth });
-    if (collapsedDirs.has(dirPath)) return;
+    if (!expandedDirs.has(dirPath)) return;
 
     if (creatingFolderInDir === dirPath)
       result.push({ type: "new-folder-in-dir", dirPath, depth: depth + 1 });
@@ -149,50 +149,50 @@ export function FileTree({
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  // Collapse state — persisted to localStorage per workspace
-  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(() => {
+  // Expand state — persisted to localStorage per workspace; default is closed
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => {
     if (!workspaceRoot) return new Set();
     try {
-      const stored = localStorage.getItem(`episteme:filetree:collapsed:${workspaceRoot}`);
+      const stored = localStorage.getItem(`episteme:filetree:expanded:${workspaceRoot}`);
       return new Set(stored ? JSON.parse(stored) : []);
     } catch {
       return new Set();
     }
   });
 
-  // Re-initialize collapse state when workspaceRoot becomes available
+  // Re-initialize expand state when workspaceRoot becomes available
   useEffect(() => {
     if (!workspaceRoot) return;
     try {
-      const stored = localStorage.getItem(`episteme:filetree:collapsed:${workspaceRoot}`);
-      setCollapsedDirs(new Set(stored ? JSON.parse(stored) : []));
+      const stored = localStorage.getItem(`episteme:filetree:expanded:${workspaceRoot}`);
+      setExpandedDirs(new Set(stored ? JSON.parse(stored) : []));
     } catch {
-      setCollapsedDirs(new Set());
+      setExpandedDirs(new Set());
     }
   }, [workspaceRoot]);
 
-  function persistCollapsed(next: Set<string>) {
+  function persistExpanded(next: Set<string>) {
     if (!workspaceRoot) return;
     try {
-      localStorage.setItem(`episteme:filetree:collapsed:${workspaceRoot}`, JSON.stringify([...next]));
+      localStorage.setItem(`episteme:filetree:expanded:${workspaceRoot}`, JSON.stringify([...next]));
     } catch {}
   }
 
   function toggleDir(dir: string) {
-    setCollapsedDirs((prev) => {
+    setExpandedDirs((prev) => {
       const next = new Set(prev);
       next.has(dir) ? next.delete(dir) : next.add(dir);
-      persistCollapsed(next);
+      persistExpanded(next);
       return next;
     });
   }
 
   function expandDir(dir: string) {
-    setCollapsedDirs((prev) => {
-      if (!prev.has(dir)) return prev;
+    setExpandedDirs((prev) => {
+      if (prev.has(dir)) return prev;
       const next = new Set(prev);
-      next.delete(dir);
-      persistCollapsed(next);
+      next.add(dir);
+      persistExpanded(next);
       return next;
     });
   }
@@ -223,7 +223,7 @@ export function FileTree({
     setDragOverDir(null);
   }
 
-  const items = buildItems(files, folders, collapsedDirs, creatingInDir, creatingFolderInDir);
+  const items = buildItems(files, folders, expandedDirs, creatingInDir, creatingFolderInDir);
 
   // Focus inputs when they appear
   useEffect(() => { if (isCreating) newFileInputRef.current?.focus(); }, [isCreating]);
@@ -432,7 +432,7 @@ export function FileTree({
             }
 
             if (item.type === "dir") {
-              const isCollapsed = collapsedDirs.has(item.path);
+              const isCollapsed = !expandedDirs.has(item.path);
               return (
                 <div
                   key={item.path}
