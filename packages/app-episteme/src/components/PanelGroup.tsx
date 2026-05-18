@@ -73,7 +73,7 @@ export function PanelGroup({ panels }: PanelGroupProps) {
               }}
               title={`Close ${panel.label}`}
             >
-              <X size={10} />
+              <X size={8} />
             </button>
           </div>
         ))}

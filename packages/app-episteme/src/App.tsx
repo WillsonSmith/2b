@@ -839,7 +839,6 @@ function App() {
                 tocEntries={editorFeatures.tocEntries}
                 isAnnotating={editorFeatures.isTocGenerating}
                 onAnnotate={editorFeatures.handleGenerateToc}
-                onClose={() => setShowToc(false)}
               />
             ),
           });
@@ -850,7 +849,6 @@ function App() {
             onClose: () => research.setShowResearch(false),
             content: (
               <ResearchPanel
-                onClose={() => research.setShowResearch(false)}
                 onSearch={research.handleSearch}
                 onDetectGaps={research.handleDetectGaps}
                 onIngest={research.handleIngestFromSearch}
@@ -873,7 +871,6 @@ function App() {
             onClose: () => conflictsGraph.setShowConflicts(false),
             content: (
               <ConflictsPanel
-                onClose={() => conflictsGraph.setShowConflicts(false)}
                 onRefresh={conflictsGraph.handleContradictionScan}
                 contradictions={conflictsGraph.contradictions}
                 isLoading={conflictsGraph.isScanning}
@@ -890,7 +887,6 @@ function App() {
                 plan={planning.plan}
                 activeFile={fileManager.activeFile}
                 agentState={ws.agentState}
-                onClose={() => setShowPlan(false)}
                 onRequestPlan={planning.requestPlan}
                 onRequestPlanFromDocument={planning.requestPlanFromDocument}
                 onApprovePlan={planning.approvePlan}
@@ -917,7 +913,6 @@ function App() {
             onClose: () => conflictsGraph.setShowGraph(false),
             content: (
               <KnowledgeGraph
-                onClose={() => conflictsGraph.setShowGraph(false)}
                 onRefresh={conflictsGraph.handleRefreshGraph}
                 onReindex={conflictsGraph.handleReindex}
                 onLoadMore={conflictsGraph.handleLoadMoreGraph}

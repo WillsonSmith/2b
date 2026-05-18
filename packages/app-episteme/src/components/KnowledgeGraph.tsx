@@ -1,11 +1,10 @@
 import { useRef, useEffect, useCallback } from "react";
-import { FolderSync, RotateCw, X } from "lucide-react";
+import { FolderSync, RotateCw } from "lucide-react";
 import type { GraphData, GraphNode, GraphLink } from "../plugins/WorkspacePlugin.ts";
 
 export type { GraphData, GraphNode, GraphLink };
 
 interface KnowledgeGraphProps {
-  onClose: () => void;
   onRefresh: () => void;
   onReindex: () => void;
   onLoadMore?: () => void;
@@ -16,7 +15,6 @@ interface KnowledgeGraphProps {
 }
 
 export function KnowledgeGraph({
-  onClose,
   onRefresh,
   onReindex,
   onLoadMore,
@@ -117,7 +115,6 @@ export function KnowledgeGraph({
   return (
     <div className="knowledge-graph-panel">
       <div className="knowledge-graph-header">
-        <span className="knowledge-graph-title">Knowledge Graph</span>
         <div className="knowledge-graph-legend">
           <span className="kg-legend-dot" style={{ background: "#5588cc" }} /> Files
           <span className="kg-legend-dot" style={{ background: "#55cc88", marginLeft: 8, borderRadius: 0, width: 16, height: 2, display: "inline-block", verticalAlign: "middle" }} /> Wikilinks
@@ -125,7 +122,6 @@ export function KnowledgeGraph({
         <div style={{ display: "flex", gap: 6 }}>
           <button className="header-icon-btn" onClick={onReindex} disabled={isLoading} title="Re-index workspace files"><FolderSync size={13} /></button>
           <button className="header-icon-btn" onClick={handleRefresh} title="Refresh graph"><RotateCw size={13} /></button>
-          <button className="header-icon-btn" onClick={onClose} title="Close"><X size={13} /></button>
         </div>
       </div>
 

@@ -1,17 +1,15 @@
-import { RotateCw, X } from "lucide-react";
+import { RotateCw } from "lucide-react";
 import type { ContradictionRecord } from "../plugins/ContradictionPlugin.ts";
 
 export type { ContradictionRecord };
 
 interface ConflictsPanelProps {
-  onClose: () => void;
   onRefresh: () => void;
   contradictions: ContradictionRecord[];
   isLoading: boolean;
 }
 
 export function ConflictsPanel({
-  onClose,
   onRefresh,
   contradictions,
   isLoading,
@@ -19,15 +17,9 @@ export function ConflictsPanel({
   return (
     <div className="conflicts-panel">
       <div className="conflicts-panel-header">
-        <span className="conflicts-panel-title">Conflicts</span>
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <button className="header-icon-btn" onClick={onRefresh} title="Re-scan for contradictions">
-            <RotateCw size={13} />
-          </button>
-          <button className="header-icon-btn" onClick={onClose} title="Close">
-            <X size={13} />
-          </button>
-        </div>
+        <button className="header-icon-btn" onClick={onRefresh} title="Re-scan for contradictions">
+          <RotateCw size={13} />
+        </button>
       </div>
 
       <div className="conflicts-content">

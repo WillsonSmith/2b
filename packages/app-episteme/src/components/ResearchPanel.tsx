@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { X, ArrowRight, ExternalLink, Maximize2 } from "lucide-react";
+import { ArrowRight, ExternalLink, Maximize2, X } from "lucide-react";
 import type { SearchResult, UnifiedSearchResponse } from "../plugins/ResearchPlugin.ts";
 import { MarkdownView } from "./MarkdownView.tsx";
 
@@ -8,7 +8,6 @@ export type { SearchResult, UnifiedSearchResponse };
 type Tab = "all" | "arxiv" | "wikipedia" | "workspace";
 
 interface ResearchPanelProps {
-  onClose: () => void;
   onSearch: (query: string) => void;
   onDetectGaps: (topic: string) => void;
   onIngest: (url: string) => void;
@@ -99,7 +98,6 @@ function GapReportModal({ gapReport, onClose, onSearch, onSendToAgent }: GapRepo
 // ── ResearchPanel ─────────────────────────────────────────────────────────────
 
 export function ResearchPanel({
-  onClose,
   onSearch,
   onDetectGaps,
   onIngest,
@@ -144,11 +142,6 @@ export function ResearchPanel({
 
   return (
     <div className="research-panel">
-      <div className="research-panel-header">
-        <span className="research-panel-title">Research</span>
-        <button className="header-icon-btn" onClick={onClose} title="Close"><X size={13} /></button>
-      </div>
-
       {/* Search form */}
       <div className="research-form-row">
         <input
