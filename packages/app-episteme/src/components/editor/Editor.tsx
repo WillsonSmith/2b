@@ -624,13 +624,13 @@ export function Editor({
     if (!editor) return;
     const dom = editor.view.dom;
     const handleClick = (e: MouseEvent) => {
-      if (!onNavigateRef.current) return;
       const anchor = (e.target as HTMLElement).closest("a");
       if (!anchor) return;
       const href = anchor.getAttribute("href") ?? "";
       if (!href) return;
       if (!isLocalLink(href)) return;
       e.preventDefault();
+      if (!(e.metaKey || e.ctrlKey) || !onNavigateRef.current) return;
       const resolved = resolveLocalHref(href, currentFileRef.current, filesRef.current);
       if (resolved) {
         onNavigateRef.current(resolved);
