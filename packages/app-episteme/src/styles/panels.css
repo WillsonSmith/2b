@@ -41,10 +41,10 @@
 .panel-group-tab {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 8px;
+  gap: 6px;
+  padding: 0 10px;
   height: 100%;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-muted);
   cursor: pointer;
@@ -65,8 +65,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   border-radius: 3px;
   color: var(--text-dim);
   background: none;
@@ -108,27 +108,13 @@
   flex-direction: column;
   overflow: hidden;
   flex-shrink: 0;
+  position: relative;
 }
-.toc-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: var(--header-h);
-  padding: 0 10px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.toc-panel-title {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-.toc-panel-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+.toc-panel-annotate-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
 }
 .toc-panel-list {
   flex: 1;
@@ -558,18 +544,11 @@
 .conflicts-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   height: var(--header-h);
-  padding: 0 10px;
+  padding: 0 6px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-}
-.conflicts-panel-title {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  text-transform: uppercase;
 }
 
 .conflicts-content {

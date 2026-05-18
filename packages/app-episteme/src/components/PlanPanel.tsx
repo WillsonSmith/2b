@@ -443,7 +443,6 @@ export interface PlanPanelProps {
   plan: EpistemePlan | null;
   activeFile: string | null;
   agentState: string;
-  onClose: () => void;
   onRequestPlan: (goal: string, approvalMode: PlanApprovalMode) => void;
   onRequestPlanFromDocument: (path: string, goal: string, approvalMode: PlanApprovalMode) => void;
   onApprovePlan: (planId: string) => void;
@@ -475,7 +474,7 @@ const PLAN_STATE_LABELS: Record<string, string> = {
 
 export function PlanPanel({
   plan, activeFile, agentState,
-  onClose, onRequestPlan, onRequestPlanFromDocument,
+  onRequestPlan, onRequestPlanFromDocument,
   onApprovePlan, onApproveStep, onRetryStep, onSkipStep,
   onAmendSteps, onEditStepSummary, onEditStepInstruction, onAddStep, onReorderStep,
   onPause, onResume, onResumeAuto, onCancel, onNewPlan,
@@ -629,16 +628,6 @@ export function PlanPanel({
 
   return (
     <div className="plan-panel">
-      <div className="plan-panel-header">
-        <span className="plan-panel-title">
-          <ClipboardList size={15} />
-          Plan
-        </span>
-        <button className="plan-panel-close" onClick={onClose} aria-label="Close plan panel">
-          <X size={15} />
-        </button>
-      </div>
-
       <div className="plan-panel-body">
         {isStructuring && (
           <div className="plan-structuring">
