@@ -10,6 +10,7 @@ import { WorkspacePlugin } from "./plugins/WorkspacePlugin.ts";
 import { ResearchPlugin } from "./plugins/ResearchPlugin.ts";
 import { StyleGuidePlugin } from "./plugins/StyleGuidePlugin.ts";
 import { DiagramPlugin } from "./plugins/DiagramPlugin.ts";
+import { AIFillPlugin } from "./plugins/AIFillPlugin.ts";
 import { CitationPlugin } from "./plugins/CitationPlugin.ts";
 import { ContradictionPlugin } from "./plugins/ContradictionPlugin.ts";
 import { PlanningPlugin } from "./plugins/PlanningPlugin.ts";
@@ -37,6 +38,7 @@ export interface EpistemeAgentBundle {
   research: ResearchPlugin;
   citation: CitationPlugin;
   diagram: DiagramPlugin;
+  aiFill: AIFillPlugin;
   contradiction: ContradictionPlugin;
   planning: PlanningPlugin;
   workspaceDb: WorkspaceDb;
@@ -75,6 +77,7 @@ export function createEpistemAgent(
   const styleGuide = new StyleGuidePlugin(workspaceRoot);
   const citation = new CitationPlugin(workspaceRoot, config, editorContext);
   const diagram = new DiagramPlugin(config);
+  const aiFill = new AIFillPlugin(config);
   const contradiction = new ContradictionPlugin(
     agent.memoryPlugin,
     config,
@@ -93,6 +96,7 @@ export function createEpistemAgent(
   agent.registerPlugin(styleGuide);
   agent.registerPlugin(citation);
   agent.registerPlugin(diagram);
+  agent.registerPlugin(aiFill);
   agent.registerPlugin(contradiction);
   agent.registerPlugin(planning);
   agent.registerPlugin(
@@ -110,6 +114,7 @@ export function createEpistemAgent(
     research,
     citation,
     diagram,
+    aiFill,
     contradiction,
     planning,
     workspaceDb,

@@ -756,6 +756,9 @@ function App() {
             onDiagramRequest={editorFeatures.handleDiagramRequest}
             diagramResult={editorFeatures.diagramResult}
             onDiagramApplied={() => editorFeatures.setDiagramResult(null)}
+            onAIFillRequest={editorFeatures.handleAIFillRequest}
+            aiFillResult={editorFeatures.aiFillResult}
+            onAIFillApplied={() => editorFeatures.setAIFillResult(null)}
             onImagePaste={voice.handleImagePaste}
             onExplainCode={handleExplainCode}
             isRecording={voice.isRecording}

@@ -30,6 +30,7 @@ export function useEditorFeatures(
   const [isTocGenerating, setIsTocGenerating] = useState(false);
 
   const [diagramResult, setDiagramResult] = useState<{ code: string; placeholderId: string } | null>(null);
+  const [aiFillResult, setAIFillResult] = useState<{ id: string; content: string; error?: string } | null>(null);
   const [tableResult, setTableResult] = useState<{ text: string; insertPos: number } | null>(null);
 
   const [lintIssues, setLintIssues] = useState<LintIssue[]>([]);
@@ -85,6 +86,37 @@ export function useEditorFeatures(
     [agentState, wsRef],
   );
 
+  const handleAIFillRequest = useCallback(
+    async (id: string, instruction: string) => {
+      if (!wsRef.current || agentState === "disconnected") {
+        console.warn("[ai-fill] cannot send request — disconnected", { agentState });
+        return;
+      }
+      const mentionPattern = /@([\w\-./ ]+\.md)/g;
+      const mentionPaths = [...instruction.matchAll(mentionPattern)].map((m) => m[1]!.trim());
+      const fetched = await Promise.all(
+        mentionPaths.map((path) =>
+          fetch(`/api/file-content?path=${encodeURIComponent(path)}`)
+            .then((r) => r.json() as Promise<{ content?: string }>)
+            .then((d) => (d.content != null ? { path, content: d.content } : null))
+            .catch(() => null),
+        ),
+      );
+      const mentions = fetched.filter(
+        (m): m is { path: string; content: string } => m !== null,
+      );
+      console.log("[ai-fill] sending request", { id, instruction, mentions: mentions.map((m) => m.path) });
+      wsRef.current.send(JSON.stringify({
+        type: "ai_fill_request",
+        id,
+        instruction,
+        document: editorContentRef.current,
+        mentions,
+      }));
+    },
+    [agentState, wsRef, editorContentRef],
+  );
+
   const handleTableRequest = useCallback(
     (text: string, insertPos: number) => {
       if (!wsRef.current || agentState === "disconnected") return;
@@ -131,6 +163,9 @@ export function useEditorFeatures(
     const unsubDiagram = subscribe("diagram_result", (msg) =>
       setDiagramResult({ code: msg.code, placeholderId: msg.placeholderId }),
     );
+    const unsubAIFill = subscribe("ai_fill_result", (msg) =>
+      setAIFillResult({ id: msg.id, content: msg.content, error: msg.error }),
+    );
     const unsubTable = subscribe("table_result", (msg) =>
       setTableResult({ text: msg.text, insertPos: msg.insertPos }),
     );
@@ -144,6 +179,7 @@ export function useEditorFeatures(
       unsubToc();
       unsubTocStored();
       unsubDiagram();
+      unsubAIFill();
       unsubTable();
     };
   }, [subscribe, setEditorContent]);
@@ -159,6 +195,7 @@ export function useEditorFeatures(
     tocEntries,
     isTocGenerating,
     diagramResult,
+    aiFillResult,
     tableResult,
     lintIssues,
     setGhostText,
@@ -171,6 +208,7 @@ export function useEditorFeatures(
     setTocEntries,
     setIsTocGenerating,
     setDiagramResult,
+    setAIFillResult,
     setTableResult,
     setLintIssues,
     handleAutocompleteRequest,
@@ -181,6 +219,7 @@ export function useEditorFeatures(
     handleMetadataRequest,
     handleGenerateToc,
     handleDiagramRequest,
+    handleAIFillRequest,
     handleTableRequest,
   };
 }

@@ -363,6 +363,103 @@
   white-space: nowrap;
 }
 
+/* ── AI Fill block ───────────────────────────────────────────────────── */
+.tiptap .ai-fill-block {
+  position: relative;
+  display: block;
+  padding: 12px 72px 12px 14px;
+  margin-bottom: var(--md-sp3);
+  background: var(--bg-highlight);
+  border: 1px dashed var(--border);
+  border-radius: var(--md-radius-md);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.tiptap .ai-fill-block-label {
+  position: absolute;
+  top: 4px;
+  left: 10px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  user-select: none;
+  pointer-events: none;
+}
+
+.tiptap .ai-fill-block-instruction {
+  display: block;
+  min-height: 1.5em;
+  margin-top: 12px;
+  outline: none;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.tiptap .ai-fill-block-instruction:empty::before {
+  content: "Describe what should go here…";
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+.tiptap .ai-fill-block-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.tiptap .ai-fill-block-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: var(--bg-raised);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.tiptap .ai-fill-block-btn:hover:not(:disabled) {
+  background: var(--bg);
+  border-color: var(--accent);
+}
+
+.tiptap .ai-fill-block-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tiptap .ai-fill-block-btn--remove {
+  color: var(--text-dim);
+}
+
+.tiptap .ai-fill-block-btn--remove:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.tiptap .ai-fill-block--generating {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-highlight);
+  border: 1px dashed var(--border);
+  border-radius: var(--md-radius-md);
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-bottom: var(--md-sp3);
+  user-select: none;
+}
+
 .tiptap hr {
   border: none;
   border-top: 1px solid var(--border);

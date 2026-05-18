@@ -16,7 +16,7 @@ This feature would allow for better drafting of documents instead of relying on 
 
 ### General Editor Features
 
-Currently, if a user selects text, there is a popover with the following tools: Link, Professional, Casual, Academic, TL;DR, Table, and Ask AI. This feels overly complicated for a menu of this type. I think this popup should be limited to formatting features. However, I do want a way to process text with AI. 
+Currently, if a user selects text, there is a popover with the following tools: Link, Professional, Casual, Academic, TL;DR, Table, and Ask AI. This feels overly complicated for a menu of this type. I think this popup should be limited to formatting features. However, I do want a way to process text with AI.
 
 One way could be the ability to reference specific lines or text within the chat interface. Maybe a "send to chat" button that automatically inserts it into the chat box. Right now the AI tools in the popup immediately perform tasks, but I think I want to be able to manually tell it what to do. The process would look something like this: Select text, click "Ask AI", the AISidecar chat box would be populated with something like @filename.md\[line number or index and or range\] and then allow for free text.
 
@@ -50,4 +50,4 @@ I want a way to start a plan from the AISidecar. Right now the only way to creat
 
 Right now, the planning panel has a textarea where the user writes what they want to accomplish. Instead, the chat UI could be turned into planning mode, and it could surface "Approve all at once, Approve step-by-step, and "Plan from current document" above the chat box, but when submitted it would open the plan panel to show the actual process. I think this would be a good separation of concerns for now.
 
-By doing this, it would also enable the user to use @ mentions for files. Currently, the chat allows for @ mentions, but the plan feature does not have @ mentions. 
+By doing this, it would also enable the user to use @ mentions for files. Currently, the chat allows for @ mentions, but the plan feature does not have @ mentions.

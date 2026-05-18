@@ -31,6 +31,8 @@ import {
 import { DiagramCommandExtension } from "./extensions/diagramCommand.ts";
 import { MermaidCodeBlock } from "./extensions/mermaid.tsx";
 import { DiagramPlaceholderExtension } from "./extensions/diagramPlaceholder.tsx";
+import { AIFillBlockExtension } from "./extensions/aiFillBlock.tsx";
+import { AIFillCommandExtension } from "./extensions/aiFillCommand.ts";
 import { EditorBubbleMenu } from "./BubbleMenu.tsx";
 import { LinkPicker } from "./LinkPicker.tsx";
 import { MarkdownToolbar } from "./MarkdownToolbar.tsx";
@@ -63,6 +65,9 @@ interface EditorProps {
   onDiagramRequest?: (description: string, placeholderId: string) => void;
   diagramResult?: { code: string; placeholderId: string } | null;
   onDiagramApplied?: () => void;
+  onAIFillRequest?: (id: string, instruction: string) => void;
+  aiFillResult?: { id: string; content: string; error?: string } | null;
+  onAIFillApplied?: () => void;
   metadataResult?: string | null;
   onMetadataApplied?: () => void;
   tableResult?: { text: string; insertPos: number } | null;
@@ -210,6 +215,9 @@ export function Editor({
   onDiagramRequest,
   diagramResult,
   onDiagramApplied,
+  onAIFillRequest,
+  aiFillResult,
+  onAIFillApplied,
   metadataResult,
   onMetadataApplied,
   tableResult,
@@ -275,6 +283,9 @@ export function Editor({
   dismissRef.current = onGhostDismiss;
   const diagramCallbackRef = useRef<((description: string, placeholderId: string) => void) | undefined>(undefined);
   diagramCallbackRef.current = onDiagramRequest;
+  const aiFillCallbackRef = useRef<((id: string, instruction: string) => void) | undefined>(undefined);
+  aiFillCallbackRef.current = onAIFillRequest;
+  const fillQueueRef = useRef<string[]>([]);
 
   const [diagramBarOpen, setDiagramBarOpen] = useState(false);
   const [diagramBarInput, setDiagramBarInput] = useState("");
@@ -303,6 +314,8 @@ export function Editor({
       FindExtension(findStateRef),
       MarkdownRevealExtension,
       DiagramCommandExtension(diagramCallbackRef),
+      AIFillBlockExtension(aiFillCallbackRef),
+      AIFillCommandExtension,
       MarkdownLinkDecorationExtension(localLinksRef),
     ],
     content: parseFrontmatter(content).body.trimStart(),
@@ -368,6 +381,61 @@ export function Editor({
     });
     onDiagramApplied?.();
   }, [diagramResult]);
+
+  useEffect(() => {
+    if (!editor || !aiFillResult) return;
+    const { id, content, error } = aiFillResult;
+    console.log("[ai-fill] result received", { id, hasContent: !!content, error });
+    let target: { pos: number; size: number } | null = null;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === "aiFillBlock" && node.attrs.id === id) {
+        target = { pos, size: node.nodeSize };
+        return false;
+      }
+      return undefined;
+    });
+    if (!target) {
+      console.warn("[ai-fill] no matching block found for id", id);
+      onAIFillApplied?.();
+      return;
+    }
+    const { pos, size } = target as { pos: number; size: number };
+    if (error || !content.trim()) {
+      const node = editor.state.doc.nodeAt(pos);
+      const tr = editor.state.tr.setNodeMarkup(pos, undefined, {
+        ...node?.attrs,
+        generating: false,
+      });
+      editor.view.dispatch(tr);
+      const message = error ?? "AI fill returned empty content";
+      console.error("[ai-fill]", message);
+      onAIFillApplied?.();
+      advanceFillQueue();
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const parser = (editor.storage as any).markdown?.parser;
+    let inserted = false;
+    if (parser) {
+      try {
+        const parsedDoc = parser.parse(content);
+        if (parsedDoc?.content?.childCount > 0) {
+          const tr = editor.state.tr;
+          tr.replaceWith(pos, pos + size, parsedDoc.content);
+          editor.view.dispatch(tr);
+          inserted = true;
+        }
+      } catch (e) {
+        console.warn("[ai-fill] markdown parse failed, falling back to text insert", e);
+      }
+    }
+    if (!inserted) {
+      editor.chain().focus().insertContentAt({ from: pos, to: pos + size }, content).run();
+    }
+    onAIFillApplied?.();
+    advanceFillQueue();
+  }, [aiFillResult]);
 
   useEffect(() => {
     if (!editor || !metadataResult) return;
@@ -481,6 +549,50 @@ export function Editor({
     setDiagramBarOpen(true);
     requestAnimationFrame(() => diagramBarInputRef.current?.focus());
   }, [editor]);
+
+  const triggerFill = useCallback((id: string) => {
+    if (!editor) return false;
+    let started = false;
+    editor.state.doc.descendants((node, pos) => {
+      if (started) return false;
+      if (node.type.name === "aiFillBlock" && node.attrs.id === id) {
+        const instruction = node.textContent.trim();
+        if (!instruction) return false;
+        const tr = editor.state.tr.setNodeMarkup(pos, undefined, {
+          ...node.attrs,
+          generating: true,
+        });
+        editor.view.dispatch(tr);
+        aiFillCallbackRef.current?.(id, instruction);
+        started = true;
+        return false;
+      }
+      return undefined;
+    });
+    return started;
+  }, [editor]);
+
+  const advanceFillQueue = useCallback(() => {
+    while (fillQueueRef.current.length > 0) {
+      const nextId = fillQueueRef.current.shift()!;
+      if (triggerFill(nextId)) return;
+    }
+  }, [triggerFill]);
+
+  const processAllFills = useCallback(() => {
+    if (!editor) return;
+    const ids: string[] = [];
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === "aiFillBlock" && !node.attrs.generating) {
+        const id = node.attrs.id as string | null;
+        if (id && node.textContent.trim()) ids.push(id);
+      }
+      return undefined;
+    });
+    if (ids.length === 0) return;
+    fillQueueRef.current = ids;
+    advanceFillQueue();
+  }, [editor, advanceFillQueue]);
 
   const submitDiagram = useCallback(() => {
     const description = diagramBarInput.trim();
@@ -747,6 +859,7 @@ export function Editor({
         isRecording={isRecording}
         onOpenDiagramBar={openDiagramBar}
         onOpenLinkPicker={openLinkPicker}
+        onProcessAllFills={processAllFills}
       />
 
       <div className="editor-scroll">
