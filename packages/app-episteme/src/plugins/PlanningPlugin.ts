@@ -2,6 +2,9 @@ import type { AgentPlugin } from "@2b/framework/core/Plugin.ts";
 import type { WorkspaceDb } from "../db/workspaceDb.ts";
 import type { EpistemePlan, PlanState } from "../planning/types.ts";
 
+const FULL_RESULT_RECENT_STEPS = 2;
+const FULL_RESULT_EXCERPT_CHARS = 800;
+
 export class PlanningPlugin implements AgentPlugin {
   name = "Planning";
 
@@ -60,6 +63,7 @@ export class PlanningPlugin implements AgentPlugin {
       `You are executing step ${stepNumber} of ${total} in a structured plan.`,
       `**Plan Goal:** ${plan.goal}`,
       `**Current Step:** [${step.type}] ${step.title}`,
+      `**Your instruction:** ${step.instruction}`,
       "",
       "Complete this step thoroughly. Your response will be recorded as the step result.",
     ];
@@ -70,9 +74,21 @@ export class PlanningPlugin implements AgentPlugin {
     }
 
     if (completedSteps.length > 0) {
+      // Last FULL_RESULT_RECENT_STEPS completed steps include a fullResult excerpt so
+      // the executing agent has direct access to their outputs; older steps are summary-only.
+      const recentCutoff = completedSteps.length - FULL_RESULT_RECENT_STEPS;
       lines.push("", "**Context from completed steps:**");
-      for (const s of completedSteps) {
-        lines.push(`- [${s.type}] ${s.title}: ${s.contextSummary ?? "(completed)"}`);
+      for (let i = 0; i < completedSteps.length; i++) {
+        const s = completedSteps[i]!;
+        const summary = s.contextSummary ?? "(completed)";
+        if (i < recentCutoff || !s.fullResult) {
+          lines.push(`- [${s.type}] ${s.title}: ${summary}`);
+        } else {
+          const excerpt = s.fullResult.slice(0, FULL_RESULT_EXCERPT_CHARS);
+          const truncated = s.fullResult.length > FULL_RESULT_EXCERPT_CHARS ? "…" : "";
+          lines.push(`- [${s.type}] ${s.title}: ${summary}`);
+          lines.push(`  <detail>${excerpt}${truncated}</detail>`);
+        }
       }
     }
 

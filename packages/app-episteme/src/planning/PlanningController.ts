@@ -41,7 +41,7 @@ Guidelines:
 - Each instruction must be self-contained and actionable
 - Steps must build on each other logically`;
 
-const SUMMARIZE_SYSTEM = `You are a concise summarizer. Write 2-3 sentences summarizing what was accomplished in the step. Return only the summary, no preamble or labels.`;
+const SUMMARIZE_SYSTEM = `You are a concise summarizer for a multi-step research and writing plan. Write 2-3 sentences capturing what was concretely accomplished. Prioritize: specific file paths created or modified, document titles or section headings produced, key decisions made, concrete numbers or named entities discovered, and any explicit outputs a later step should build on. Return only the summary, no preamble or labels.`;
 
 const STEP_GENERATOR_SYSTEM = `You are a planning assistant for Episteme, a Markdown research and writing tool.
 Given a plan goal, its existing steps, and a short description of a new step to add, generate a well-formed step object.
@@ -56,6 +56,9 @@ Return ONLY valid JSON in this exact format, with no other text:
 The instruction must be actionable and consistent with the surrounding steps in the plan.`;
 
 const VALID_STEP_TYPES = new Set<string>(["research", "outline", "draft", "edit", "cite", "analyze", "organize"]);
+
+const PRIOR_CONTEXT_RECENT_STEPS = 2;
+const PRIOR_CONTEXT_EXCERPT_CHARS = 800;
 
 export class PlanningController {
   private callInProgress = false;
@@ -100,8 +103,17 @@ export class PlanningController {
         const completedSteps = prev.steps.filter(s => s.state === "complete" && s.contextSummary);
         if (completedSteps.length > 0) {
           const lines = [`Previous plan: "${prev.goal}"`, "Steps completed:"];
-          for (const s of completedSteps) {
-            lines.push(`- [${s.type}] ${s.title}: ${s.contextSummary}`);
+          const recentCutoff = completedSteps.length - PRIOR_CONTEXT_RECENT_STEPS;
+          for (let i = 0; i < completedSteps.length; i++) {
+            const s = completedSteps[i]!;
+            if (i < recentCutoff || !s.fullResult) {
+              lines.push(`- [${s.type}] ${s.title}: ${s.contextSummary}`);
+            } else {
+              const excerpt = s.fullResult.slice(0, PRIOR_CONTEXT_EXCERPT_CHARS);
+              const truncated = s.fullResult.length > PRIOR_CONTEXT_EXCERPT_CHARS ? "…" : "";
+              lines.push(`- [${s.type}] ${s.title}: ${s.contextSummary}`);
+              lines.push(`  <detail>${excerpt}${truncated}</detail>`);
+            }
           }
           priorContext = lines.join("\n");
         }
@@ -657,7 +669,7 @@ export class PlanningController {
   private async summarize(stepTitle: string, result: string): Promise<string> {
     try {
       const summary = await this.summarizer.ask(
-        `Step: "${stepTitle}"\n\nResult:\n${result.slice(0, 2000)}`,
+        `Step: "${stepTitle}"\n\nResult:\n${result.slice(0, 4000)}`,
       );
       return summary.trim();
     } catch {
