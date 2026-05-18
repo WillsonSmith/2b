@@ -95,6 +95,7 @@ function App() {
     total: number;
   } | null>(null);
   const [workspaceRoot, setWorkspaceRoot] = useState("");
+  const [sidecarPendingInput, setSidecarPendingInput] = useState("");
 
   const ws = useWebSocket();
   const planning = usePlanning(ws.wsRef, ws.subscribe);
@@ -322,16 +323,10 @@ function App() {
     ],
   );
 
-  const handleAskAboutSelection = useCallback(
-    (text: string) => {
-      if (!ws.wsRef.current) return;
-      const msg = `[Selected text]\n\n${text}\n\n---\nWhat can you tell me about this?`;
-      ws.wsRef.current.send(JSON.stringify({ type: "send", text: msg }));
-      setMessages((prev) => [...prev, { role: "user", text: msg }]);
-      setSidecarCollapsed(false);
-    },
-    [ws.wsRef],
-  );
+  const handleSendToChat = useCallback((selectionRef: string) => {
+    setSidecarPendingInput(selectionRef);
+    setSidecarCollapsed(false);
+  }, []);
 
   const handleExplainCode = useCallback(
     (code: string, language: string) => {
@@ -747,8 +742,6 @@ function App() {
             ghostText={editorFeatures.ghostText}
             onGhostAccept={editorFeatures.handleGhostAccept}
             onGhostDismiss={editorFeatures.handleGhostDismiss}
-            onToneRequest={editorFeatures.handleToneRequest}
-            onSummarizeRequest={editorFeatures.handleSummarizeRequest}
             toneReplacement={editorFeatures.toneReplacement}
             summarizeResult={editorFeatures.summarizeResult}
             onToneApplied={() => editorFeatures.setToneReplacement(null)}
@@ -758,7 +751,6 @@ function App() {
             isGeneratingMetadata={editorFeatures.isGeneratingMetadata}
             metadataResult={editorFeatures.metadataResult}
             onMetadataApplied={() => editorFeatures.setMetadataResult(null)}
-            onTableRequest={editorFeatures.handleTableRequest}
             tableResult={editorFeatures.tableResult}
             onTableApplied={() => editorFeatures.setTableResult(null)}
             onDiagramRequest={editorFeatures.handleDiagramRequest}
@@ -768,7 +760,7 @@ function App() {
             onExplainCode={handleExplainCode}
             isRecording={voice.isRecording}
             onToggleRecording={voice.handleToggleRecording}
-            onAskAboutSelection={handleAskAboutSelection}
+            onSendToChat={handleSendToChat}
             onNavigate={fileManager.openFile}
             onCreateFile={fileManager.createFile}
             workspaceFiles={fileManager.workspaceFiles}
@@ -941,6 +933,8 @@ function App() {
           workspaceFiles={fileManager.workspaceFiles}
           onContinueFrom={onContinueFrom}
           onDeleteMessage={onDeleteMessage}
+          pendingInput={sidecarPendingInput}
+          onPendingInputConsumed={() => setSidecarPendingInput("")}
         />
       </div>
     </div>

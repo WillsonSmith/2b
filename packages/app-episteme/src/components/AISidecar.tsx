@@ -22,6 +22,8 @@ interface AISidecarProps {
   workspaceFiles?: string[];
   onContinueFrom?: (afterIndex: number, text: string) => void;
   onDeleteMessage?: (index: number) => void;
+  pendingInput?: string;
+  onPendingInputConsumed?: () => void;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -234,14 +236,23 @@ interface ChatInputProps {
   onSend: (text: string) => void;
   onInterrupt: () => void;
   workspaceFiles?: string[];
+  pendingInput?: string;
+  onPendingInputConsumed?: () => void;
 }
 
-function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles = [] }: ChatInputProps) {
+function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles = [], pendingInput, onPendingInputConsumed }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (pendingInput) {
+      setInput(pendingInput + " ");
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  }, [pendingInput]);
 
   const mentionMatches = useMemo(() => {
     if (mentionQuery === null) return [];
@@ -285,6 +296,7 @@ function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles
     if (!text || isThinking) return;
     onSend(text);
     setInput("");
+    onPendingInputConsumed?.();
     closeMention();
   }
 
@@ -431,9 +443,11 @@ interface ChatModalProps {
   workspaceFiles?: string[];
   onContinueFrom?: (afterIndex: number, text: string) => void;
   onDeleteMessage?: (index: number) => void;
+  pendingInput?: string;
+  onPendingInputConsumed?: () => void;
 }
 
-function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onContinueFrom, onDeleteMessage }: ChatModalProps) {
+function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onContinueFrom, onDeleteMessage, pendingInput, onPendingInputConsumed }: ChatModalProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -458,7 +472,7 @@ function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onCl
             onDeleteMessage={onDeleteMessage}
           />
         </div>
-        <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
+        <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} />
       </div>
     </div>
   );
@@ -477,6 +491,8 @@ export function AISidecar({
   workspaceFiles,
   onContinueFrom,
   onDeleteMessage,
+  pendingInput,
+  onPendingInputConsumed,
 }: AISidecarProps) {
   const [expanded, setExpanded] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -532,7 +548,7 @@ export function AISidecar({
             onContinueFrom={stableContinueFrom}
             onDeleteMessage={stableDeleteMessage}
           />
-          <ChatInput isThinking={isThinking} agentState={agentState} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} />
+          <ChatInput isThinking={isThinking} agentState={agentState} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} />
         </div>
       </div>
 
@@ -548,6 +564,8 @@ export function AISidecar({
           workspaceFiles={workspaceFiles}
           onContinueFrom={stableContinueFrom}
           onDeleteMessage={stableDeleteMessage}
+          pendingInput={pendingInput}
+          onPendingInputConsumed={onPendingInputConsumed}
         />
       )}
     </>
