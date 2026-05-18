@@ -1,4 +1,4 @@
-import { Loader2, Sparkles, X, Clock } from "lucide-react";
+import { Loader2, Sparkles, Clock } from "lucide-react";
 import { useDebounce } from "../hooks/useDebounce.ts";
 import type { TocEntry } from "../features/toc.ts";
 import { sectionHash } from "../features/tocHash.ts";
@@ -8,7 +8,6 @@ interface TocPanelProps {
   tocEntries: TocEntry[];
   isAnnotating: boolean;
   onAnnotate: () => void;
-  onClose: () => void;
 }
 
 interface HeadingData {
@@ -58,7 +57,6 @@ export function TocPanel({
   tocEntries,
   isAnnotating,
   onAnnotate,
-  onClose,
 }: TocPanelProps) {
   const debouncedContent = useDebounce(content, 600);
   const headings = extractHeadingData(debouncedContent);
@@ -69,22 +67,14 @@ export function TocPanel({
 
   return (
     <div className="toc-panel">
-      <div className="toc-panel-header">
-        <span className="toc-panel-title">Contents</span>
-        <div className="toc-panel-actions">
-          <button
-            className="header-icon-btn"
-            onClick={onAnnotate}
-            disabled={isAnnotating || headings.length === 0}
-            title="Add AI descriptions to each section"
-          >
-            {isAnnotating ? <Loader2 size={13} className="icon-spin" /> : <Sparkles size={13} />}
-          </button>
-          <button className="header-icon-btn" onClick={onClose} title="Close">
-            <X size={13} />
-          </button>
-        </div>
-      </div>
+      <button
+        className="toc-panel-annotate-btn header-icon-btn"
+        onClick={onAnnotate}
+        disabled={isAnnotating || headings.length === 0}
+        title="Add AI descriptions to each section"
+      >
+        {isAnnotating ? <Loader2 size={13} className="icon-spin" /> : <Sparkles size={13} />}
+      </button>
 
       <div className="toc-panel-list">
         {headings.length === 0 ? (
