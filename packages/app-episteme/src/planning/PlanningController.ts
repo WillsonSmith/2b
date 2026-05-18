@@ -574,6 +574,15 @@ export class PlanningController {
 
       const completedPlan = this.workspaceDb.getPlan(plan.id)!;
       this.planningPlugin.setActivePlan(completedPlan);
+      this.workspaceDb.appendChatEvent({
+        role: "plan_step",
+        planId: plan.id,
+        stepId: step.id,
+        stepTitle: step.title,
+        stepType: step.type,
+        state: "complete",
+        summary: contextSummary,
+      });
       this.broadcast({ type: "plan_step_completed", planId: plan.id, stepId: step.id, summary: contextSummary });
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
@@ -582,6 +591,15 @@ export class PlanningController {
       const failedPlan = this.workspaceDb.getPlan(plan.id)!;
       this.planningPlugin.setActivePlan(failedPlan);
       this.planningPlugin.clearExecution();
+      this.workspaceDb.appendChatEvent({
+        role: "plan_step",
+        planId: plan.id,
+        stepId: step.id,
+        stepTitle: step.title,
+        stepType: step.type,
+        state: "failed",
+        error,
+      });
       this.broadcast({ type: "plan_step_failed", planId: plan.id, stepId: step.id, error });
       this.broadcast({ type: "state_change", state: "step_failed" });
       throw err;

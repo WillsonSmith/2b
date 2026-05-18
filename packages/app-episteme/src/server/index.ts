@@ -166,7 +166,13 @@ export async function startEpistemServer(
   await agent.start();
 
   bundle.shortTermMemory.seed(
-    bundle.workspaceDb.listChatMessages(200).map((r) => ({ role: r.role, content: r.text })),
+    bundle.workspaceDb
+      .listChatMessages(200)
+      .flatMap((r) =>
+        r.role === "user" || r.role === "assistant"
+          ? [{ role: r.role, content: r.text }]
+          : [],
+      ),
   );
 
   const autocomplete = new AutocompleteRunner(config);
@@ -274,6 +280,12 @@ export async function startEpistemServer(
   ]);
   agent.on("tool_result", (name: string, error?: string) => {
     broadcast({ type: "tool_result", name, error });
+    workspaceDb.appendChatEvent({
+      role: "tool",
+      name,
+      status: error ? "error" : "done",
+      error,
+    });
     if (!error && FILE_MUTATING_TOOLS.has(name)) {
       scheduleWorkspaceRefresh();
     }

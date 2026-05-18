@@ -4,6 +4,7 @@ import { Editor } from "./components/editor/Editor.tsx";
 import { FileTree } from "./components/FileTree.tsx";
 import { TocPanel } from "./components/TocPanel.tsx";
 import { AISidecar, type SidecarMessage } from "./components/AISidecar.tsx";
+import type { EpistemePlanStepType } from "./planning/types.ts";
 import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { ResearchPanel } from "./components/ResearchPanel.tsx";
 import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
@@ -213,10 +214,47 @@ function App() {
                 .then((r) => r.json())
                 .then(
                   (
-                    rows: Array<{ id: number; role: "user" | "assistant"; text: string }>,
+                    rows: Array<
+                      | { id: number; role: "user" | "assistant"; text: string }
+                      | {
+                          id: number;
+                          role: "tool";
+                          name: string;
+                          status: "done" | "error";
+                          error?: string;
+                        }
+                      | {
+                          id: number;
+                          role: "plan_step";
+                          planId: string;
+                          stepId: string;
+                          stepTitle: string;
+                          stepType: string;
+                          state: "complete" | "failed";
+                          summary?: string;
+                          error?: string;
+                        }
+                    >,
                   ) => {
                     setMessages(
-                      rows.map((r) => ({ role: r.role, text: r.text, id: r.id })),
+                      rows.map((r): SidecarMessage => {
+                        if (r.role === "tool") {
+                          return { role: "tool", name: r.name, status: r.status, error: r.error };
+                        }
+                        if (r.role === "plan_step") {
+                          return {
+                            role: "plan_step",
+                            planId: r.planId,
+                            stepId: r.stepId,
+                            stepTitle: r.stepTitle,
+                            stepType: r.stepType as EpistemePlanStepType,
+                            state: r.state,
+                            summary: r.summary,
+                            error: r.error,
+                          };
+                        }
+                        return { role: r.role, text: r.text, id: r.id };
+                      }),
                     );
                   },
                 )
