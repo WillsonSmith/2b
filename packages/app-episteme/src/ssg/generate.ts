@@ -1,16 +1,19 @@
 import { parseFrontmatter, parseYamlFields } from "../features/frontmatter";
-import { marked } from "marked";
+import { Marked } from "marked";
 import * as path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import {
   type RawFile,
   type FileInfo,
+  escapeHtml,
   slugify,
   titleFromMarkdown,
   titleFromPath,
   pathToRoot,
   extractEdgesForFile,
   resolveWikilinksInBody,
+  isLocalHref,
+  resolveMarkdownLinkInSsg,
   contentPage,
   autoIndexPage,
   tagIndexPage,
@@ -18,24 +21,32 @@ import {
   graphPage,
 } from "./render";
 
-// Render mermaid fenced blocks as <div class="mermaid"> and rewrite local .md
-// hrefs to .html so links work in the static output.
-marked.use({
-  renderer: {
-    code({ text, lang }) {
-      if (lang === "mermaid") return `<div class="mermaid">${text}</div>\n`;
-      return false;
+// Build a Marked instance scoped to one file render. Renders mermaid fenced
+// blocks as <div class="mermaid">, rewrites local .md hrefs to .html, and
+// flags links that don't resolve to a known workspace file as broken.
+function createMarked(allRelPaths: string[], currentRelPath: string): Marked {
+  const m = new Marked();
+  m.use({
+    renderer: {
+      code({ text, lang }) {
+        if (lang === "mermaid") return `<div class="mermaid">${text}</div>\n`;
+        return false;
+      },
+      link({ href, text, title }: { href: string | null; text: string; title?: string | null }) {
+        if (href && isLocalHref(href)) {
+          const resolved = resolveMarkdownLinkInSsg(href, currentRelPath, allRelPaths);
+          if (!resolved) {
+            return `<span class="wikilink-broken" title="Broken link: ${escapeHtml(href)}">${text}</span>`;
+          }
+          href = href.replace(/\.md(#[^)]*)?$/, (_, frag) => `.html${frag ?? ""}`);
+        }
+        const titleAttr = title ? ` title="${title}"` : "";
+        return `<a href="${href ?? ""}"${titleAttr}>${text}</a>`;
+      },
     },
-    link({ href, text, title }: { href: string | null; text: string; title?: string | null }) {
-      if (href && !href.startsWith("http") && !href.startsWith("mailto:") && !href.startsWith("#") && !href.startsWith("//")) {
-        // Rewrite .md extension to .html, preserving any fragment
-        href = href.replace(/\.md(#[^)]*)?$/, (_, frag) => `.html${frag ?? ""}`);
-      }
-      const titleAttr = title ? ` title="${title}"` : "";
-      return `<a href="${href ?? ""}"${titleAttr}>${text}</a>`;
-    },
-  },
-});
+  });
+  return m;
+}
 
 async function generate(workspace: string, output: string): Promise<void> {
   console.log("Generating static site...");
@@ -88,7 +99,8 @@ async function generate(workspace: string, output: string): Promise<void> {
     }
 
     const resolvedBody = resolveWikilinksInBody(processedBody, allRelPaths, raw.relPath);
-    const html = await marked(resolvedBody);
+    const marked = createMarked(allRelPaths, raw.relPath);
+    const html = await marked.parse(resolvedBody);
     const hasMermaid = html.includes('class="mermaid"');
 
     const depth = raw.relPath.split("/").length - 1;
