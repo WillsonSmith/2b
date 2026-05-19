@@ -1,4 +1,4 @@
-import { test, expect, describe, mock, beforeEach } from "bun:test";
+import { test, expect, describe, mock } from "bun:test";
 import { BaseAgent } from "../core/BaseAgent";
 import { RetryPlugin } from "./RetryPlugin";
 import { AutoDenyPermissionManager, AutoApprovePermissionManager } from "../core/PermissionManager";

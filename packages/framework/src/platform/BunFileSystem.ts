@@ -15,7 +15,7 @@ export class BunFileSystem implements IFileSystem {
   }
 
   write(path: string, content: string | Uint8Array | ArrayBuffer | Response): Promise<number> {
-    return Bun.write(path, content as Parameters<typeof Bun.write>[1]);
+    return Bun.write(path, content as string);
   }
 
   async exists(path: string): Promise<boolean> {

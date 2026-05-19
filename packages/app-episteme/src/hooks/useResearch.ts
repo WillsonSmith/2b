@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { UnifiedSearchResponse } from "../components/ResearchPanel.tsx";
-import type { Subscribe } from "./useWebSocket.ts";
-
-type AgentState = "idle" | "thinking" | "disconnected";
+import type { AgentState, Subscribe } from "./useWebSocket.ts";
 
 export function useResearch(
   wsRef: React.MutableRefObject<WebSocket | null>,

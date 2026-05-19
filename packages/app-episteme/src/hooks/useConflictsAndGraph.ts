@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ContradictionRecord } from "../components/ConflictsPanel.tsx";
 import type { GraphData, GraphLink } from "../components/KnowledgeGraph.tsx";
-import type { Subscribe } from "./useWebSocket.ts";
-
-type AgentState = "idle" | "thinking" | "disconnected";
+import type { AgentState, Subscribe } from "./useWebSocket.ts";
 
 interface GraphPagination {
   offset: number;

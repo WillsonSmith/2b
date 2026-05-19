@@ -9,15 +9,17 @@
     "packages/app-episteme/src/electron"
   ],
   "scripts": {
-    "2b":       "bun packages/app-2b/2b.ts",
+    "2b": "bun packages/app-2b/2b.ts",
     "episteme": "bun packages/app-episteme/episteme.ts",
     "electron": "npm --prefix packages/app-episteme/src/electron start",
-    "backup":   "bun scripts/backup.ts",
-    "test":     "bun test"
+    "backup": "bun scripts/backup.ts",
+    "test": "bun test"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/js-yaml": "^4.0.9"
+    "@types/js-yaml": "^4.0.9",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3"
   },
   "overrides": {
     "react": "19.2.5",

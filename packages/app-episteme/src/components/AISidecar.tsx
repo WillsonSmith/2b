@@ -374,7 +374,7 @@ function extractMentions(text: string): string[] {
 function getMentionQuery(value: string, cursor: number): string | null {
   const before = value.slice(0, cursor);
   const match = before.match(/@([\w\-./ ]*)$/);
-  return match ? match[1] : null;
+  return match ? match[1] ?? null : null;
 }
 
 function insertMention(

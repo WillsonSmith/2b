@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { FileText, Folder, Plus, RotateCw, ChevronDown, ChevronRight } from "lucide-react";
+import { FileText, Plus, RotateCw, ChevronDown, ChevronRight } from "lucide-react";
 
 interface FileTreeProps {
   files: string[];

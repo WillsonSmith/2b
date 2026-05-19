@@ -164,7 +164,7 @@ describe("delete_agent", () => {
       chat: mock(
         (_msgs, _sys, _hist, _tools, _onToken, signal) =>
           new Promise<{ nonReasoningContent: string; reasoningContent: string }>(
-            (resolve, reject) => {
+            (_resolve, reject) => {
               signal?.addEventListener("abort", () =>
                 reject(new Error("Aborted")),
               );

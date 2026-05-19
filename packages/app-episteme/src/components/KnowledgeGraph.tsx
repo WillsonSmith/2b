@@ -40,7 +40,7 @@ export function KnowledgeGraph({
     if (isEmpty) return;
 
     (async () => {
-      const ForceGraph = (await import("force-graph")).default;
+      const ForceGraph = (await import("force-graph")).default as unknown as () => (el: HTMLElement) => any;
       if (!containerRef.current) return;
 
       const el = containerRef.current;

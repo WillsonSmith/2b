@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { BacklinkItem } from "../features/links.ts";
-import type { Subscribe } from "./useWebSocket.ts";
-
-type AgentState = "idle" | "thinking" | "disconnected";
+import type { AgentState, Subscribe } from "./useWebSocket.ts";
 
 export function useBacklinks(
   wsRef: React.MutableRefObject<WebSocket | null>,

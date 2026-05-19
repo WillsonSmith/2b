@@ -92,7 +92,7 @@ export async function handleMedia(
 
         let transcribeInput = audioPath;
         const ffmpegCheck = await Bun.$`which ffmpeg`.quiet().catch(() => null);
-        if (ffmpegCheck && ffmpegCheck.exitCode === 0 && ext !== "mp3") {
+        if (ffmpegCheck && ffmpegCheck.exitCode === 0) {
           const mp3Path = join(tmpdir(), `episteme-voice-${stamp}.mp3`);
           await Bun.$`ffmpeg -i ${audioPath} -q:a 0 -map a ${mp3Path} -y`.quiet();
           transcribeInput = mp3Path;

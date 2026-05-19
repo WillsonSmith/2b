@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { assertNever, type ServerMsg } from "../protocol.ts";
 
-type AgentState =
+export type AgentState =
   | "idle"
   | "thinking"
   | "structuring"

@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getShell } from "../shell/index.ts";
 import { useDebounce } from "./useDebounce.ts";
-import type { Subscribe } from "./useWebSocket.ts";
-
-type AgentState = "idle" | "thinking" | "disconnected";
+import type { AgentState, Subscribe } from "./useWebSocket.ts";
 
 export function useFileManager(
   wsRef: React.MutableRefObject<WebSocket | null>,
