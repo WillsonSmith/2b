@@ -314,7 +314,7 @@ export async function startEpistemServer(
       "/api/models": {
         GET: async () => {
           try {
-            const ollamaHost = process.env["OLLAMA_HOST"] ?? "http://127.0.0.1:11434";
+            const ollamaHost = process.env["OLLAMA_URL"] ?? "http://127.0.0.1:11434";
             const res = await fetch(`${ollamaHost}/api/tags`);
             if (!res.ok) return json({ models: [] });
             const data = (await res.json()) as { models?: Array<{ name: string }> };
@@ -330,14 +330,22 @@ export async function startEpistemServer(
         PATCH: async (req: Request) => {
           try {
             const body = (await req.json()) as Partial<EpistemeConfig>;
+            let dirty = false;
             if (body.models) {
               Object.assign(config.models, body.models);
-              await saveConfig(workspaceRoot, config);
+              dirty = true;
             }
             if (body.features !== undefined) {
               config.features = { ...config.features, ...body.features };
-              await saveConfig(workspaceRoot, config);
+              dirty = true;
             }
+            if (body.ollamaBaseUrl !== undefined) {
+              const trimmed = body.ollamaBaseUrl.trim();
+              config.ollamaBaseUrl = trimmed || undefined;
+              process.env.OLLAMA_URL = trimmed || "http://127.0.0.1:11434";
+              dirty = true;
+            }
+            if (dirty) await saveConfig(workspaceRoot, config);
             return json(config);
           } catch {
             return json({ error: "Invalid JSON body" }, 400);

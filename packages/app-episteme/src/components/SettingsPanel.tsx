@@ -50,6 +50,9 @@ export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosave
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(false);
   const [autosaveEnabled, setAutosaveEnabled] = useState(true);
   const [lintEnabled, setLintEnabled] = useState(true);
+  const [ollamaBaseUrl, setOllamaBaseUrl] = useState("");
+  const [initialOllamaBaseUrl, setInitialOllamaBaseUrl] = useState("");
+  const [urlChangedNotice, setUrlChangedNotice] = useState(false);
   const [modelStatus, setModelStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   const [activeTab, setActiveTab] = useState<"style" | "models" | "help">(initialTab ?? "style");
@@ -62,11 +65,14 @@ export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosave
 
     fetch("/api/config")
       .then((r) => r.json())
-      .then((data: { models?: ModelConfig; features?: { autocomplete?: boolean; autosave?: boolean; lint?: boolean } }) => {
+      .then((data: { models?: ModelConfig; features?: { autocomplete?: boolean; autosave?: boolean; lint?: boolean }; ollamaBaseUrl?: string }) => {
         if (data.models) setModelConfig(data.models);
         if (data.features?.autocomplete !== undefined) setAutocompleteEnabled(data.features.autocomplete);
         if (data.features?.autosave !== undefined) setAutosaveEnabled(data.features.autosave);
         if (data.features?.lint !== undefined) setLintEnabled(data.features.lint);
+        const url = data.ollamaBaseUrl ?? "";
+        setOllamaBaseUrl(url);
+        setInitialOllamaBaseUrl(url);
       })
       .catch(() => {});
 
@@ -103,12 +109,24 @@ export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosave
       const res = await fetch("/api/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ models: modelConfig, features: { autocomplete: autocompleteEnabled, autosave: autosaveEnabled, lint: lintEnabled } }),
+        body: JSON.stringify({
+          models: modelConfig,
+          features: { autocomplete: autocompleteEnabled, autosave: autosaveEnabled, lint: lintEnabled },
+          ollamaBaseUrl,
+        }),
       });
       if (res.ok) {
         onAutocompleteEnabledChange?.(autocompleteEnabled);
         onAutosaveEnabledChange?.(autosaveEnabled);
         onLintEnabledChange?.(lintEnabled);
+        if (ollamaBaseUrl !== initialOllamaBaseUrl) {
+          fetch("/api/models")
+            .then((r) => r.json())
+            .then((data: { models?: string[] }) => setModels(data.models ?? []))
+            .catch(() => {});
+          setUrlChangedNotice(true);
+          setInitialOllamaBaseUrl(ollamaBaseUrl);
+        }
         setModelStatus("saved");
       } else {
         setModelStatus("error");
@@ -116,7 +134,7 @@ export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosave
     } catch {
       setModelStatus("error");
     }
-  }, [modelConfig, autocompleteEnabled, autosaveEnabled, lintEnabled, onAutocompleteEnabledChange, onAutosaveEnabledChange, onLintEnabledChange]);
+  }, [modelConfig, autocompleteEnabled, autosaveEnabled, lintEnabled, ollamaBaseUrl, initialOllamaBaseUrl, onAutocompleteEnabledChange, onAutosaveEnabledChange, onLintEnabledChange]);
 
   // Close on Escape
   useEffect(() => {
@@ -236,6 +254,28 @@ export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosave
                 <span className="settings-toggle-track" />
               </label>
             </div>
+            <div className="model-config-row" style={{ marginBottom: 8 }}>
+              <div className="model-config-label">
+                <span className="model-config-name">Ollama base URL</span>
+                <span className="model-config-desc">
+                  Point Episteme at a different Ollama-compatible host. Leave blank for http://127.0.0.1:11434.
+                </span>
+              </div>
+              <input
+                className="model-config-input"
+                type="text"
+                value={ollamaBaseUrl}
+                placeholder="http://127.0.0.1:11434"
+                onChange={(e) => {
+                  setOllamaBaseUrl(e.target.value);
+                  setModelStatus("idle");
+                  setUrlChangedNotice(false);
+                }}
+              />
+            </div>
+            <datalist id="ollama-models">
+              {models.map((m) => <option key={m} value={m} />)}
+            </datalist>
             <div className="model-config-grid">
               {FEATURE_LABELS.map(({ key, label, desc }) => (
                 <div key={key} className="model-config-row">
@@ -243,9 +283,11 @@ export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosave
                     <span className="model-config-name">{label}</span>
                     <span className="model-config-desc">{desc}</span>
                   </div>
-                  <select
-                    className="model-config-select"
+                  <input
+                    className="model-config-input"
+                    list="ollama-models"
                     value={key === "default" ? modelConfig.default : (modelConfig[key] ?? "")}
+                    placeholder={key === "default" ? "Model name" : `Default (${modelConfig.default || "not set"})`}
                     onChange={(e) => {
                       const val = e.target.value;
                       setModelConfig((prev) => {
@@ -259,21 +301,16 @@ export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosave
                       });
                       setModelStatus("idle");
                     }}
-                  >
-                    {key !== "default" && <option value="">Default ({modelConfig.default || "not set"})</option>}
-                    {models.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                    {models.length === 0 && (
-                      <option value="" disabled>No Ollama models found</option>
-                    )}
-                  </select>
+                  />
                 </div>
               ))}
             </div>
             <div className="modal-footer">
               <div style={{ flex: 1 }} />
-              {modelStatus === "saved" && <span className="modal-status-ok">Saved</span>}
+              {urlChangedNotice && (
+                <span className="modal-status-ok">URL updated. Restart to switch the main chat agent.</span>
+              )}
+              {modelStatus === "saved" && !urlChangedNotice && <span className="modal-status-ok">Saved</span>}
               {modelStatus === "error" && <span className="modal-status-err">Save failed</span>}
               <button className="modal-btn-primary" onClick={handleModelSave} disabled={modelStatus === "saving"}>
                 {modelStatus === "saving" ? "Saving…" : "Save"}

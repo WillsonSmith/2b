@@ -59,6 +59,9 @@ if (!workspaceArg) {
     await startEpistemStubServer(port);
   } else {
     const config = await loadConfig(workspaceRoot);
+    if (config.ollamaBaseUrl) {
+      process.env.OLLAMA_URL = config.ollamaBaseUrl;
+    }
     const bundle = createEpistemAgent(workspaceRoot, config);
 
     await startEpistemServer(bundle, workspaceRoot, config, port);
