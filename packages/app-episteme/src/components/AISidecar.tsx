@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import { Copy, Check, CheckCircle2, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2, AlertCircle, Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen } from "lucide-react";
+import { Copy, Check, CheckCircle2, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2, AlertCircle, Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen, ClipboardList } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
 import { usePanelResize } from "../hooks/usePanelResize.ts";
 import type { EpistemePlanStepType } from "../planning/types.ts";
@@ -35,6 +35,9 @@ interface AISidecarProps {
   onDeleteMessage?: (index: number) => void;
   pendingInput?: string;
   onPendingInputConsumed?: () => void;
+  activeFile?: string | null;
+  onPlanRequest?: (goal: string, approvalMode: "all" | "per_step") => void;
+  onPlanRequestFromDocument?: (path: string, goal: string, approvalMode: "all" | "per_step") => void;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -297,13 +300,19 @@ interface ChatInputProps {
   workspaceFiles?: string[];
   pendingInput?: string;
   onPendingInputConsumed?: () => void;
+  activeFile?: string | null;
+  onPlanRequest?: (goal: string, approvalMode: "all" | "per_step") => void;
+  onPlanRequestFromDocument?: (path: string, goal: string, approvalMode: "all" | "per_step") => void;
 }
 
-function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles = [], pendingInput, onPendingInputConsumed }: ChatInputProps) {
+function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles = [], pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [planMode, setPlanMode] = useState(false);
+  const [approvalMode, setApprovalMode] = useState<"all" | "per_step">("all");
+  const [useDocument, setUseDocument] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -353,6 +362,21 @@ function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles
   function submit() {
     const text = input.trim();
     if (!text || isThinking) return;
+
+    if (planMode) {
+      if (useDocument && activeFile && onPlanRequestFromDocument) {
+        onPlanRequestFromDocument(activeFile, text, approvalMode);
+      } else if (onPlanRequest) {
+        onPlanRequest(text, approvalMode);
+      }
+      setInput("");
+      setPlanMode(false);
+      setUseDocument(false);
+      onPendingInputConsumed?.();
+      closeMention();
+      return;
+    }
+
     onSend(text);
     setInput("");
     onPendingInputConsumed?.();
@@ -435,12 +459,45 @@ function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles
         </div>
       )}
 
+      {planMode && (
+        <div className="sidecar-plan-mode-options">
+          <label className="sidecar-plan-mode-label">
+            <input
+              type="radio"
+              name="sidecar-approval"
+              checked={approvalMode === "all"}
+              onChange={() => setApprovalMode("all")}
+            />
+            Approve all at once
+          </label>
+          <label className="sidecar-plan-mode-label">
+            <input
+              type="radio"
+              name="sidecar-approval"
+              checked={approvalMode === "per_step"}
+              onChange={() => setApprovalMode("per_step")}
+            />
+            Approve step-by-step
+          </label>
+          {activeFile && (
+            <label className="sidecar-plan-mode-label">
+              <input
+                type="checkbox"
+                checked={useDocument}
+                onChange={(e) => setUseDocument(e.target.checked)}
+              />
+              Plan from current document
+            </label>
+          )}
+        </div>
+      )}
+
       <div className="sidecar-input-box">
         <textarea
           ref={textareaRef}
           className="sidecar-input"
           value={input}
-          placeholder="Ask or give a task… (@ to reference a file)"
+          placeholder={planMode ? "Describe what you want to accomplish… (@ to reference files)" : "Ask or give a task… (@ to reference a file)"}
           rows={2}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
@@ -455,6 +512,14 @@ function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles
             title="Quick action commands"
           >
             <Zap size={14} />
+          </button>
+          <button
+            className={`sidecar-quick-toggle${planMode ? " active" : ""}`}
+            onClick={() => setPlanMode((v) => !v)}
+            title={planMode ? "Exit planning mode" : "Create a plan"}
+            disabled={isThinking}
+          >
+            <ClipboardList size={14} />
           </button>
           <span className={`sidecar-status${agentState === "thinking" ? " thinking" : agentState === "disconnected" ? " disconnected" : ""}`}>
             {agentState === "disconnected" ? (
@@ -504,9 +569,12 @@ interface ChatModalProps {
   onDeleteMessage?: (index: number) => void;
   pendingInput?: string;
   onPendingInputConsumed?: () => void;
+  activeFile?: string | null;
+  onPlanRequest?: (goal: string, approvalMode: "all" | "per_step") => void;
+  onPlanRequestFromDocument?: (path: string, goal: string, approvalMode: "all" | "per_step") => void;
 }
 
-function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onContinueFrom, onDeleteMessage, pendingInput, onPendingInputConsumed }: ChatModalProps) {
+function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onContinueFrom, onDeleteMessage, pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument }: ChatModalProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -531,7 +599,7 @@ function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onCl
             onDeleteMessage={onDeleteMessage}
           />
         </div>
-        <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} />
+        <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} />
       </div>
     </div>
   );
@@ -552,6 +620,9 @@ export function AISidecar({
   onDeleteMessage,
   pendingInput,
   onPendingInputConsumed,
+  activeFile,
+  onPlanRequest,
+  onPlanRequestFromDocument,
 }: AISidecarProps) {
   const [expanded, setExpanded] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -607,7 +678,7 @@ export function AISidecar({
             onContinueFrom={stableContinueFrom}
             onDeleteMessage={stableDeleteMessage}
           />
-          <ChatInput isThinking={isThinking} agentState={agentState} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} />
+          <ChatInput isThinking={isThinking} agentState={agentState} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} />
         </div>
       </div>
 
@@ -625,6 +696,9 @@ export function AISidecar({
           onDeleteMessage={stableDeleteMessage}
           pendingInput={pendingInput}
           onPendingInputConsumed={onPendingInputConsumed}
+          activeFile={activeFile}
+          onPlanRequest={onPlanRequest}
+          onPlanRequestFromDocument={onPlanRequestFromDocument}
         />
       )}
     </>

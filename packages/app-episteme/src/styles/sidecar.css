@@ -420,6 +420,24 @@ details.sidecar-plan-step > .sidecar-plan-step-summary::-webkit-details-marker {
   color: var(--text);
 }
 
+/* Plan mode options (radios + checkbox above textarea) */
+.sidecar-plan-mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+.sidecar-plan-mode-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
 /* Quick Actions toggle button (⚡) */
 .sidecar-quick-toggle {
   display: inline-flex;
