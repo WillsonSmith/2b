@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import { Check, CheckCircle2, CornerDownRight, Loader2, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2, AlertCircle, Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen, ClipboardList, MoreHorizontal } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
+import { PlanModeOptions } from "./PlanModeOptions.tsx";
 import { usePanelResize } from "../hooks/usePanelResize.ts";
 import type { EpistemePlanStepType } from "../planning/types.ts";
 
@@ -341,7 +342,7 @@ function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const [planMode, setPlanMode] = useState(false);
-  const [approvalMode, setApprovalMode] = useState<"all" | "per_step">("all");
+  const [approvalMode, setApprovalMode] = useState<"all" | "per_step">("per_step");
   const [useDocument, setUseDocument] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -490,36 +491,17 @@ function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles
       )}
 
       {planMode && (
-        <div className="sidecar-plan-mode-options">
-          <label className="sidecar-plan-mode-label">
-            <input
-              type="radio"
-              name="sidecar-approval"
-              checked={approvalMode === "all"}
-              onChange={() => setApprovalMode("all")}
-            />
-            Approve all at once
-          </label>
-          <label className="sidecar-plan-mode-label">
-            <input
-              type="radio"
-              name="sidecar-approval"
-              checked={approvalMode === "per_step"}
-              onChange={() => setApprovalMode("per_step")}
-            />
-            Approve step-by-step
-          </label>
-          {activeFile && (
-            <label className="sidecar-plan-mode-label">
-              <input
-                type="checkbox"
-                checked={useDocument}
-                onChange={(e) => setUseDocument(e.target.checked)}
-              />
-              Plan from current document
-            </label>
-          )}
-        </div>
+        <PlanModeOptions
+          approvalMode={approvalMode}
+          onApprovalModeChange={setApprovalMode}
+          useDocument={useDocument}
+          onUseDocumentChange={setUseDocument}
+          activeFile={activeFile}
+          radioGroupName="sidecar-approval"
+          wrapperClassName="sidecar-plan-mode-options"
+          labelClassName="sidecar-plan-mode-label"
+          withSpans={false}
+        />
       )}
 
       <div className="sidecar-input-box">
