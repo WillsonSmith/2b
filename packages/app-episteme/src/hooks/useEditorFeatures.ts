@@ -2,10 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { Tone } from "../features/tone.ts";
 import type { LintIssue } from "../features/lint.ts";
 import type { TocEntry } from "../features/toc.ts";
-import type { Subscribe } from "./useWebSocket.ts";
+import type { AgentState, Subscribe } from "./useWebSocket.ts";
 import { useDebounce } from "./useDebounce.ts";
-
-type AgentState = "idle" | "thinking" | "disconnected";
 
 export function useEditorFeatures(
   wsRef: React.MutableRefObject<WebSocket | null>,

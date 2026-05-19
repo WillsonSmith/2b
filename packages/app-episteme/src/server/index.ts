@@ -378,13 +378,15 @@ export async function startEpistemServer(
       },
       "/api/chat-history/:id": {
         DELETE: (req: Request) => {
-          const id = parseInt((req as Request & { params: Record<string, string> }).params.id, 10);
+          const idParam = (req as Request & { params: Record<string, string> }).params.id;
+          const id = parseInt(idParam ?? "", 10);
           if (isNaN(id)) return json({ error: "Invalid id" }, 400);
           workspaceDb.deleteChatMessage(id);
           return json({ ok: true });
         },
         PATCH: async (req: Request) => {
-          const id = parseInt((req as Request & { params: Record<string, string> }).params.id, 10);
+          const idParam = (req as Request & { params: Record<string, string> }).params.id;
+          const id = parseInt(idParam ?? "", 10);
           if (isNaN(id)) return json({ error: "Invalid id" }, 400);
           const body = (await req.json()) as { text?: string };
           if (typeof body.text !== "string") return json({ error: "text required" }, 400);

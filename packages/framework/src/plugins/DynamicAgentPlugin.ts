@@ -27,7 +27,6 @@ import type { PermissionManager } from "../core/PermissionManager.ts";
 import { HeadlessAgent } from "../core/HeadlessAgent.ts";
 import { CortexSubAgent } from "../core/CortexSubAgent.ts";
 import { InMemoryDatabasePlugin } from "./InMemoryDatabasePlugin.ts";
-import { WebSearchPlugin } from "./WebSearchPlugin.ts";
 import { WebReaderPlugin } from "./WebReaderPlugin.ts";
 import { FileSystemPlugin } from "./FileSystemPlugin.ts";
 import { ShellPlugin } from "./ShellPlugin.ts";

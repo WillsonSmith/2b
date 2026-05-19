@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Subscribe } from "./useWebSocket.ts";
-
-type AgentState = "idle" | "thinking" | "disconnected";
+import type { AgentState, Subscribe } from "./useWebSocket.ts";
 
 export function useVoiceAndMedia(
   wsRef: React.MutableRefObject<WebSocket | null>,

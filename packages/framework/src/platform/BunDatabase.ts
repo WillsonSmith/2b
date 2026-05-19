@@ -1,25 +1,24 @@
-import { Database, type Statement } from "bun:sqlite";
+import { Database, type SQLQueryBindings, type Statement } from "bun:sqlite";
 import type { IDatabase, IRunResult, IStatement } from "./IDatabase.ts";
 
 class BunStatement implements IStatement {
-  // bun:sqlite Statement is generic; we erase it here since IStatement is untyped
-  private stmt: Statement<unknown, unknown[]>;
+  private stmt: Statement<unknown, SQLQueryBindings[]>;
 
-  constructor(stmt: Statement<unknown, unknown[]>) {
+  constructor(stmt: Statement<unknown, SQLQueryBindings[]>) {
     this.stmt = stmt;
   }
 
   run(...params: unknown[]): IRunResult {
-    const r = (this.stmt as unknown as Statement<unknown, unknown>).run(...(params as Parameters<typeof this.stmt.run>));
+    const r = this.stmt.run(...(params as SQLQueryBindings[]));
     return { changes: r.changes, lastInsertRowid: r.lastInsertRowid };
   }
 
   get(...params: unknown[]): unknown {
-    return (this.stmt as unknown as Statement<unknown, unknown>).get(...(params as Parameters<typeof this.stmt.get>));
+    return this.stmt.get(...(params as SQLQueryBindings[]));
   }
 
   all(...params: unknown[]): unknown[] {
-    return (this.stmt as unknown as Statement<unknown, unknown[]>).all(...(params as Parameters<typeof this.stmt.all>)) as unknown[];
+    return this.stmt.all(...(params as SQLQueryBindings[])) as unknown[];
   }
 }
 

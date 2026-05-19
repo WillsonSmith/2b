@@ -14,7 +14,7 @@
 import { randomUUID } from "crypto";
 import { join } from "node:path";
 import type { AgentPlugin, ToolDefinition } from "../core/Plugin.ts";
-import type { Plan, PlanStep, PlanStatus, PlanStepStatus } from "../core/types.ts";
+import type { Plan, PlanStatus, PlanStepStatus } from "../core/types.ts";
 import { appDataPath } from "../paths.ts";
 import { logger } from "../logger.ts";
 import { getPlatform } from "../platform/platform.ts";

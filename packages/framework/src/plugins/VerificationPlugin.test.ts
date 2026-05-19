@@ -31,10 +31,16 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   };
 }
 
-function waitForEvent(agent: BaseAgent, event: string, timeoutMs = 300): Promise<unknown[]> {
+function waitForEvent(
+  agent: BaseAgent,
+  event: string,
+  timeoutMs = 300,
+  matchFirstArg?: unknown,
+): Promise<unknown[]> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`Timeout waiting for '${event}'`)), timeoutMs);
     const handler = (...args: unknown[]) => {
+      if (matchFirstArg !== undefined && args[0] !== matchFirstArg) return;
       clearTimeout(t);
       agent.off(event as any, handler);
       resolve(args);

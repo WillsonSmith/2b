@@ -298,7 +298,7 @@ function App() {
 
   const resolveMentions = useCallback(async (text: string): Promise<string> => {
     const mentionPattern = /@([\w\-./ ]+\.md)/g;
-    const mentions = [...text.matchAll(mentionPattern)].map((m) => m[1].trim());
+    const mentions = [...text.matchAll(mentionPattern)].map((m) => m[1]!.trim());
     if (mentions.length === 0) return text;
 
     const fetched = await Promise.all(
