@@ -80,26 +80,29 @@ type MatchResult =
  * Returns an error if the match is ambiguous (occurs more than once).
  */
 function findMatch(content: string, search: string): MatchResult {
+  // Callers must normalize CRLF → LF before calling. search is normalized here for safety.
+  const normalizedSearch = search.replace(/\r\n/g, "\n");
+
   // Exact match
-  const first = content.indexOf(search);
+  const first = content.indexOf(normalizedSearch);
   if (first !== -1) {
-    if (content.indexOf(search, first + 1) !== -1) {
+    if (content.indexOf(normalizedSearch, first + 1) !== -1) {
       return { found: false, error: "Search string matches multiple locations in the file." };
     }
-    return { found: true, start: first, end: first + search.length, fuzzy: false };
+    return { found: true, start: first, end: first + normalizedSearch.length, fuzzy: false };
   }
 
-  // Whitespace-normalized fallback: compare lines with leading whitespace stripped
+  // Whitespace-normalized fallback: compare lines with all surrounding whitespace stripped
   const contentLines = content.split("\n");
-  const searchLines = search.split("\n");
+  const searchLines = normalizedSearch.split("\n");
   if (searchLines.length > contentLines.length) {
     return { found: false, error: "Search string not found in file." };
   }
-  const normalizedSearch = searchLines.map((l) => l.trimStart());
+  const trimmedSearch = searchLines.map((l) => l.trim());
 
   const hits: Array<{ start: number; end: number }> = [];
   for (let i = 0; i <= contentLines.length - searchLines.length; i++) {
-    const allMatch = searchLines.every((_, j) => contentLines[i + j]!.trimStart() === normalizedSearch[j]!);
+    const allMatch = searchLines.every((_, j) => contentLines[i + j]!.trim() === trimmedSearch[j]!);
     if (allMatch) {
       let startOffset = 0;
       for (let k = 0; k < i; k++) startOffset += contentLines[k]!.length + 1;
@@ -108,7 +111,21 @@ function findMatch(content: string, search: string): MatchResult {
     }
   }
 
-  if (hits.length === 0) return { found: false, error: "Search string not found in file." };
+  if (hits.length === 0) {
+    // Find the closest partial match to help the LLM self-correct
+    const firstSearchLine = trimmedSearch[0] ?? "";
+    const closeLineIdx = contentLines.findIndex((l) => l.trim() === firstSearchLine);
+    if (closeLineIdx !== -1) {
+      const contextStart = Math.max(0, closeLineIdx - 1);
+      const contextEnd = Math.min(contentLines.length - 1, closeLineIdx + searchLines.length);
+      const snippet = contentLines.slice(contextStart, contextEnd + 1).join("\n");
+      return {
+        found: false,
+        error: `Search string not found in file. First line matched at line ${closeLineIdx + 1} but surrounding lines did not match. Actual file content around that line:\n${snippet}`,
+      };
+    }
+    return { found: false, error: "Search string not found in file." };
+  }
   if (hits.length > 1) return { found: false, error: "Search string (whitespace-normalized) matches multiple locations." };
   return { found: true, ...hits[0]!, fuzzy: true };
 }
@@ -813,7 +830,7 @@ export class FileSystemPlugin implements AgentPlugin {
       }
     }
 
-    const content = await fs.readText(resolved);
+    const content = (await fs.readText(resolved)).replace(/\r\n/g, "\n");
 
     // Validate and locate all edits before applying any (all-or-nothing)
     const located: Array<{ start: number; end: number; replace: string; fuzzy: boolean }> = [];
