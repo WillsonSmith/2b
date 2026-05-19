@@ -296,34 +296,54 @@ function App() {
 
   // ── AI sidecar wrappers ─────────────────────────────────────────────────────
 
+  const resolveMentions = useCallback(async (text: string): Promise<string> => {
+    const mentionPattern = /@([\w\-./ ]+\.md)/g;
+    const mentions = [...text.matchAll(mentionPattern)].map((m) => m[1].trim());
+    if (mentions.length === 0) return text;
+
+    const fetched = await Promise.all(
+      mentions.map((path) =>
+        fetch(`/api/file-content?path=${encodeURIComponent(path)}`)
+          .then((r) => r.json() as Promise<{ content?: string }>)
+          .then((d) => (d.content != null ? { path, content: d.content } : null))
+          .catch(() => null),
+      ),
+    );
+    const blocks = fetched
+      .filter((f): f is { path: string; content: string } => f !== null)
+      .map((f) => `[File: ${f.path}]\n\`\`\`\n${f.content}\n\`\`\``)
+      .join("\n\n");
+    return blocks ? `${blocks}\n\n---\n${text}` : text;
+  }, []);
+
   const sendToAgent = useCallback(
     async (text: string) => {
       if (ws.agentState === "disconnected") return;
-
-      const mentionPattern = /@([\w\-./ ]+\.md)/g;
-      const mentions = [...text.matchAll(mentionPattern)].map((m) => m[1].trim());
-
-      let fullText = text;
-      if (mentions.length > 0) {
-        const fetched = await Promise.all(
-          mentions.map((path) =>
-            fetch(`/api/file-content?path=${encodeURIComponent(path)}`)
-              .then((r) => r.json() as Promise<{ content?: string }>)
-              .then((d) => (d.content != null ? { path, content: d.content } : null))
-              .catch(() => null),
-          ),
-        );
-        const blocks = fetched
-          .filter((f): f is { path: string; content: string } => f !== null)
-          .map((f) => `[File: ${f.path}]\n\`\`\`\n${f.content}\n\`\`\``)
-          .join("\n\n");
-        if (blocks) fullText = `${blocks}\n\n---\n${text}`;
-      }
-
+      const fullText = await resolveMentions(text);
       ws.sendToAgent(fullText);
       setMessages((prev) => [...prev, { role: "user", text }]);
     },
-    [ws],
+    [ws, resolveMentions],
+  );
+
+  const handleSidecarPlanRequest = useCallback(
+    async (goal: string, approvalMode: "all" | "per_step") => {
+      const resolvedGoal = await resolveMentions(goal);
+      planning.requestPlan(resolvedGoal, approvalMode);
+      setShowPlan(true);
+      setSidecarCollapsed(false);
+    },
+    [planning, resolveMentions],
+  );
+
+  const handleSidecarPlanRequestFromDocument = useCallback(
+    async (path: string, goal: string, approvalMode: "all" | "per_step") => {
+      const resolvedGoal = await resolveMentions(goal);
+      planning.requestPlanFromDocument(path, resolvedGoal, approvalMode);
+      setShowPlan(true);
+      setSidecarCollapsed(false);
+    },
+    [planning, resolveMentions],
   );
 
   const interrupt = useCallback(() => {
@@ -1016,6 +1036,9 @@ function App() {
           onDeleteMessage={onDeleteMessage}
           pendingInput={sidecarPendingInput}
           onPendingInputConsumed={() => setSidecarPendingInput("")}
+          activeFile={fileManager.activeFile}
+          onPlanRequest={handleSidecarPlanRequest}
+          onPlanRequestFromDocument={handleSidecarPlanRequestFromDocument}
         />
       </div>
     </div>
