@@ -1,6 +1,6 @@
 /* ── Dark theme (explicit, matches :root defaults in base.css) ─────────────── */
 [data-theme="dark"] {
-  --bg-app: #101316;
+  --bg-app: #131313;
   --bg: #181818;
   --bg-raised: #202020;
   --panel-shadow:

@@ -9,7 +9,7 @@
 
 .app-header {
   height: var(--header-h);
-  background: var(--bg-app);
+  /*background: var(--bg-app);*/
   display: flex;
   align-items: center;
   padding: 0 12px;
@@ -47,9 +47,9 @@
   flex: 1;
   overflow: hidden;
   margin-block-start: 2px;
-  margin-block-end: 4px;
+  margin-block-end: 8px;
   margin-inline: 8px;
-  border-radius: 12px;
+  border-radius: 14px;
   box-shadow: var(--panel-shadow);
 }
 
@@ -65,7 +65,7 @@
 /* ── Status bar ──────────────────────────────────────────────────────── */
 .status-bar {
   height: var(--statusbar-h);
-  background: var(--bg-app);
+  background: var(--bg);
   display: flex;
   align-items: center;
   padding: 0 12px;

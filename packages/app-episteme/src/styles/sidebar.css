@@ -77,8 +77,8 @@
 /* ── File tree tabs ──────────────────────────────────────────────────── */
 .file-tree-tabs {
   display: flex;
-  align-items: center;
   border-bottom: 1px solid var(--border);
+  align-items: center;
   height: var(--header-h);
   padding: 0 4px;
   gap: 0;
@@ -92,17 +92,17 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition:
+  /*background: none;*/
+  /*border: none;*/
+  /*border-bottom: 2px solid transparent;*/
+  /*cursor: pointer;*/
+  /*transition:
     color 0.1s,
-    border-color 0.1s;
+    border-color 0.1s;*/
 }
-.file-tree-tab:hover {
+/*.file-tree-tab:hover {
   color: var(--text);
-}
+}*/
 .file-tree-tab.active {
   color: var(--text);
   border-bottom-color: var(--accent);
