@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { marked } from "marked";
+import { useEffect, useRef, useState } from "react";
 import {
   X, Play, Pause, SkipForward, RotateCcw, Ban,
   Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen,
@@ -8,6 +7,7 @@ import {
 } from "lucide-react";
 import type { EpistemePlan, EpistemePlanStep, EpistemePlanStepType, PlanStepDraft, PlanApprovalMode } from "../planning/types.ts";
 import { PlanModeOptions } from "./PlanModeOptions.tsx";
+import { MarkdownView } from "./MarkdownView.tsx";
 
 // ── Icons per step type ───────────────────────────────────────────────────────
 
@@ -495,12 +495,6 @@ export function PlanPanel({
     prevStepsLenRef.current = len;
   }, [plan?.steps.length, addingStep]);
 
-  const goalHtml = useMemo(() => {
-    if (!plan) return "";
-    const result = marked.parse(plan.goal);
-    return typeof result === "string" ? result : "";
-  }, [plan?.goal]);
-
   const currentStepId = plan?.steps.find(
     s => s.state === "running" || s.state === "awaiting_approval",
   )?.id;
@@ -650,10 +644,7 @@ export function PlanPanel({
         {plan && (
           <>
             <div className="plan-goal">
-              <div
-                className="plan-goal-text"
-                dangerouslySetInnerHTML={{ __html: goalHtml }}
-              />
+              <MarkdownView content={plan.goal} className="sidecar-msg-markdown" />
               <span className={`plan-state-badge plan-state-badge--${plan.state}`}>
                 {PLAN_STATE_LABELS[plan.state] ?? plan.state}
               </span>

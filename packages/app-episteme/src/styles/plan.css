@@ -222,28 +222,6 @@
   border-bottom: 1px solid var(--border);
 }
 
-.plan-goal-text {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  line-height: 1.4;
-}
-.plan-goal-text p {
-  margin: 0 0 4px;
-}
-.plan-goal-text p:last-child {
-  margin-bottom: 0;
-}
-.plan-goal-text strong { font-weight: 700; }
-.plan-goal-text em { font-style: italic; }
-.plan-goal-text code {
-  font-size: 11px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 0 3px;
-}
-
 .plan-state-badge {
   display: inline-flex;
   align-items: center;
