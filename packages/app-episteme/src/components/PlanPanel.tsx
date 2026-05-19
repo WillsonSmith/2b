@@ -7,6 +7,7 @@ import {
   ClipboardList, PencilLine, Check,
 } from "lucide-react";
 import type { EpistemePlan, EpistemePlanStep, EpistemePlanStepType, PlanStepDraft, PlanApprovalMode } from "../planning/types.ts";
+import { PlanModeOptions } from "./PlanModeOptions.tsx";
 
 // ── Icons per step type ───────────────────────────────────────────────────────
 
@@ -367,7 +368,7 @@ interface PlanRequestFormProps {
 
 function PlanRequestForm({ activeFile, followingUp, onClearFollowup, onRequest, onRequestFromDocument, seedGoal, onSeedConsumed }: PlanRequestFormProps) {
   const [goal, setGoal] = useState(seedGoal ?? "");
-  const [approvalMode, setApprovalMode] = useState<PlanApprovalMode>("all");
+  const [approvalMode, setApprovalMode] = useState<PlanApprovalMode>("per_step");
   const [useDocument, setUseDocument] = useState(false);
 
   useEffect(() => {
@@ -405,38 +406,16 @@ function PlanRequestForm({ activeFile, followingUp, onClearFollowup, onRequest, 
         onChange={e => setGoal(e.target.value)}
         onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSubmit(e); }}
       />
-      <div className="plan-request-options">
-        <label className="plan-request-label">
-          <input
-            type="radio"
-            name="approvalMode"
-            value="all"
-            checked={approvalMode === "all"}
-            onChange={() => setApprovalMode("all")}
-          />
-          <span>Approve all at once</span>
-        </label>
-        <label className="plan-request-label">
-          <input
-            type="radio"
-            name="approvalMode"
-            value="per_step"
-            checked={approvalMode === "per_step"}
-            onChange={() => setApprovalMode("per_step")}
-          />
-          <span>Approve step-by-step</span>
-        </label>
-      </div>
-      {activeFile && (
-        <label className="plan-request-label">
-          <input
-            type="checkbox"
-            checked={useDocument}
-            onChange={e => setUseDocument(e.target.checked)}
-          />
-          <span>Plan from current document</span>
-        </label>
-      )}
+      <PlanModeOptions
+        approvalMode={approvalMode}
+        onApprovalModeChange={setApprovalMode}
+        useDocument={useDocument}
+        onUseDocumentChange={setUseDocument}
+        activeFile={activeFile}
+        radioGroupName="approvalMode"
+        wrapperClassName="plan-request-options"
+        labelClassName="plan-request-label"
+      />
       <button className="plan-btn plan-btn--primary plan-btn--full" type="submit" disabled={!goal.trim()}>
         <ClipboardList size={14} /> {followingUp ? "Create follow-up plan" : "Create plan"}
       </button>
