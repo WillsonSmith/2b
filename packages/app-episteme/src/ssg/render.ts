@@ -132,7 +132,9 @@ export function pageShell(opts: {
   navExtra?: string;
   body: string;
   hasMermaid?: boolean;
+  pagefindBody?: boolean;
 }): string {
+  const articleAttrs = opts.pagefindBody ? ` data-pagefind-body` : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -141,18 +143,24 @@ export function pageShell(opts: {
 <title>${opts.title}</title>
 ${THEME_INIT_SCRIPT}
 ${opts.hasMermaid ? MERMAID_SCRIPT : ""}
+<link href="${opts.root}pagefind/pagefind-component-ui.css" rel="stylesheet">
+<script src="${opts.root}pagefind/pagefind-component-ui.js" type="module"></script>
 <style>${CSS}</style>
 </head>
 <body>
-<nav>
+<nav data-pagefind-ignore>
   <div class="nav-links">
     <a href="${opts.root}index.html">← Home</a> · <a href="${opts.root}graph.html">Graph</a>${opts.navExtra ? ` · ${opts.navExtra}` : ""}
   </div>
-  <button id="ssg-theme-btn" onclick="ssgToggleTheme()" title="Toggle light/dark mode">☀</button>
+  <div class="nav-actions">
+    <pagefind-modal-trigger compact></pagefind-modal-trigger>
+    <button id="ssg-theme-btn" onclick="ssgToggleTheme()" title="Toggle light/dark mode">☀</button>
+  </div>
 </nav>
-<article>
+<article${articleAttrs}>
 ${opts.body}
 </article>
+<pagefind-modal reset-on-close></pagefind-modal>
 ${THEME_TOGGLE_SCRIPT}
 </body>
 </html>`;
@@ -162,11 +170,18 @@ export function contentPage(file: FileInfo, root: string): string {
   const tagsHtml =
     file.tags.length > 0
       ? `<ul class="tags">${file.tags
-          .map((t) => `<li><a href="${root}tags/${slugify(t)}.html">${escapeHtml(t)}</a></li>`)
+          .map(
+            (t) =>
+              `<li><a href="${root}tags/${slugify(t)}.html" data-pagefind-filter="tag">${escapeHtml(t)}</a></li>`,
+          )
           .join("")}</ul>`
       : "";
-  const dateHtml = file.date ? `<time>${escapeHtml(file.date)}</time>` : "";
-  const summaryHtml = file.summary ? `<p class="summary">${escapeHtml(file.summary)}</p>` : "";
+  const dateHtml = file.date
+    ? `<time data-pagefind-meta="date">${escapeHtml(file.date)}</time>`
+    : "";
+  const summaryHtml = file.summary
+    ? `<p class="summary" data-pagefind-meta="summary">${escapeHtml(file.summary)}</p>`
+    : "";
 
   const header = `<header>
 <h1>${escapeHtml(file.title)}</h1>
@@ -183,6 +198,7 @@ ${summaryHtml}
       .join(", ") || undefined,
     body: `${header}\n${file.html}`,
     hasMermaid: file.hasMermaid,
+    pagefindBody: true,
   });
 }
 

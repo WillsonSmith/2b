@@ -151,8 +151,10 @@ window.ssgReRenderDiagrams = async function(isDark) {
 // Runs synchronously before first paint — applies saved theme to avoid flash
 export const THEME_INIT_SCRIPT = `<script>
 (function(){
-  var t = localStorage.getItem('ssg-theme');
-  if (t) document.documentElement.dataset.theme = t;
+  var t = localStorage.getItem('ssg-theme') ||
+    (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
+  document.documentElement.dataset.theme = t;
+  document.documentElement.dataset.pfTheme = t;
 })();
 </script>`;
 
@@ -164,6 +166,7 @@ function ssgToggleTheme() {
     (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
   var next = current === 'dark' ? 'light' : 'dark';
   html.dataset.theme = next;
+  html.dataset.pfTheme = next;
   localStorage.setItem('ssg-theme', next);
   document.getElementById('ssg-theme-btn').textContent = next === 'dark' ? '☀' : '☽';
   if (typeof window.ssgReRenderDiagrams === 'function') {
@@ -221,8 +224,9 @@ nav{display:flex;align-items:center;max-width:var(--max-w);margin:0 auto 2rem}
 .nav-links{display:flex;align-items:center;gap:0.5rem;font-size:var(--md-scale-sm)}
 .nav-links a{color:var(--accent);text-decoration:none}
 .nav-links a:hover{text-decoration:underline}
+.nav-actions{margin-left:auto;display:flex;align-items:center;gap:0.5rem}
 #ssg-theme-btn{
-  margin-left:auto;background:none;cursor:pointer;
+  background:none;cursor:pointer;
   border:1px solid var(--border);border-radius:var(--md-radius-sm);
   color:var(--text-muted);padding:0.2rem 0.5rem;font-size:var(--md-scale-sm);
   line-height:1
