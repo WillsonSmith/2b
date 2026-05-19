@@ -14,6 +14,25 @@ interface KnowledgeGraphProps {
   isLoading: boolean;
 }
 
+interface GraphPalette {
+  bg: string;
+  text: string;
+  node: string;
+  link: string;
+}
+
+function readPalette(): GraphPalette {
+  const styles = getComputedStyle(document.documentElement);
+  const read = (name: string, fallback: string) =>
+    styles.getPropertyValue(name).trim() || fallback;
+  return {
+    bg: read("--bg", "#181818"),
+    text: read("--text", "#d4d4d4"),
+    node: read("--graph-node-file", "#5588cc"),
+    link: read("--graph-link-wiki", "#55cc88"),
+  };
+}
+
 export function KnowledgeGraph({
   onRefresh,
   onReindex,
@@ -28,6 +47,11 @@ export function KnowledgeGraph({
   const graphRef = useRef<any>(null);
   const onNodeClickRef = useRef(onNodeClick);
   onNodeClickRef.current = onNodeClick;
+  const paletteRef = useRef<GraphPalette>(
+    typeof window === "undefined"
+      ? { bg: "#181818", text: "#d4d4d4", node: "#5588cc", link: "#55cc88" }
+      : readPalette()
+  );
 
   const isEmpty = !graphData || (graphData.nodes.length === 0 && graphData.links.length === 0);
 
@@ -45,22 +69,22 @@ export function KnowledgeGraph({
 
       const el = containerRef.current;
       const g = ForceGraph()(el)
-        .backgroundColor("#1a1a1a")
+        .backgroundColor(paletteRef.current.bg)
         .nodeRelSize(5)
-        .nodeColor((node: GraphNode) => node.color ?? "#5588cc")
+        .nodeColor((node: GraphNode) => node.color ?? paletteRef.current.node)
         .nodeLabel((node: GraphNode) => node.label ?? "")
-        .linkColor((link: GraphLink) => link.color ?? "#555555")
+        .linkColor((link: GraphLink) => link.color ?? paletteRef.current.link)
         .linkWidth(2)
         .linkDirectionalParticles(2)
         .linkDirectionalParticleWidth(2)
-        .linkDirectionalParticleColor((link: GraphLink) => link.color ?? "#555555")
+        .linkDirectionalParticleColor((link: GraphLink) => link.color ?? paletteRef.current.link)
         .nodeCanvasObjectMode(() => "after")
         .nodeCanvasObject((node: GraphNode & { x?: number; y?: number }, ctx: CanvasRenderingContext2D, globalScale: number) => {
           if (node.x == null || node.y == null) return;
           const label = (node.label ?? "").slice(0, 30);
           const fontSize = Math.max(8, 12 / globalScale);
           ctx.font = `${fontSize}px sans-serif`;
-          ctx.fillStyle = "#d4d4d4";
+          ctx.fillStyle = paletteRef.current.text;
           ctx.textAlign = "center";
           ctx.textBaseline = "top";
           ctx.fillText(label, node.x, node.y + 7);
@@ -71,6 +95,11 @@ export function KnowledgeGraph({
         .width(el.clientWidth || 380)
         .height(el.clientHeight || 480)
         .graphData(graphData ?? { nodes: [], links: [] });
+
+      g.d3Force("link")?.distance(70);
+      g.d3Force("charge")?.strength(-180);
+      g.d3VelocityDecay(0.3);
+      g.d3ReheatSimulation();
 
       graphRef.current = g;
     })();
@@ -92,6 +121,17 @@ export function KnowledgeGraph({
       graphRef.current.graphData(graphData);
     }
   }, [graphData, isEmpty]);
+
+  // Refresh palette + canvas background when the active theme changes
+  useEffect(() => {
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => {
+      paletteRef.current = readPalette();
+      graphRef.current?.backgroundColor(paletteRef.current.bg);
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
 
   // Resize the canvas when the container dimensions change (e.g. panel drag-resize)
   useEffect(() => {
@@ -116,8 +156,8 @@ export function KnowledgeGraph({
     <div className="knowledge-graph-panel">
       <div className="knowledge-graph-header">
         <div className="knowledge-graph-legend">
-          <span className="kg-legend-dot" style={{ background: "#5588cc" }} /> Files
-          <span className="kg-legend-dot" style={{ background: "#55cc88", marginLeft: 8, borderRadius: 0, width: 16, height: 2, display: "inline-block", verticalAlign: "middle" }} /> Wikilinks
+          <span className="kg-legend-dot kg-legend-dot--node" /> Files
+          <span className="kg-legend-dot kg-legend-dot--link" /> Wikilinks
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <button className="header-icon-btn" onClick={onReindex} disabled={isLoading} title="Re-index workspace files"><FolderSync size={13} /></button>

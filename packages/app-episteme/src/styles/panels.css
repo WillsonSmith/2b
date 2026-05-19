@@ -690,6 +690,17 @@
   border-radius: 50%;
   margin-right: 3px;
 }
+.kg-legend-dot--node {
+  background: var(--graph-node-file);
+}
+.kg-legend-dot--link {
+  background: var(--graph-link-wiki);
+  margin-left: 8px;
+  border-radius: 0;
+  width: 16px;
+  height: 2px;
+  vertical-align: middle;
+}
 .knowledge-graph-btn {
   display: flex;
   align-items: center;

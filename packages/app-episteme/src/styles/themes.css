@@ -38,6 +38,8 @@
   --find-match-outline: rgba(255, 200, 70, 0.95);
   --hover-tint: rgba(255, 255, 255, 0.025);
   --hover-tint-sm: rgba(255, 255, 255, 0.02);
+  --graph-node-file: #5588cc;
+  --graph-link-wiki: #55cc88;
 }
 
 /* ── Light theme ───────────────────────────────────────────────────────────── */
@@ -80,4 +82,6 @@
   --find-match-outline: rgba(180, 130, 0, 0.9);
   --hover-tint: rgba(0, 0, 0, 0.025);
   --hover-tint-sm: rgba(0, 0, 0, 0.02);
+  --graph-node-file: #3366bb;
+  --graph-link-wiki: #3a8a55;
 }
