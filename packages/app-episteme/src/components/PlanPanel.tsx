@@ -564,22 +564,32 @@ export function PlanPanel({
 
       case "executing":
         return (
-          <button
-            className="plan-btn plan-btn--ghost"
-            onClick={() => { setPausing(true); onPause(); }}
-            disabled={pausing}
-          >
-            {pausing
-              ? <><Loader2 size={13} className="plan-step-icon-spin" /> Pausing…</>
-              : <><Pause size={13} /> Pause after step</>}
-          </button>
+          <>
+            <button
+              className="plan-btn plan-btn--ghost"
+              onClick={() => { setPausing(true); onPause(); }}
+              disabled={pausing}
+            >
+              {pausing
+                ? <><Loader2 size={13} className="plan-step-icon-spin" /> Pausing…</>
+                : <><Pause size={13} /> Pause after step</>}
+            </button>
+            <button className="plan-btn plan-btn--ghost" onClick={() => { setCancelling(true); onCancel(); }}>
+              <Ban size={13} /> Cancel
+            </button>
+          </>
         );
 
       case "awaiting_step":
         return (
-          <button className="plan-btn plan-btn--ghost plan-btn--sm" onClick={onResumeAuto}>
-            Run all remaining
-          </button>
+          <>
+            <button className="plan-btn plan-btn--ghost plan-btn--sm" onClick={onResumeAuto}>
+              Run all remaining
+            </button>
+            <button className="plan-btn plan-btn--ghost" onClick={() => { setCancelling(true); onCancel(); }}>
+              <Ban size={13} /> Cancel
+            </button>
+          </>
         );
 
       case "paused":
