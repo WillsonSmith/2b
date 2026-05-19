@@ -238,14 +238,112 @@
 .sidecar-tool-row.calling .sidecar-tool-status {
   color: var(--accent);
 }
-
-/* Message action buttons (Execute / Continue) */
-.sidecar-msg-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-  flex-wrap: wrap;
+.sidecar-tool-row.error .sidecar-tool-status,
+.sidecar-tool-row .icon-error {
+  color: var(--red);
 }
+
+/* Expandable details for completed/failed tool rows */
+details.sidecar-tool-row {
+  display: block;
+  padding: 0;
+}
+details.sidecar-tool-row > .sidecar-tool-summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  list-style: none;
+  cursor: pointer;
+}
+details.sidecar-tool-row > .sidecar-tool-summary::-webkit-details-marker {
+  display: none;
+}
+details.sidecar-tool-row[open] {
+  opacity: 1;
+}
+.sidecar-tool-detail {
+  padding: 6px 10px 6px 22px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sidecar-tool-error-text {
+  color: var(--red);
+}
+
+/* Plan step rows (live indicators in the sidecar) */
+.sidecar-plan-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: var(--bg-highlight);
+  border: 1px solid var(--border);
+}
+.sidecar-plan-step--complete {
+  opacity: 0.7;
+}
+details.sidecar-plan-step {
+  display: block;
+  padding: 0;
+}
+details.sidecar-plan-step > .sidecar-plan-step-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  list-style: none;
+  cursor: pointer;
+}
+details.sidecar-plan-step > .sidecar-plan-step-summary::-webkit-details-marker {
+  display: none;
+}
+.sidecar-plan-step-state {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+.sidecar-plan-step-type-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim);
+}
+.sidecar-plan-step-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidecar-plan-step-type {
+  margin-left: auto;
+  font-size: 10px;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+.sidecar-plan-step-done { color: var(--green); }
+.sidecar-plan-step-fail { color: var(--red); }
+.sidecar-plan-step-detail {
+  padding: 6px 10px 6px 22px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sidecar-plan-step-error {
+  color: var(--red);
+}
+
+/* Notification action button (Send to Plan / View) */
 .sidecar-action-btn {
   padding: 4px 10px;
   border-radius: 4px;
@@ -261,12 +359,56 @@
   background: var(--bg-active);
   color: var(--text);
 }
-.sidecar-action-btn.primary {
-  color: var(--accent);
-  border-color: var(--accent-soft);
+
+/* Assistant message actions dropdown */
+.sidecar-msg-menu {
+  position: relative;
 }
-.sidecar-action-btn.primary:hover {
-  background: var(--accent-soft);
+.sidecar-menu-trigger {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  padding: 2px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.sidecar-msg:hover .sidecar-menu-trigger,
+.sidecar-msg-menu:has(.sidecar-msg-dropdown) .sidecar-menu-trigger {
+  opacity: 1;
+}
+.sidecar-menu-trigger:hover {
+  color: var(--text);
+  background: var(--bg-highlight);
+}
+.sidecar-msg-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 50;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  min-width: 130px;
+  overflow: hidden;
+}
+.sidecar-dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 7px 12px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.sidecar-dropdown-item:hover {
+  background: var(--bg-highlight);
 }
 
 /* Input area wrapper (contains quick-actions panel + input row) */
@@ -314,6 +456,24 @@
 .sidecar-quick-btn:hover {
   background: var(--bg-active);
   color: var(--text);
+}
+
+/* Plan mode options (radios + checkbox above textarea) */
+.sidecar-plan-mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+.sidecar-plan-mode-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
 }
 
 /* Quick Actions toggle button (⚡) */

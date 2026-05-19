@@ -4,6 +4,7 @@ import { Editor } from "./components/editor/Editor.tsx";
 import { FileTree } from "./components/FileTree.tsx";
 import { TocPanel } from "./components/TocPanel.tsx";
 import { AISidecar, type SidecarMessage } from "./components/AISidecar.tsx";
+import type { EpistemePlanStepType } from "./planning/types.ts";
 import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { ResearchPanel } from "./components/ResearchPanel.tsx";
 import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
@@ -95,9 +96,13 @@ function App() {
     total: number;
   } | null>(null);
   const [workspaceRoot, setWorkspaceRoot] = useState("");
+  const [sidecarPendingInput, setSidecarPendingInput] = useState("");
 
   const ws = useWebSocket();
   const planning = usePlanning(ws.wsRef, ws.subscribe);
+
+  const planRef = useRef(planning.plan);
+  useEffect(() => { planRef.current = planning.plan; }, [planning.plan]);
 
   // Auto-open the plan panel when a plan is created or already active on connect
   useEffect(() => {
@@ -209,10 +214,47 @@ function App() {
                 .then((r) => r.json())
                 .then(
                   (
-                    rows: Array<{ id: number; role: "user" | "assistant"; text: string }>,
+                    rows: Array<
+                      | { id: number; role: "user" | "assistant"; text: string }
+                      | {
+                          id: number;
+                          role: "tool";
+                          name: string;
+                          status: "done" | "error";
+                          error?: string;
+                        }
+                      | {
+                          id: number;
+                          role: "plan_step";
+                          planId: string;
+                          stepId: string;
+                          stepTitle: string;
+                          stepType: string;
+                          state: "complete" | "failed";
+                          summary?: string;
+                          error?: string;
+                        }
+                    >,
                   ) => {
                     setMessages(
-                      rows.map((r) => ({ role: r.role, text: r.text, id: r.id })),
+                      rows.map((r): SidecarMessage => {
+                        if (r.role === "tool") {
+                          return { role: "tool", name: r.name, status: r.status, error: r.error };
+                        }
+                        if (r.role === "plan_step") {
+                          return {
+                            role: "plan_step",
+                            planId: r.planId,
+                            stepId: r.stepId,
+                            stepTitle: r.stepTitle,
+                            stepType: r.stepType as EpistemePlanStepType,
+                            state: r.state,
+                            summary: r.summary,
+                            error: r.error,
+                          };
+                        }
+                        return { role: r.role, text: r.text, id: r.id };
+                      }),
                     );
                   },
                 )
@@ -254,44 +296,79 @@ function App() {
 
   // ── AI sidecar wrappers ─────────────────────────────────────────────────────
 
+  const resolveMentions = useCallback(async (text: string): Promise<string> => {
+    const mentionPattern = /@([\w\-./ ]+\.md)/g;
+    const mentions = [...text.matchAll(mentionPattern)].map((m) => m[1].trim());
+    if (mentions.length === 0) return text;
+
+    const fetched = await Promise.all(
+      mentions.map((path) =>
+        fetch(`/api/file-content?path=${encodeURIComponent(path)}`)
+          .then((r) => r.json() as Promise<{ content?: string }>)
+          .then((d) => (d.content != null ? { path, content: d.content } : null))
+          .catch(() => null),
+      ),
+    );
+    const blocks = fetched
+      .filter((f): f is { path: string; content: string } => f !== null)
+      .map((f) => `[File: ${f.path}]\n\`\`\`\n${f.content}\n\`\`\``)
+      .join("\n\n");
+    return blocks ? `${blocks}\n\n---\n${text}` : text;
+  }, []);
+
   const sendToAgent = useCallback(
     async (text: string) => {
       if (ws.agentState === "disconnected") return;
-
-      const mentionPattern = /@([\w\-./ ]+\.md)/g;
-      const mentions = [...text.matchAll(mentionPattern)].map((m) => m[1].trim());
-
-      let fullText = text;
-      if (mentions.length > 0) {
-        const fetched = await Promise.all(
-          mentions.map((path) =>
-            fetch(`/api/file-content?path=${encodeURIComponent(path)}`)
-              .then((r) => r.json() as Promise<{ content?: string }>)
-              .then((d) => (d.content != null ? { path, content: d.content } : null))
-              .catch(() => null),
-          ),
-        );
-        const blocks = fetched
-          .filter((f): f is { path: string; content: string } => f !== null)
-          .map((f) => `[File: ${f.path}]\n\`\`\`\n${f.content}\n\`\`\``)
-          .join("\n\n");
-        if (blocks) fullText = `${blocks}\n\n---\n${text}`;
-      }
-
+      const fullText = await resolveMentions(text);
       ws.sendToAgent(fullText);
       setMessages((prev) => [...prev, { role: "user", text }]);
     },
-    [ws],
+    [ws, resolveMentions],
+  );
+
+  const handleSidecarPlanRequest = useCallback(
+    async (goal: string, approvalMode: "all" | "per_step") => {
+      const resolvedGoal = await resolveMentions(goal);
+      planning.requestPlan(resolvedGoal, approvalMode);
+      setShowPlan(true);
+      setSidecarCollapsed(false);
+    },
+    [planning, resolveMentions],
+  );
+
+  const handleSidecarPlanRequestFromDocument = useCallback(
+    async (path: string, goal: string, approvalMode: "all" | "per_step") => {
+      const resolvedGoal = await resolveMentions(goal);
+      planning.requestPlanFromDocument(path, resolvedGoal, approvalMode);
+      setShowPlan(true);
+      setSidecarCollapsed(false);
+    },
+    [planning, resolveMentions],
   );
 
   const interrupt = useCallback(() => {
     ws.interrupt();
   }, [ws]);
 
-  const onContinueFrom = useCallback((afterIndex, text) => {
-    setMessages((prev) => prev.slice(0, afterIndex + 1));
-    sendToAgent(text);
-  }, [sendToAgent]);
+  const handleRegenerate = useCallback((assistantIndex: number) => {
+    const before = messages.slice(0, assistantIndex);
+    let lastUserAt = -1;
+    for (let i = before.length - 1; i >= 0; i--) {
+      if (before[i]!.role === "user") { lastUserAt = i; break; }
+    }
+    if (lastUserAt === -1) return;
+    const userMsg = before[lastUserAt];
+    if (!userMsg || userMsg.role !== "user") return;
+    setMessages(before.slice(0, lastUserAt));
+    sendToAgent(userMsg.text);
+  }, [messages, sendToAgent]);
+
+  const [planSeedGoal, setPlanSeedGoal] = useState("");
+
+  const handleSendToPlan = useCallback((text: string) => {
+    setPlanSeedGoal(text);
+    setShowPlan(true);
+  }, []);
 
   const onDeleteMessage = useCallback((index: number) => {
     setMessages((prev) => {
@@ -322,16 +399,10 @@ function App() {
     ],
   );
 
-  const handleAskAboutSelection = useCallback(
-    (text: string) => {
-      if (!ws.wsRef.current) return;
-      const msg = `[Selected text]\n\n${text}\n\n---\nWhat can you tell me about this?`;
-      ws.wsRef.current.send(JSON.stringify({ type: "send", text: msg }));
-      setMessages((prev) => [...prev, { role: "user", text: msg }]);
-      setSidecarCollapsed(false);
-    },
-    [ws.wsRef],
-  );
+  const handleSendToChat = useCallback((selectionRef: string) => {
+    setSidecarPendingInput(selectionRef);
+    setSidecarCollapsed(false);
+  }, []);
 
   const handleExplainCode = useCallback(
     (code: string, language: string) => {
@@ -420,7 +491,12 @@ function App() {
             m.status === "calling"
           ) {
             const next = [...prev];
-            next[i] = { role: "tool", name: msg.name, status: "done" };
+            next[i] = {
+              role: "tool",
+              name: msg.name,
+              status: msg.error ? "error" : "done",
+              error: msg.error,
+            };
             return next;
           }
         }
@@ -506,6 +582,40 @@ function App() {
       ]);
       setSidecarCollapsed(false);
     });
+    const unsubStepStarted = ws.subscribe("plan_step_started", (msg) => {
+      const plan = planRef.current;
+      const step = plan?.steps.find((s) => s.id === msg.stepId);
+      if (!step) return;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "plan_step",
+          planId: msg.planId,
+          stepId: msg.stepId,
+          stepTitle: step.title,
+          stepType: step.type,
+          state: "running",
+        },
+      ]);
+    });
+    const unsubStepCompleted = ws.subscribe("plan_step_completed", (msg) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.role === "plan_step" && m.stepId === msg.stepId
+            ? { ...m, state: "complete", summary: msg.summary }
+            : m,
+        ),
+      );
+    });
+    const unsubStepFailed = ws.subscribe("plan_step_failed", (msg) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.role === "plan_step" && m.stepId === msg.stepId
+            ? { ...m, state: "failed", error: msg.error }
+            : m,
+        ),
+      );
+    });
     return () => {
       unsubSpeak();
       unsubToolCall();
@@ -519,6 +629,9 @@ function App() {
       unsubFileCreated();
       unsubIndex();
       unsubContradictionNotif();
+      unsubStepStarted();
+      unsubStepCompleted();
+      unsubStepFailed();
     };
   }, [
     ws.subscribe,
@@ -742,8 +855,6 @@ function App() {
             ghostText={editorFeatures.ghostText}
             onGhostAccept={editorFeatures.handleGhostAccept}
             onGhostDismiss={editorFeatures.handleGhostDismiss}
-            onToneRequest={editorFeatures.handleToneRequest}
-            onSummarizeRequest={editorFeatures.handleSummarizeRequest}
             toneReplacement={editorFeatures.toneReplacement}
             summarizeResult={editorFeatures.summarizeResult}
             onToneApplied={() => editorFeatures.setToneReplacement(null)}
@@ -753,17 +864,19 @@ function App() {
             isGeneratingMetadata={editorFeatures.isGeneratingMetadata}
             metadataResult={editorFeatures.metadataResult}
             onMetadataApplied={() => editorFeatures.setMetadataResult(null)}
-            onTableRequest={editorFeatures.handleTableRequest}
             tableResult={editorFeatures.tableResult}
             onTableApplied={() => editorFeatures.setTableResult(null)}
             onDiagramRequest={editorFeatures.handleDiagramRequest}
             diagramResult={editorFeatures.diagramResult}
             onDiagramApplied={() => editorFeatures.setDiagramResult(null)}
+            onAIFillRequest={editorFeatures.handleAIFillRequest}
+            aiFillResult={editorFeatures.aiFillResult}
+            onAIFillApplied={() => editorFeatures.setAIFillResult(null)}
             onImagePaste={voice.handleImagePaste}
             onExplainCode={handleExplainCode}
             isRecording={voice.isRecording}
             onToggleRecording={voice.handleToggleRecording}
-            onAskAboutSelection={handleAskAboutSelection}
+            onSendToChat={handleSendToChat}
             onNavigate={fileManager.openFile}
             onCreateFile={fileManager.createFile}
             workspaceFiles={fileManager.workspaceFiles}
@@ -903,6 +1016,8 @@ function App() {
                 onResumeAuto={planning.resumeAuto}
                 onCancel={planning.cancelPlan}
                 onNewPlan={planning.resetPlan}
+                seedGoal={planSeedGoal}
+                onSeedConsumed={() => setPlanSeedGoal("")}
               />
             ),
           });
@@ -934,8 +1049,14 @@ function App() {
           onInterrupt={interrupt}
           onNavigate={fileManager.openFile}
           workspaceFiles={fileManager.workspaceFiles}
-          onContinueFrom={onContinueFrom}
+          onRegenerate={handleRegenerate}
+          onSendToPlan={handleSendToPlan}
           onDeleteMessage={onDeleteMessage}
+          pendingInput={sidecarPendingInput}
+          onPendingInputConsumed={() => setSidecarPendingInput("")}
+          activeFile={fileManager.activeFile}
+          onPlanRequest={handleSidecarPlanRequest}
+          onPlanRequestFromDocument={handleSidecarPlanRequestFromDocument}
         />
       </div>
     </div>

@@ -58,12 +58,28 @@ export interface IngestedPdfRow {
   ingestedAt: number;
 }
 
-export interface ChatMessageRow {
-  id: number;
-  role: "user" | "assistant";
-  text: string;
-  createdAt: number;
+export interface ChatToolEvent {
+  role: "tool";
+  name: string;
+  status: "done" | "error";
+  error?: string;
 }
+
+export interface ChatPlanStepEvent {
+  role: "plan_step";
+  planId: string;
+  stepId: string;
+  stepTitle: string;
+  stepType: string;
+  state: "complete" | "failed";
+  summary?: string;
+  error?: string;
+}
+
+export type ChatMessageRow =
+  | { id: number; role: "user" | "assistant"; text: string; createdAt: number }
+  | (ChatToolEvent & { id: number; createdAt: number })
+  | (ChatPlanStepEvent & { id: number; createdAt: number });
 
 export interface TocEntryRow {
   filePath: string;
@@ -119,6 +135,7 @@ interface ChatMessageRecord {
   id: number;
   role: string;
   text: string;
+  meta: string | null;
   created_at: number;
 }
 
@@ -129,7 +146,7 @@ interface TocEntryRecord {
   content_hash: string;
 }
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 /**
  * Structural data store for the Episteme workspace: files, link edges,
@@ -305,6 +322,7 @@ export class WorkspaceDb {
         id         INTEGER PRIMARY KEY AUTOINCREMENT,
         role       TEXT NOT NULL,
         text       TEXT NOT NULL,
+        meta       TEXT,
         created_at INTEGER NOT NULL
       )
     `);
@@ -360,6 +378,9 @@ export class WorkspaceDb {
     }
     if (previousVersion > 0 && previousVersion < 7) {
       try { this.db.run("ALTER TABLE ep_plans ADD COLUMN prior_context TEXT"); } catch {}
+    }
+    if (previousVersion > 0 && previousVersion < 8) {
+      try { this.db.run("ALTER TABLE chat_messages ADD COLUMN meta TEXT"); } catch {}
     }
     if (previousVersion > 0 && previousVersion < SCHEMA_VERSION) {
       this.db.run("UPDATE ws_schema_version SET version = ?", [SCHEMA_VERSION]);
@@ -462,7 +483,7 @@ export class WorkspaceDb {
     `);
 
     this.stmtAppendChatMessage = this.db.prepare(
-      "INSERT INTO chat_messages (role, text, created_at) VALUES (?, ?, ?)",
+      "INSERT INTO chat_messages (role, text, meta, created_at) VALUES (?, ?, ?, ?)",
     );
     this.stmtListChatMessages = this.db.prepare(
       "SELECT * FROM (SELECT * FROM chat_messages ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
@@ -684,7 +705,11 @@ export class WorkspaceDb {
   // ── chat history ─────────────────────────────────────────────────────────
 
   appendChatMessage(role: "user" | "assistant", text: string): void {
-    this.stmtAppendChatMessage.run(role, text, Date.now());
+    this.stmtAppendChatMessage.run(role, text, null, Date.now());
+  }
+
+  appendChatEvent(event: ChatToolEvent | ChatPlanStepEvent): void {
+    this.stmtAppendChatMessage.run(event.role, "", JSON.stringify(event), Date.now());
   }
 
   deleteChatMessage(id: number): void {
@@ -693,12 +718,18 @@ export class WorkspaceDb {
 
   listChatMessages(limit: number = 200): ChatMessageRow[] {
     const rows = this.stmtListChatMessages.all(limit) as ChatMessageRecord[];
-    return rows.map((r) => ({
-      id: r.id,
-      role: r.role as "user" | "assistant",
-      text: r.text,
-      createdAt: r.created_at,
-    }));
+    return rows.map((r) => {
+      if (r.meta) {
+        const parsed = JSON.parse(r.meta) as ChatToolEvent | ChatPlanStepEvent;
+        return { ...parsed, id: r.id, createdAt: r.created_at };
+      }
+      return {
+        id: r.id,
+        role: r.role as "user" | "assistant",
+        text: r.text,
+        createdAt: r.created_at,
+      };
+    });
   }
 
   // ── TOC entries ──────────────────────────────────────────────────────────

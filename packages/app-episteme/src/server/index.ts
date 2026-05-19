@@ -27,6 +27,7 @@ import index from "../index.html";
 import type { WsContext } from "./context.ts";
 import { handleFile } from "./handlers/file.ts";
 import { handleEditor } from "./handlers/editor.ts";
+import { handleAIFill } from "./handlers/aiFill.ts";
 import { handleResearch } from "./handlers/research.ts";
 import { handleMedia } from "./handlers/media.ts";
 import { handlePlan } from "./handlers/plan.ts";
@@ -108,6 +109,9 @@ async function dispatch(
     case "lint_request":
       return handleEditor(msg, ctx, ws);
 
+    case "ai_fill_request":
+      return handleAIFill(msg, ctx, ws);
+
     case "ingest_url":
     case "ingest_pdf":
     case "search_request":
@@ -155,14 +159,20 @@ export async function startEpistemServer(
 ): Promise<void> {
   const {
     agent, editorContext, workspace, styleGuide, research,
-    citation, diagram, contradiction, planning: planningPlugin, workspaceDb,
+    citation, diagram, aiFill, contradiction, planning: planningPlugin, workspaceDb,
   } = bundle;
   const absRoot = resolve(workspaceRoot);
 
   await agent.start();
 
   bundle.shortTermMemory.seed(
-    bundle.workspaceDb.listChatMessages(200).map((r) => ({ role: r.role, content: r.text })),
+    bundle.workspaceDb
+      .listChatMessages(200)
+      .flatMap((r) =>
+        r.role === "user" || r.role === "assistant"
+          ? [{ role: r.role, content: r.text }]
+          : [],
+      ),
   );
 
   const autocomplete = new AutocompleteRunner(config);
@@ -215,6 +225,7 @@ export async function startEpistemServer(
     research,
     citation,
     diagram,
+    aiFill,
     styleGuide,
     contradiction,
     planning,
@@ -267,9 +278,15 @@ export async function startEpistemServer(
   const FILE_MUTATING_TOOLS = new Set([
     "write_file", "append_file", "patch_file", "move_file", "delete_file", "create_file",
   ]);
-  agent.on("tool_result", (name) => {
-    broadcast({ type: "tool_result", name });
-    if (FILE_MUTATING_TOOLS.has(name)) {
+  agent.on("tool_result", (name: string, error?: string) => {
+    broadcast({ type: "tool_result", name, error });
+    workspaceDb.appendChatEvent({
+      role: "tool",
+      name,
+      status: error ? "error" : "done",
+      error,
+    });
+    if (!error && FILE_MUTATING_TOOLS.has(name)) {
       scheduleWorkspaceRefresh();
     }
   });

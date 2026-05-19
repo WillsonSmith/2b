@@ -79,6 +79,7 @@ export function useWebSocket(): UseWebSocketReturn {
       case "toc_result":
       case "toc_stored":
       case "diagram_result":
+      case "ai_fill_result":
       case "table_result":
       case "search_result":
       case "detect_gaps_result":

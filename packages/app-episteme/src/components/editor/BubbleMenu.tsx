@@ -1,23 +1,30 @@
 import { BubbleMenu as TiptapBubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/react";
-import type { Tone } from "../../features/tone.ts";
+
+function getLineRange(
+  doc: Editor["state"]["doc"],
+  from: number,
+  to: number,
+): { start: number; end: number } {
+  const textBefore = doc.textBetween(0, from, "\n");
+  const startLine = textBefore.split("\n").length;
+  const textRange = doc.textBetween(from, to, "\n");
+  const lineCount = textRange.split("\n").length;
+  return { start: startLine, end: startLine + lineCount - 1 };
+}
 
 interface BubbleMenuProps {
   editor: Editor;
-  onToneRequest?: (text: string, tone: Tone, from: number, to: number) => void;
-  onSummarizeRequest?: (text: string, insertPos: number) => void;
-  onTableRequest?: (text: string, insertPos: number) => void;
-  onAskAboutSelection?: (text: string) => void;
   onOpenLinkPicker?: () => void;
+  onSendToChat?: (selectionRef: string) => void;
+  currentFilePath?: string;
 }
 
 export function EditorBubbleMenu({
   editor,
-  onToneRequest,
-  onSummarizeRequest,
-  onTableRequest,
-  onAskAboutSelection,
   onOpenLinkPicker,
+  onSendToChat,
+  currentFilePath,
 }: BubbleMenuProps) {
   const isLink = editor.isActive("link");
 
@@ -50,61 +57,24 @@ export function EditorBubbleMenu({
                 Unlink
               </button>
             )}
-            <div className="bubble-sep" />
           </>
         )}
-        {(["professional", "casual", "academic"] as Tone[]).map((tone) => (
-          <button
-            key={tone}
-            className="bubble-btn"
-            title={`Rewrite as ${tone}`}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              const { from, to } = editor.state.selection;
-              const text = editor.state.doc.textBetween(from, to, " ");
-              if (text) onToneRequest?.(text, tone, from, to);
-            }}
-          >
-            {tone.slice(0, 1).toUpperCase() + tone.slice(1)}
-          </button>
-        ))}
-        <div className="bubble-sep" />
-        <button
-          className="bubble-btn"
-          title="Summarize selection"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            const { from, to } = editor.state.selection;
-            const text = editor.state.doc.textBetween(from, to, "\n");
-            if (text) onSummarizeRequest?.(text, to);
-          }}
-        >
-          TL;DR
-        </button>
-        <div className="bubble-sep" />
-        <button
-          className="bubble-btn"
-          title="Convert to table"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            const { from, to } = editor.state.selection;
-            const text = editor.state.doc.textBetween(from, to, "\n");
-            if (text) onTableRequest?.(text, to);
-          }}
-        >
-          Table
-        </button>
-        {onAskAboutSelection && (
+        {onSendToChat && (
           <>
             <div className="bubble-sep" />
             <button
               className="bubble-btn"
-              title="Ask AI about this selection"
+              title="Send selection to AI chat"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 const { from, to } = editor.state.selection;
-                const text = editor.state.doc.textBetween(from, to, "\n");
-                if (text) onAskAboutSelection(text);
+                const { start, end } = getLineRange(editor.state.doc, from, to);
+                const filename = currentFilePath?.split("/").at(-1) ?? "document";
+                const ref =
+                  start === end
+                    ? `@${filename}[line ${start}]`
+                    : `@${filename}[lines ${start}–${end}]`;
+                onSendToChat(ref);
               }}
             >
               Ask AI
