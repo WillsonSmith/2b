@@ -165,8 +165,32 @@ async function generate(workspace: string, output: string): Promise<void> {
     }
   }
 
+  await buildSearchIndex(output);
+
   const total = files.length + (hasIndexMd ? 0 : 1) + 1 + (tagMap.size > 0 ? tagMap.size + 1 : 0);
   console.log(`Done. ${total} pages written.`);
+}
+
+async function buildSearchIndex(output: string): Promise<void> {
+  console.log("Building search index…");
+  try {
+    const pagefind = await import("pagefind");
+    const { index, errors: createErrors } = await pagefind.createIndex({});
+    if (!index || createErrors.length) {
+      throw new Error(createErrors.join("; ") || "createIndex returned no index");
+    }
+    const { errors: addErrors } = await index.addDirectory({ path: output });
+    if (addErrors.length) throw new Error(addErrors.join("; "));
+    const { errors: writeErrors } = await index.writeFiles({
+      outputPath: path.join(output, "pagefind"),
+    });
+    if (writeErrors.length) throw new Error(writeErrors.join("; "));
+    await pagefind.close();
+    console.log("Writing pagefind/");
+  } catch (err) {
+    console.error("Pagefind indexing failed:", (err as Error).message);
+    console.error("Static site is complete, but search will be unavailable.");
+  }
 }
 
 // CLI entry point
