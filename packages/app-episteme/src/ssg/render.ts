@@ -5,14 +5,14 @@ import { CSS, MERMAID_SCRIPT, THEME_INIT_SCRIPT, THEME_TOGGLE_SCRIPT } from "./a
 // Matches standard markdown links: [text](href)
 const MARKDOWN_LINK_RE = /\[([^\]]*)\]\(([^)]*)\)/g;
 
-function isLocalHref(href: string): boolean {
+export function isLocalHref(href: string): boolean {
   if (!href) return false;
   if (href.startsWith("http://") || href.startsWith("https://")) return false;
   if (href.startsWith("mailto:") || href.startsWith("#") || href.startsWith("//")) return false;
   return true;
 }
 
-function resolveMarkdownLinkInSsg(
+export function resolveMarkdownLinkInSsg(
   href: string,
   currentRelPath: string,
   allRelPaths: string[],
