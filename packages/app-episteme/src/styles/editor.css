@@ -5,6 +5,7 @@
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  background: var(--bg);
 }
 
 .editor-toolbar {

@@ -4,12 +4,12 @@
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
+  background: var(--bg-app);
 }
 
 .app-header {
   height: var(--header-h);
-  background: var(--bg-raised);
-  border-bottom: 1px solid var(--border);
+  /*background: var(--bg-app);*/
   display: flex;
   align-items: center;
   padding: 0 12px;
@@ -46,6 +46,11 @@
   display: flex;
   flex: 1;
   overflow: hidden;
+  margin-block-start: 2px;
+  margin-block-end: 8px;
+  margin-inline: 8px;
+  border-radius: 14px;
+  box-shadow: var(--panel-shadow);
 }
 
 
@@ -60,8 +65,7 @@
 /* ── Status bar ──────────────────────────────────────────────────────── */
 .status-bar {
   height: var(--statusbar-h);
-  background: var(--bg-raised);
-  border-top: 1px solid var(--border);
+  background: var(--bg);
   display: flex;
   align-items: center;
   padding: 0 12px;
