@@ -305,6 +305,24 @@ details.sidecar-tool-row[open] {
   color: var(--text-muted);
   font-size: 11.5px;
 }
+.sidecar-mention-chip-remove {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  padding: 1px 3px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.sidecar-mention-chip:hover .sidecar-mention-chip-remove {
+  opacity: 1;
+}
+.sidecar-mention-chip-remove:hover {
+  color: var(--red);
+  background: var(--bg-highlight);
+}
 .sidecar-mention-chip-content {
   padding: 6px 10px;
   font-size: 11px;

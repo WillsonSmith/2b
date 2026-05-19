@@ -379,6 +379,26 @@ function App() {
     });
   }, []);
 
+  const onRemoveMention = useCallback((index: number, path: string) => {
+    setMessages((prev) => {
+      const msg = prev[index];
+      if (!msg || msg.role !== "user") return prev;
+      const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const newText = msg.text.replace(new RegExp(`\\s*@${escaped}`, "g"), "").trim();
+      if (msg.id !== undefined) {
+        fetch(`/api/chat-history/${msg.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: newText }),
+        }).catch(() => {});
+      }
+      if (!newText) return prev.filter((_, i) => i !== index);
+      const next = [...prev];
+      next[index] = { ...msg, text: newText };
+      return next;
+    });
+  }, []);
+
   const searchCommands = useMemo<SearchCommand[]>(
     () => [
       { id: "toc", label: "Table of Contents", description: "Toggle TOC panel", action: () => setShowToc((v) => !v) },
@@ -1051,6 +1071,7 @@ function App() {
           onRegenerate={handleRegenerate}
           onSendToPlan={handleSendToPlan}
           onDeleteMessage={onDeleteMessage}
+          onRemoveMention={onRemoveMention}
           pendingInput={sidecarPendingInput}
           onPendingInputConsumed={() => setSidecarPendingInput("")}
           activeFile={fileManager.activeFile}

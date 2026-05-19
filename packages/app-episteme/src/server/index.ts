@@ -375,6 +375,19 @@ export async function startEpistemServer(
           workspaceDb.deleteChatMessage(id);
           return json({ ok: true });
         },
+        PATCH: async (req: Request) => {
+          const id = parseInt((req as Request & { params: Record<string, string> }).params.id, 10);
+          if (isNaN(id)) return json({ error: "Invalid id" }, 400);
+          const body = (await req.json()) as { text?: string };
+          if (typeof body.text !== "string") return json({ error: "text required" }, 400);
+          const trimmed = body.text.trim();
+          if (!trimmed) {
+            workspaceDb.deleteChatMessage(id);
+          } else {
+            workspaceDb.updateChatMessage(id, trimmed);
+          }
+          return json({ ok: true });
+        },
       },
       "/api/file-content": {
         GET: async (req: Request) => {
