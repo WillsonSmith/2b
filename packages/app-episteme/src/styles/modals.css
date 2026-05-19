@@ -175,6 +175,21 @@
   outline: none;
   border-color: var(--accent-soft);
 }
+.model-config-input {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 6px;
+  font-family: inherit;
+}
+.model-config-input:focus {
+  outline: none;
+  border-color: var(--accent-soft);
+}
 
 .settings-toggle {
   position: relative;

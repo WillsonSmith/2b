@@ -38,6 +38,8 @@ export interface EpistemeConfig {
   models: EpistemModelConfig;
   features?: EpistemeFeatures;
   contradictionScan?: ContradictionScanConfig;
+  /** Override the Ollama HTTP endpoint. When set, replaces process.env.OLLAMA_URL. */
+  ollamaBaseUrl?: string;
 }
 
 function defaultConfig(): EpistemeConfig {
