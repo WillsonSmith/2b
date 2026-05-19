@@ -585,6 +585,7 @@ export class PlanningController {
       });
       this.broadcast({ type: "plan_step_completed", planId: plan.id, stepId: step.id, summary: contextSummary });
     } catch (err) {
+      if (this.cancelled) return;
       const error = err instanceof Error ? err.message : String(err);
       this.workspaceDb.updatePlanStep(step.id, { state: "failed", error });
       this.workspaceDb.updatePlanState(plan.id, "step_failed");
