@@ -317,13 +317,12 @@ function App() {
   }, []);
 
   const sendToAgent = useCallback(
-    async (text: string) => {
+    (text: string) => {
       if (ws.agentState === "disconnected") return;
-      const fullText = await resolveMentions(text);
-      ws.sendToAgent(fullText);
+      ws.sendToAgent(text);
       setMessages((prev) => [...prev, { role: "user", text }]);
     },
-    [ws, resolveMentions],
+    [ws],
   );
 
   const handleSidecarPlanRequest = useCallback(

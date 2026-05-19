@@ -72,16 +72,37 @@ async function dispatch(
   ws: ServerWebSocket<unknown>,
 ): Promise<void> {
   switch (msg.type) {
-    case "send":
-      if (msg.text.trim()) {
-        if (ctx.planning.isLocked) {
-          // Agent is executing a plan step — queue message for after completion
-          return;
-        }
-        ctx.workspaceDb.appendChatMessage("user", msg.text.trim());
-        ctx.agent.addDirect(msg.text.trim());
+    case "send": {
+      const original = msg.text.trim();
+      if (!original) return;
+      // Agent is executing a plan step — queue message for after completion
+      if (ctx.planning.isLocked) return;
+      ctx.workspaceDb.appendChatMessage("user", original);
+      const mentionPattern = /@([\w\-./ ]+\.md)/g;
+      const mentions = [...original.matchAll(mentionPattern)].map((m) => m[1]!.trim());
+      let fullText = original;
+      if (mentions.length > 0) {
+        const blocks = (
+          await Promise.all(
+            mentions.map(async (rel) => {
+              const abs = ctx.resolveWorkspacePath(rel);
+              if (!abs) return null;
+              try {
+                const content = await Bun.file(abs).text();
+                return `[File: ${rel}]\n\`\`\`\n${content}\n\`\`\``;
+              } catch {
+                return null;
+              }
+            }),
+          )
+        )
+          .filter((b): b is string => b !== null)
+          .join("\n\n");
+        if (blocks) fullText = `${blocks}\n\n---\n${original}`;
       }
+      ctx.agent.addDirect(fullText);
       return;
+    }
 
     case "interrupt":
       ctx.agent.interrupt();
