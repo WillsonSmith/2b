@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import { Copy, Check, CheckCircle2, CornerDownRight, Loader2, ArrowRight, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2, AlertCircle, Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen, ClipboardList } from "lucide-react";
+import { Check, CheckCircle2, CornerDownRight, Loader2, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2, AlertCircle, Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen, ClipboardList, MoreHorizontal } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
 import { usePanelResize } from "../hooks/usePanelResize.ts";
 import type { EpistemePlanStepType } from "../planning/types.ts";
@@ -31,7 +31,8 @@ interface AISidecarProps {
   onInterrupt: () => void;
   onNavigate?: (path: string) => void;
   workspaceFiles?: string[];
-  onContinueFrom?: (afterIndex: number, text: string) => void;
+  onRegenerate?: (assistantIndex: number) => void;
+  onSendToPlan?: (text: string) => void;
   onDeleteMessage?: (index: number) => void;
   pendingInput?: string;
   onPendingInputConsumed?: () => void;
@@ -41,9 +42,6 @@ interface AISidecarProps {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const EXECUTE_PROMPT =
-  "Please proceed and execute the plan you outlined above. Use your available tools — search sources, create documents, or take whatever actions are needed to complete each step.";
 
 const QUICK_ACTIONS: Array<{ label: string; prompt: string }> = [
   {
@@ -84,25 +82,84 @@ const PLAN_STEP_TYPE_ICONS: Record<EpistemePlanStepType, React.FC<{ size?: numbe
   organize: ({ size = 11, className }) => <FolderOpen size={size} className={className} />,
 };
 
-// ── CopyButton ────────────────────────────────────────────────────────────────
+// ── AssistantMessage ──────────────────────────────────────────────────────────
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+interface AssistantMessageProps {
+  message: Extract<SidecarMessage, { role: "assistant" }>;
+  index: number;
+  onRegenerate: () => void;
+  onSendToPlan: (text: string) => void;
+  onNavigate?: (path: string) => void;
+  onDeleteMessage?: (index: number) => void;
+}
 
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard API unavailable
+function AssistantMessage({ message, index, onRegenerate, onSendToPlan, onNavigate, onDeleteMessage }: AssistantMessageProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
     }
-  }, [text]);
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [menuOpen]);
 
   return (
-    <button className="sidecar-copy-btn" onClick={handleCopy} title="Copy to clipboard">
-      {copied ? <Check size={12} /> : <Copy size={12} />}
-    </button>
+    <div className="sidecar-msg assistant">
+      <div className="sidecar-msg-header">
+        <span className="sidecar-msg-role">Episteme</span>
+        <div className="sidecar-msg-header-actions">
+          <div className="sidecar-msg-menu" ref={menuRef}>
+            <button
+              className="sidecar-menu-trigger"
+              onClick={() => setMenuOpen(v => !v)}
+              title="Actions"
+            >
+              <MoreHorizontal size={12} />
+            </button>
+            {menuOpen && (
+              <div className="sidecar-msg-dropdown">
+                <button
+                  className="sidecar-dropdown-item"
+                  onClick={() => { setMenuOpen(false); onRegenerate(); }}
+                >
+                  Regenerate
+                </button>
+                <button
+                  className="sidecar-dropdown-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    navigator.clipboard.writeText(message.text).catch(() => {});
+                  }}
+                >
+                  Copy
+                </button>
+                <button
+                  className="sidecar-dropdown-item"
+                  onClick={() => { setMenuOpen(false); onSendToPlan(message.text); }}
+                >
+                  Send to Plan
+                </button>
+              </div>
+            )}
+          </div>
+          {onDeleteMessage && (
+            <button
+              className="sidecar-delete-btn"
+              onClick={() => onDeleteMessage(index)}
+              title="Delete message"
+            >
+              <Trash2 size={11} />
+            </button>
+          )}
+        </div>
+      </div>
+      <MarkdownView content={message.text} className="sidecar-msg-markdown" onNavigate={onNavigate} />
+    </div>
   );
 }
 
@@ -111,14 +168,14 @@ function CopyButton({ text }: { text: string }) {
 interface MessageListProps {
   messages: SidecarMessage[];
   isThinking: boolean;
-  onSend: (text: string) => void;
   endRef: React.MutableRefObject<HTMLDivElement | null>;
   onNavigate?: (path: string) => void;
-  onContinueFrom?: (afterIndex: number, text: string) => void;
+  onRegenerate?: (assistantIndex: number) => void;
+  onSendToPlan?: (text: string) => void;
   onDeleteMessage?: (index: number) => void;
 }
 
-const MessageList = memo(function MessageList({ messages, isThinking, onSend, endRef, onNavigate, onContinueFrom, onDeleteMessage }: MessageListProps) {
+const MessageList = memo(function MessageList({ messages, isThinking, endRef, onNavigate, onRegenerate, onSendToPlan, onDeleteMessage }: MessageListProps) {
   return (
     <div className="sidecar-messages">
       {messages.length === 0 && (
@@ -204,43 +261,16 @@ const MessageList = memo(function MessageList({ messages, isThinking, onSend, en
         }
 
         if (m.role === "assistant") {
-          const send = (text: string) =>
-            onContinueFrom ? onContinueFrom(i, text) : onSend(text);
           return (
-            <div key={i} className="sidecar-msg assistant">
-              <div className="sidecar-msg-header">
-                <span className="sidecar-msg-role">Episteme</span>
-                <div className="sidecar-msg-header-actions">
-                  <CopyButton text={m.text} />
-                  {onDeleteMessage && (
-                    <button
-                      className="sidecar-delete-btn"
-                      onClick={() => onDeleteMessage(i)}
-                      title="Delete message"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  )}
-                </div>
-              </div>
-              <MarkdownView content={m.text} className="sidecar-msg-markdown" onNavigate={onNavigate} />
-              <div className="sidecar-msg-actions">
-                <button
-                  className="sidecar-action-btn primary icon-inline"
-                  title="Execute the plan above using available tools"
-                  onClick={() => send(EXECUTE_PROMPT)}
-                >
-                  Execute <ArrowRight size={12} />
-                </button>
-                <button
-                  className="sidecar-action-btn"
-                  title="Continue from this message, discarding anything after it"
-                  onClick={() => send("Please continue.")}
-                >
-                  Continue
-                </button>
-              </div>
-            </div>
+            <AssistantMessage
+              key={i}
+              message={m}
+              index={i}
+              onRegenerate={() => onRegenerate?.(i)}
+              onSendToPlan={onSendToPlan ?? (() => {})}
+              onNavigate={onNavigate}
+              onDeleteMessage={onDeleteMessage}
+            />
           );
         }
 
@@ -565,7 +595,8 @@ interface ChatModalProps {
   onClose: () => void;
   onNavigate?: (path: string) => void;
   workspaceFiles?: string[];
-  onContinueFrom?: (afterIndex: number, text: string) => void;
+  onRegenerate?: (assistantIndex: number) => void;
+  onSendToPlan?: (text: string) => void;
   onDeleteMessage?: (index: number) => void;
   pendingInput?: string;
   onPendingInputConsumed?: () => void;
@@ -574,7 +605,7 @@ interface ChatModalProps {
   onPlanRequestFromDocument?: (path: string, goal: string, approvalMode: "all" | "per_step") => void;
 }
 
-function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onContinueFrom, onDeleteMessage, pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument }: ChatModalProps) {
+function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onRegenerate, onSendToPlan, onDeleteMessage, pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument }: ChatModalProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -592,10 +623,10 @@ function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onCl
           <MessageList
             messages={messages}
             isThinking={isThinking}
-            onSend={onSend}
             endRef={endRef}
             onNavigate={onNavigate}
-            onContinueFrom={onContinueFrom}
+            onRegenerate={onRegenerate}
+            onSendToPlan={onSendToPlan}
             onDeleteMessage={onDeleteMessage}
           />
         </div>
@@ -616,7 +647,8 @@ export function AISidecar({
   onInterrupt,
   onNavigate,
   workspaceFiles,
-  onContinueFrom,
+  onRegenerate,
+  onSendToPlan,
   onDeleteMessage,
   pendingInput,
   onPendingInputConsumed,
@@ -632,18 +664,18 @@ export function AISidecar({
   // just because App re-renders and produces new function references.
   const onSendRef = useRef(onSend);
   onSendRef.current = onSend;
-  const onContinueFromRef = useRef(onContinueFrom);
-  onContinueFromRef.current = onContinueFrom;
+  const onRegenerateRef = useRef(onRegenerate);
+  onRegenerateRef.current = onRegenerate;
+  const onSendToPlanRef = useRef(onSendToPlan);
+  onSendToPlanRef.current = onSendToPlan;
   const onDeleteMessageRef = useRef(onDeleteMessage);
   onDeleteMessageRef.current = onDeleteMessage;
   const onNavigateRef = useRef(onNavigate);
   onNavigateRef.current = onNavigate;
 
   const stableSend = useCallback((text: string) => onSendRef.current(text), []);
-  const stableContinueFrom = useCallback(
-    (idx: number, text: string) => onContinueFromRef.current?.(idx, text),
-    [],
-  );
+  const stableRegenerate = useCallback((idx: number) => onRegenerateRef.current?.(idx), []);
+  const stableSendToPlan = useCallback((text: string) => onSendToPlanRef.current?.(text), []);
   const stableDeleteMessage = useCallback((idx: number) => onDeleteMessageRef.current?.(idx), []);
   const stableNavigate = useCallback((path: string) => onNavigateRef.current?.(path), []);
 
@@ -672,10 +704,10 @@ export function AISidecar({
           <MessageList
             messages={messages}
             isThinking={isThinking}
-            onSend={stableSend}
             endRef={endRef}
             onNavigate={stableNavigate}
-            onContinueFrom={stableContinueFrom}
+            onRegenerate={stableRegenerate}
+            onSendToPlan={stableSendToPlan}
             onDeleteMessage={stableDeleteMessage}
           />
           <ChatInput isThinking={isThinking} agentState={agentState} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} />
@@ -692,7 +724,8 @@ export function AISidecar({
           onClose={() => setExpanded(false)}
           onNavigate={stableNavigate}
           workspaceFiles={workspaceFiles}
-          onContinueFrom={stableContinueFrom}
+          onRegenerate={stableRegenerate}
+          onSendToPlan={stableSendToPlan}
           onDeleteMessage={stableDeleteMessage}
           pendingInput={pendingInput}
           onPendingInputConsumed={onPendingInputConsumed}

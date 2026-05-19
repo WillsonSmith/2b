@@ -361,12 +361,18 @@ interface PlanRequestFormProps {
   onClearFollowup?: () => void;
   onRequest: (goal: string, approvalMode: PlanApprovalMode, previousPlanId?: string) => void;
   onRequestFromDocument: (path: string, goal: string, approvalMode: PlanApprovalMode, previousPlanId?: string) => void;
+  seedGoal?: string;
+  onSeedConsumed?: () => void;
 }
 
-function PlanRequestForm({ activeFile, followingUp, onClearFollowup, onRequest, onRequestFromDocument }: PlanRequestFormProps) {
-  const [goal, setGoal] = useState("");
+function PlanRequestForm({ activeFile, followingUp, onClearFollowup, onRequest, onRequestFromDocument, seedGoal, onSeedConsumed }: PlanRequestFormProps) {
+  const [goal, setGoal] = useState(seedGoal ?? "");
   const [approvalMode, setApprovalMode] = useState<PlanApprovalMode>("all");
   const [useDocument, setUseDocument] = useState(false);
+
+  useEffect(() => {
+    if (seedGoal) setGoal(seedGoal);
+  }, [seedGoal]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -378,6 +384,7 @@ function PlanRequestForm({ activeFile, followingUp, onClearFollowup, onRequest, 
       onRequest(goal.trim(), approvalMode, prevId);
     }
     setGoal("");
+    onSeedConsumed?.();
   };
 
   return (
@@ -459,6 +466,8 @@ export interface PlanPanelProps {
   onResumeAuto: () => void;
   onCancel: () => void;
   onNewPlan: () => void;
+  seedGoal?: string;
+  onSeedConsumed?: () => void;
 }
 
 const PLAN_STATE_LABELS: Record<string, string> = {
@@ -478,6 +487,7 @@ export function PlanPanel({
   onApprovePlan, onApproveStep, onRetryStep, onSkipStep,
   onAmendSteps, onEditStepSummary, onEditStepInstruction, onAddStep, onReorderStep,
   onPause, onResume, onResumeAuto, onCancel, onNewPlan,
+  seedGoal, onSeedConsumed,
 }: PlanPanelProps) {
   const [editing, setEditing] = useState(false);
   const [pausing, setPausing] = useState(false);
@@ -643,6 +653,8 @@ export function PlanPanel({
             onClearFollowup={() => setFollowingUp(null)}
             onRequest={onRequestPlan}
             onRequestFromDocument={onRequestPlanFromDocument}
+            seedGoal={seedGoal}
+            onSeedConsumed={onSeedConsumed}
           />
         )}
 

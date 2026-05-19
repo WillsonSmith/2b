@@ -343,13 +343,7 @@ details.sidecar-plan-step > .sidecar-plan-step-summary::-webkit-details-marker {
   color: var(--red);
 }
 
-/* Message action buttons (Execute / Continue) */
-.sidecar-msg-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-  flex-wrap: wrap;
-}
+/* Notification action button (Send to Plan / View) */
 .sidecar-action-btn {
   padding: 4px 10px;
   border-radius: 4px;
@@ -365,12 +359,56 @@ details.sidecar-plan-step > .sidecar-plan-step-summary::-webkit-details-marker {
   background: var(--bg-active);
   color: var(--text);
 }
-.sidecar-action-btn.primary {
-  color: var(--accent);
-  border-color: var(--accent-soft);
+
+/* Assistant message actions dropdown */
+.sidecar-msg-menu {
+  position: relative;
 }
-.sidecar-action-btn.primary:hover {
-  background: var(--accent-soft);
+.sidecar-menu-trigger {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  padding: 2px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.sidecar-msg:hover .sidecar-menu-trigger,
+.sidecar-msg-menu:has(.sidecar-msg-dropdown) .sidecar-menu-trigger {
+  opacity: 1;
+}
+.sidecar-menu-trigger:hover {
+  color: var(--text);
+  background: var(--bg-highlight);
+}
+.sidecar-msg-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 50;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  min-width: 130px;
+  overflow: hidden;
+}
+.sidecar-dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 7px 12px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.sidecar-dropdown-item:hover {
+  background: var(--bg-highlight);
 }
 
 /* Input area wrapper (contains quick-actions panel + input row) */

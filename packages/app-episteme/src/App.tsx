@@ -350,10 +350,25 @@ function App() {
     ws.interrupt();
   }, [ws]);
 
-  const onContinueFrom = useCallback((afterIndex, text) => {
-    setMessages((prev) => prev.slice(0, afterIndex + 1));
-    sendToAgent(text);
-  }, [sendToAgent]);
+  const handleRegenerate = useCallback((assistantIndex: number) => {
+    const before = messages.slice(0, assistantIndex);
+    let lastUserAt = -1;
+    for (let i = before.length - 1; i >= 0; i--) {
+      if (before[i]!.role === "user") { lastUserAt = i; break; }
+    }
+    if (lastUserAt === -1) return;
+    const userMsg = before[lastUserAt];
+    if (!userMsg || userMsg.role !== "user") return;
+    setMessages(before.slice(0, lastUserAt));
+    sendToAgent(userMsg.text);
+  }, [messages, sendToAgent]);
+
+  const [planSeedGoal, setPlanSeedGoal] = useState("");
+
+  const handleSendToPlan = useCallback((text: string) => {
+    setPlanSeedGoal(text);
+    setShowPlan(true);
+  }, []);
 
   const onDeleteMessage = useCallback((index: number) => {
     setMessages((prev) => {
@@ -1001,6 +1016,8 @@ function App() {
                 onResumeAuto={planning.resumeAuto}
                 onCancel={planning.cancelPlan}
                 onNewPlan={planning.resetPlan}
+                seedGoal={planSeedGoal}
+                onSeedConsumed={() => setPlanSeedGoal("")}
               />
             ),
           });
@@ -1032,7 +1049,8 @@ function App() {
           onInterrupt={interrupt}
           onNavigate={fileManager.openFile}
           workspaceFiles={fileManager.workspaceFiles}
-          onContinueFrom={onContinueFrom}
+          onRegenerate={handleRegenerate}
+          onSendToPlan={handleSendToPlan}
           onDeleteMessage={onDeleteMessage}
           pendingInput={sidecarPendingInput}
           onPendingInputConsumed={() => setSidecarPendingInput("")}
