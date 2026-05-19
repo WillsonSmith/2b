@@ -1,12 +1,22 @@
 /* ── File tree sidebar ───────────────────────────────────────────────── */
+.file-tree-track {
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: width 0.2s ease;
+}
+.file-tree-track.collapsed {
+  width: 0;
+  min-width: 0;
+}
+
 .file-tree {
-  width: var(--sidebar-w);
-  min-width: var(--sidebar-w);
+  height: 100%;
   background: var(--bg-raised);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 .file-tree-header {
   padding: 8px 10px 6px;

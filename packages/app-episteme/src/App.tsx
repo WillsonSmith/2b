@@ -26,6 +26,8 @@ import {
   Sparkles,
   Sun,
   Moon,
+  PanelLeft,
+  Focus,
 } from "lucide-react";
 import { useFileManager } from "./hooks/useFileManager.ts";
 import { useEditorFeatures } from "./hooks/useEditorFeatures.ts";
@@ -79,7 +81,15 @@ function ExternalChangeBanner({
 
 function App() {
   const [messages, setMessages] = useState<SidecarMessage[]>([]);
-  const [sidecarCollapsed, setSidecarCollapsed] = useState(false);
+  const [sidecarCollapsed, setSidecarCollapsed] = useState(() => {
+    try { return localStorage.getItem("episteme:sidecar-collapsed") === "1"; } catch { return false; }
+  });
+  const [fileTreeCollapsed, setFileTreeCollapsed] = useState(() => {
+    try { return localStorage.getItem("episteme:filetree-collapsed") === "1"; } catch { return false; }
+  });
+  const [focusSnapshot, setFocusSnapshot] = useState<
+    { fileTree: boolean; sidecar: boolean; research: boolean } | null
+  >(null);
   const [showSettings, setShowSettings] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const themeReady = useRef(false);
@@ -126,6 +136,32 @@ function App() {
     fileManager.openFile,
     ws.subscribe,
   );
+
+  useEffect(() => {
+    try { localStorage.setItem("episteme:sidecar-collapsed", sidecarCollapsed ? "1" : "0"); } catch {}
+  }, [sidecarCollapsed]);
+  useEffect(() => {
+    try { localStorage.setItem("episteme:filetree-collapsed", fileTreeCollapsed ? "1" : "0"); } catch {}
+  }, [fileTreeCollapsed]);
+
+  const isFocusMode = focusSnapshot !== null;
+  const toggleFocusMode = useCallback(() => {
+    if (focusSnapshot) {
+      setFileTreeCollapsed(focusSnapshot.fileTree);
+      setSidecarCollapsed(focusSnapshot.sidecar);
+      research.setShowResearch(focusSnapshot.research);
+      setFocusSnapshot(null);
+    } else {
+      setFocusSnapshot({
+        fileTree: fileTreeCollapsed,
+        sidecar: sidecarCollapsed,
+        research: research.showResearch,
+      });
+      setFileTreeCollapsed(true);
+      setSidecarCollapsed(true);
+      research.setShowResearch(false);
+    }
+  }, [focusSnapshot, fileTreeCollapsed, sidecarCollapsed, research]);
 
   const onMicError = useCallback((text: string) => {
     setMessages((prev) => [...prev, { role: "assistant", text }]);
@@ -716,6 +752,13 @@ function App() {
         </button>
         <div className="app-header-actions">
           <button
+            className={`header-research-btn${!fileTreeCollapsed ? " active" : ""}`}
+            title={fileTreeCollapsed ? "Show files" : "Hide files"}
+            onClick={() => setFileTreeCollapsed((c) => !c)}
+          >
+            <PanelLeft size={16} />
+          </button>
+          <button
             className={`header-research-btn${showToc ? " active" : ""}`}
             title="Table of contents"
             onClick={() => setShowToc((v) => !v)}
@@ -768,6 +811,13 @@ function App() {
             onClick={() => setSidecarCollapsed((c) => !c)}
           >
             <Sparkles size={16} />
+          </button>
+          <button
+            className={`header-research-btn${isFocusMode ? " active" : ""}`}
+            title={isFocusMode ? "Exit focus mode" : "Focus mode (hide side panels)"}
+            onClick={toggleFocusMode}
+          >
+            <Focus size={16} />
           </button>
           {indexProgress && (
             <span
@@ -850,6 +900,7 @@ function App() {
           onRenameFolder={fileManager.renameFolder}
           onOpenInFinder={fileManager.openInFinder}
           workspaceRoot={workspaceRoot}
+          collapsed={fileTreeCollapsed}
         />
 
         <div

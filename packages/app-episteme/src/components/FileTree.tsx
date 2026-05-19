@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { FileText, Plus, RotateCw, ChevronDown, ChevronRight } from "lucide-react";
+import { usePanelResize } from "../hooks/usePanelResize.ts";
 
 interface FileTreeProps {
   files: string[];
@@ -13,6 +14,7 @@ interface FileTreeProps {
   onRenameFolder?: (oldPath: string, newPath: string) => void;
   onOpenInFinder: (path: string) => void;
   workspaceRoot: string;
+  collapsed?: boolean;
 }
 
 function basename(path: string): string {
@@ -119,7 +121,10 @@ export function FileTree({
   onRenameFolder,
   onOpenInFinder,
   workspaceRoot,
+  collapsed = false,
 }: FileTreeProps) {
+  const { width, handleMouseDown, isDragging } = usePanelResize(220, "file-tree", { direction: "right" });
+
   // New file creation state (root level)
   const [isCreating, setIsCreating] = useState(false);
   const [newFileName, setNewFileName] = useState("");
@@ -314,7 +319,12 @@ export function FileTree({
   }
 
   return (
-    <div className="file-tree">
+    <div
+      className={`file-tree-track${collapsed ? " collapsed" : ""}`}
+      style={collapsed ? undefined : { width, transition: isDragging ? "none" : undefined }}
+    >
+    <div className="file-tree" style={{ width, minWidth: width }}>
+      {!collapsed && <div className="panel-drag-handle panel-drag-handle--right" onMouseDown={handleMouseDown} />}
       <div className="file-tree-tabs">
         <span className="file-tree-tab active">Files</span>
         <button className="header-icon-btn" onClick={() => setIsCreating(true)} title="New file">
@@ -598,6 +608,7 @@ export function FileTree({
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }

@@ -9,6 +9,10 @@
   z-index: 10;
   transition: background 0.15s;
 }
+.panel-drag-handle--right {
+  left: auto;
+  right: 0;
+}
 .panel-drag-handle:hover {
   background: var(--accent);
   opacity: 0.5;
