@@ -274,6 +274,79 @@ details.sidecar-tool-row[open] {
   color: var(--red);
 }
 
+/* File mention chips (footer below user messages) */
+.sidecar-mention-footer {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sidecar-mention-chip {
+  display: block;
+  padding: 0;
+  border-radius: 4px;
+  background: var(--bg-highlight);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.sidecar-mention-chip-summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  list-style: none;
+  cursor: pointer;
+}
+.sidecar-mention-chip-summary::-webkit-details-marker {
+  display: none;
+}
+.sidecar-mention-chip-name {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.sidecar-mention-chip-remove {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  padding: 1px 3px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.sidecar-mention-chip:hover .sidecar-mention-chip-remove {
+  opacity: 1;
+}
+.sidecar-mention-chip-remove:hover {
+  color: var(--red);
+  background: var(--bg-highlight);
+}
+.sidecar-mention-chip-content {
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+.sidecar-mention-chip-pre {
+  margin: 0;
+  font-family: var(--md-font-mono);
+  font-size: 11px;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+.sidecar-mention-chip-loading {
+  color: var(--text-dim);
+  font-style: italic;
+}
+.sidecar-mention-chip-error {
+  color: var(--red);
+}
+
 /* Plan step rows (live indicators in the sidecar) */
 .sidecar-plan-step {
   display: flex;

@@ -317,13 +317,12 @@ function App() {
   }, []);
 
   const sendToAgent = useCallback(
-    async (text: string) => {
+    (text: string) => {
       if (ws.agentState === "disconnected") return;
-      const fullText = await resolveMentions(text);
-      ws.sendToAgent(fullText);
+      ws.sendToAgent(text);
       setMessages((prev) => [...prev, { role: "user", text }]);
     },
-    [ws, resolveMentions],
+    [ws],
   );
 
   const handleSidecarPlanRequest = useCallback(
@@ -377,6 +376,26 @@ function App() {
         fetch(`/api/chat-history/${msg.id}`, { method: "DELETE" }).catch(() => {});
       }
       return prev.filter((_, i) => i !== index);
+    });
+  }, []);
+
+  const onRemoveMention = useCallback((index: number, path: string) => {
+    setMessages((prev) => {
+      const msg = prev[index];
+      if (!msg || msg.role !== "user") return prev;
+      const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const newText = msg.text.replace(new RegExp(`\\s*@${escaped}`, "g"), "").trim();
+      if (msg.id !== undefined) {
+        fetch(`/api/chat-history/${msg.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: newText }),
+        }).catch(() => {});
+      }
+      if (!newText) return prev.filter((_, i) => i !== index);
+      const next = [...prev];
+      next[index] = { ...msg, text: newText };
+      return next;
     });
   }, []);
 
@@ -1052,6 +1071,7 @@ function App() {
           onRegenerate={handleRegenerate}
           onSendToPlan={handleSendToPlan}
           onDeleteMessage={onDeleteMessage}
+          onRemoveMention={onRemoveMention}
           pendingInput={sidecarPendingInput}
           onPendingInputConsumed={() => setSidecarPendingInput("")}
           activeFile={fileManager.activeFile}

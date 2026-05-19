@@ -35,6 +35,7 @@ interface AISidecarProps {
   onRegenerate?: (assistantIndex: number) => void;
   onSendToPlan?: (text: string) => void;
   onDeleteMessage?: (index: number) => void;
+  onRemoveMention?: (index: number, path: string) => void;
   pendingInput?: string;
   onPendingInputConsumed?: () => void;
   activeFile?: string | null;
@@ -164,6 +165,55 @@ function AssistantMessage({ message, index, onRegenerate, onSendToPlan, onNaviga
   );
 }
 
+// ── FileMentionChip ───────────────────────────────────────────────────────────
+
+interface FileMentionChipProps {
+  path: string;
+  onRemove?: () => void;
+}
+
+function FileMentionChip({ path, onRemove }: FileMentionChipProps) {
+  const [content, setContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const short = path.split("/").at(-1) ?? path;
+
+  function handleToggle(e: React.SyntheticEvent<HTMLDetailsElement>) {
+    if (!e.currentTarget.open || content !== null || loading) return;
+    setLoading(true);
+    fetch(`/api/file-content?path=${encodeURIComponent(path)}`)
+      .then((r) => r.json() as Promise<{ content?: string }>)
+      .then((d) => {
+        if (d.content != null) setContent(d.content);
+        else setError(true);
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }
+
+  return (
+    <details className="sidecar-mention-chip" onToggle={handleToggle}>
+      <summary className="sidecar-mention-chip-summary">
+        <span className="sidecar-mention-chip-name">@{short}</span>
+        {onRemove && (
+          <button
+            className="sidecar-mention-chip-remove"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
+            title="Remove reference"
+          >
+            <X size={9} />
+          </button>
+        )}
+      </summary>
+      <div className="sidecar-mention-chip-content">
+        {loading && <span className="sidecar-mention-chip-loading">Loading…</span>}
+        {error && <span className="sidecar-mention-chip-error">Could not load file.</span>}
+        {content !== null && <pre className="sidecar-mention-chip-pre">{content}</pre>}
+      </div>
+    </details>
+  );
+}
+
 // ── MessageList ───────────────────────────────────────────────────────────────
 
 interface MessageListProps {
@@ -174,9 +224,10 @@ interface MessageListProps {
   onRegenerate?: (assistantIndex: number) => void;
   onSendToPlan?: (text: string) => void;
   onDeleteMessage?: (index: number) => void;
+  onRemoveMention?: (index: number, path: string) => void;
 }
 
-const MessageList = memo(function MessageList({ messages, isThinking, endRef, onNavigate, onRegenerate, onSendToPlan, onDeleteMessage }: MessageListProps) {
+const MessageList = memo(function MessageList({ messages, isThinking, endRef, onNavigate, onRegenerate, onSendToPlan, onDeleteMessage, onRemoveMention }: MessageListProps) {
   return (
     <div className="sidecar-messages">
       {messages.length === 0 && (
@@ -275,6 +326,7 @@ const MessageList = memo(function MessageList({ messages, isThinking, endRef, on
           );
         }
 
+        const mentions = extractMentions(m.text);
         return (
           <div key={i} className="sidecar-msg user">
             <div className="sidecar-msg-header">
@@ -292,6 +344,17 @@ const MessageList = memo(function MessageList({ messages, isThinking, endRef, on
               )}
             </div>
             <div className="sidecar-msg-user-text">{m.text}</div>
+            {mentions.length > 0 && (
+              <div className="sidecar-mention-footer">
+                {mentions.map((p) => (
+                  <FileMentionChip
+                    key={p}
+                    path={p}
+                    onRemove={onRemoveMention ? () => onRemoveMention(i, p) : undefined}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         );
       })}
@@ -303,6 +366,10 @@ const MessageList = memo(function MessageList({ messages, isThinking, endRef, on
 });
 
 // ── Mention helpers ───────────────────────────────────────────────────────────
+
+function extractMentions(text: string): string[] {
+  return [...text.matchAll(/@([\w\-./ ]+\.md)/g)].map((m) => m[1]!.trim());
+}
 
 function getMentionQuery(value: string, cursor: number): string | null {
   const before = value.slice(0, cursor);
@@ -580,6 +647,7 @@ interface ChatModalProps {
   onRegenerate?: (assistantIndex: number) => void;
   onSendToPlan?: (text: string) => void;
   onDeleteMessage?: (index: number) => void;
+  onRemoveMention?: (index: number, path: string) => void;
   pendingInput?: string;
   onPendingInputConsumed?: () => void;
   activeFile?: string | null;
@@ -587,7 +655,7 @@ interface ChatModalProps {
   onPlanRequestFromDocument?: (path: string, goal: string, approvalMode: "all" | "per_step") => void;
 }
 
-function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onRegenerate, onSendToPlan, onDeleteMessage, pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument }: ChatModalProps) {
+function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onRegenerate, onSendToPlan, onDeleteMessage, onRemoveMention, pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument }: ChatModalProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -610,6 +678,7 @@ function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onCl
             onRegenerate={onRegenerate}
             onSendToPlan={onSendToPlan}
             onDeleteMessage={onDeleteMessage}
+            onRemoveMention={onRemoveMention}
           />
         </div>
         <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} />
@@ -632,6 +701,7 @@ export function AISidecar({
   onRegenerate,
   onSendToPlan,
   onDeleteMessage,
+  onRemoveMention,
   pendingInput,
   onPendingInputConsumed,
   activeFile,
@@ -652,6 +722,8 @@ export function AISidecar({
   onSendToPlanRef.current = onSendToPlan;
   const onDeleteMessageRef = useRef(onDeleteMessage);
   onDeleteMessageRef.current = onDeleteMessage;
+  const onRemoveMentionRef = useRef(onRemoveMention);
+  onRemoveMentionRef.current = onRemoveMention;
   const onNavigateRef = useRef(onNavigate);
   onNavigateRef.current = onNavigate;
 
@@ -659,6 +731,10 @@ export function AISidecar({
   const stableRegenerate = useCallback((idx: number) => onRegenerateRef.current?.(idx), []);
   const stableSendToPlan = useCallback((text: string) => onSendToPlanRef.current?.(text), []);
   const stableDeleteMessage = useCallback((idx: number) => onDeleteMessageRef.current?.(idx), []);
+  const stableRemoveMention = useCallback(
+    (idx: number, path: string) => onRemoveMentionRef.current?.(idx, path),
+    [],
+  );
   const stableNavigate = useCallback((path: string) => onNavigateRef.current?.(path), []);
 
   useEffect(() => {
@@ -691,6 +767,7 @@ export function AISidecar({
             onRegenerate={stableRegenerate}
             onSendToPlan={stableSendToPlan}
             onDeleteMessage={stableDeleteMessage}
+            onRemoveMention={stableRemoveMention}
           />
           <ChatInput isThinking={isThinking} agentState={agentState} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} />
         </div>
@@ -709,6 +786,7 @@ export function AISidecar({
           onRegenerate={stableRegenerate}
           onSendToPlan={stableSendToPlan}
           onDeleteMessage={stableDeleteMessage}
+          onRemoveMention={stableRemoveMention}
           pendingInput={pendingInput}
           onPendingInputConsumed={onPendingInputConsumed}
           activeFile={activeFile}
