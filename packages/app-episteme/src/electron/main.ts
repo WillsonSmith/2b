@@ -207,6 +207,7 @@ function buildMenu(): void {
             label: path.basename(p),
             sublabel: p,
             click: async () => {
+              saveLastWorkspace(p);
               addRecentWorkspace(p);
               buildMenu();
               try {
