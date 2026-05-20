@@ -752,60 +752,6 @@ function App() {
         </button>
         <div className="app-header-actions">
           <button
-            className={`header-research-btn${!fileTreeCollapsed ? " active" : ""}`}
-            title={fileTreeCollapsed ? "Show files" : "Hide files"}
-            onClick={() => setFileTreeCollapsed((c) => !c)}
-          >
-            <PanelLeft size={16} />
-          </button>
-          <button
-            className={`header-research-btn${showToc ? " active" : ""}`}
-            title="Table of contents"
-            onClick={() => setShowToc((v) => !v)}
-          >
-            <AlignLeft size={16} />
-          </button>
-          <button
-            className={`header-research-btn${research.showResearch ? " active" : ""}`}
-            title="Research panel"
-            onClick={() => research.setShowResearch((v) => !v)}
-          >
-            <Search size={16} />
-          </button>
-          <button
-            className={`header-research-btn${conflictsGraph.showGraph ? " active" : ""}`}
-            title="Knowledge graph"
-            onClick={() =>
-              conflictsGraph.showGraph
-                ? conflictsGraph.setShowGraph(false)
-                : conflictsGraph.handleOpenGraph()
-            }
-          >
-            <Network size={16} />
-          </button>
-
-          <button
-            className={`header-research-btn${showPlan ? " active" : ""}`}
-            title="Plan panel"
-            onClick={() => setShowPlan((v) => !v)}
-          >
-            <ClipboardList size={16} />
-          </button>
-          <button
-            className="header-research-btn"
-            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            onClick={toggleTheme}
-          >
-            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
-          <button
-            className="header-research-btn"
-            title="Settings"
-            onClick={() => { setSettingsInitialTab("style"); setShowSettings(true); }}
-          >
-            <Settings size={16} />
-          </button>
-          <button
             className={`header-research-btn${!sidecarCollapsed ? " active" : ""}`}
             title={sidecarCollapsed ? "Show AI" : "Hide AI"}
             onClick={() => setSidecarCollapsed((c) => !c)}
@@ -888,6 +834,67 @@ function App() {
 
       {/* Body */}
       <div className="app-body">
+        {!isFocusMode && (
+          <nav className="activity-rail" aria-label="Workspace views">
+            <div className="rail-group">
+              <button
+                className={`rail-btn${!fileTreeCollapsed ? " active" : ""}`}
+                title={fileTreeCollapsed ? "Show files" : "Hide files"}
+                onClick={() => setFileTreeCollapsed((c) => !c)}
+              >
+                <PanelLeft size={18} />
+              </button>
+              <button
+                className={`rail-btn${showToc ? " active" : ""}`}
+                title="Table of contents"
+                onClick={() => setShowToc((v) => !v)}
+              >
+                <AlignLeft size={18} />
+              </button>
+              <button
+                className={`rail-btn${research.showResearch ? " active" : ""}`}
+                title="Research panel"
+                onClick={() => research.setShowResearch((v) => !v)}
+              >
+                <Search size={18} />
+              </button>
+              <button
+                className={`rail-btn${conflictsGraph.showGraph ? " active" : ""}`}
+                title="Knowledge graph"
+                onClick={() =>
+                  conflictsGraph.showGraph
+                    ? conflictsGraph.setShowGraph(false)
+                    : conflictsGraph.handleOpenGraph()
+                }
+              >
+                <Network size={18} />
+              </button>
+              <button
+                className={`rail-btn${showPlan ? " active" : ""}`}
+                title="Plan panel"
+                onClick={() => setShowPlan((v) => !v)}
+              >
+                <ClipboardList size={18} />
+              </button>
+            </div>
+            <div className="rail-group">
+              <button
+                className="rail-btn"
+                title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                onClick={toggleTheme}
+              >
+                {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
+              <button
+                className="rail-btn"
+                title="Settings"
+                onClick={() => { setSettingsInitialTab("style"); setShowSettings(true); }}
+              >
+                <Settings size={18} />
+              </button>
+            </div>
+          </nav>
+        )}
         <FileTree
           files={fileManager.workspaceFiles}
           folders={fileManager.workspaceFolders}
