@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export function usePanelResize(initialWidth: number, storageKey?: string) {
+export function usePanelResize(
+  initialWidth: number,
+  storageKey?: string,
+  options: { direction?: "left" | "right" } = {},
+) {
+  const direction = options.direction ?? "left";
   const [width, setWidth] = useState(() => {
     if (storageKey) {
       const stored = localStorage.getItem(`panel-width-${storageKey}`);
@@ -23,8 +28,8 @@ export function usePanelResize(initialWidth: number, storageKey?: string) {
     setIsDragging(true);
 
     function onMouseMove(ev: MouseEvent) {
-      // Drag handle is on the left border; dragging left expands the panel
-      const delta = startX - ev.clientX;
+      // Left-edge handle: dragging left expands. Right-edge handle: dragging right expands.
+      const delta = direction === "left" ? startX - ev.clientX : ev.clientX - startX;
       const newWidth = Math.max(120, startWidth + delta);
       setWidth(newWidth);
     }
@@ -37,7 +42,7 @@ export function usePanelResize(initialWidth: number, storageKey?: string) {
 
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
-  }, []);
+  }, [direction]);
 
   useEffect(() => {
     if (storageKey) {
