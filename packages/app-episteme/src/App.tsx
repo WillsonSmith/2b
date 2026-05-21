@@ -28,7 +28,6 @@ import {
   Moon,
   PanelLeft,
   Focus,
-  Layers,
 } from "lucide-react";
 import { useFileManager } from "./hooks/useFileManager.ts";
 import { useEditorFeatures } from "./hooks/useEditorFeatures.ts";
@@ -80,6 +79,16 @@ function ExternalChangeBanner({
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
+const PLUGIN_LABELS: Record<string, string> = {
+  Diagram: "Diagram",
+  Citation: "Citation",
+  Contradiction: "Contradiction scanning",
+  StyleGuide: "Style guide",
+};
+function pluginLabel(name: string): string {
+  return PLUGIN_LABELS[name] ?? name;
+}
+
 function App() {
   const [messages, setMessages] = useState<SidecarMessage[]>([]);
   const [sidecarCollapsed, setSidecarCollapsed] = useState(() => {
@@ -91,20 +100,9 @@ function App() {
   const [focusSnapshot, setFocusSnapshot] = useState<
     { fileTree: boolean; sidecar: boolean; research: boolean } | null
   >(null);
-  const [agentMode, setAgentModeState] = useState<"standard" | "extended">("standard");
-  const toggleAgentMode = useCallback(() => {
-    const next = agentMode === "standard" ? "extended" : "standard";
-    fetch("/api/agent-mode", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: next }),
-    }).then(() => setAgentModeState(next)).catch(() => {});
-  }, [agentMode]);
-  useEffect(() => {
-    fetch("/api/agent-mode").then(r => r.json()).then((d: { mode: string }) => {
-      if (d.mode === "standard" || d.mode === "extended") setAgentModeState(d.mode);
-    }).catch(() => {});
-  }, []);
+  // Tracks which plugin activation events have been announced this session
+  // so the inline sidecar notice only fires once per plugin.
+  const announcedPluginsRef = useRef<Set<string>>(new Set());
   const [showSettings, setShowSettings] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const themeReady = useRef(false);
@@ -686,6 +684,20 @@ function App() {
         ),
       );
     });
+    const unsubAgentMode = ws.subscribe("agent_mode_changed", (msg) => {
+      const announced = announcedPluginsRef.current;
+      const newlyActive = msg.activePlugins.filter((name) => !announced.has(name));
+      if (newlyActive.length === 0) return;
+      for (const name of newlyActive) announced.add(name);
+      setMessages((prev) => [
+        ...prev,
+        ...newlyActive.map((name) => ({
+          role: "system_event" as const,
+          plugin: name,
+          text: `${pluginLabel(name)} tools now available`,
+        })),
+      ]);
+    });
     return () => {
       unsubSpeak();
       unsubToolCall();
@@ -702,6 +714,7 @@ function App() {
       unsubStepStarted();
       unsubStepCompleted();
       unsubStepFailed();
+      unsubAgentMode();
     };
   }, [
     ws.subscribe,
@@ -772,13 +785,6 @@ function App() {
             onClick={() => setSidecarCollapsed((c) => !c)}
           >
             <Sparkles size={16} />
-          </button>
-          <button
-            className={`header-research-btn${agentMode === "extended" ? " active" : ""}`}
-            title={agentMode === "extended" ? "Extended mode — citations, diagrams, contradiction scan, sub-agents (click for standard)" : "Standard mode — click for extended tools"}
-            onClick={toggleAgentMode}
-          >
-            <Layers size={16} />
           </button>
           <button
             className={`header-research-btn${isFocusMode ? " active" : ""}`}

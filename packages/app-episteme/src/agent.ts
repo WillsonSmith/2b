@@ -1,7 +1,6 @@
 import { CortexAgent } from "@2b/framework/core/CortexAgent.ts";
 import { createProvider } from "@2b/framework/providers/llm/createProvider.ts";
 import { FileSystemPlugin } from "@2b/framework/plugins/FileSystemPlugin.ts";
-import { DynamicAgentPlugin } from "@2b/framework/plugins/DynamicAgentPlugin.ts";
 import { BehaviorPlugin } from "@2b/framework/plugins/BehaviorPlugin.ts";
 import { MemoryPlugin } from "@2b/framework/plugins/MemoryPlugin.ts";
 import { AutoApprovePermissionManager } from "@2b/framework/core/PermissionManager.ts";
@@ -20,22 +19,20 @@ import { workspaceDbPath } from "./paths.ts";
 import { WorkspaceDb } from "./db/workspaceDb.ts";
 import type { EpistemeConfig } from "./config.ts";
 
-export type AgentMode = "standard" | "extended";
-
 /**
  * Wraps a plugin and suppresses its tool surface, system-prompt fragment, and
- * per-turn context when the shared mode state is "standard". All other hooks
- * (onInit, executeTool, onMessage, …) always delegate so that server-side
- * direct calls and background tasks keep working regardless of mode.
+ * per-turn context unless its name is in the shared `activePlugins` set. All
+ * other hooks (onInit, executeTool, onMessage, …) always delegate so that
+ * server-side direct calls and background tasks keep working regardless.
  */
 class ModeGated implements AgentPlugin {
   readonly name: string;
 
-  constructor(private readonly inner: AgentPlugin, private readonly state: { mode: AgentMode }) {
+  constructor(private readonly inner: AgentPlugin, private readonly activePlugins: Set<string>) {
     this.name = inner.name;
   }
 
-  private get active() { return this.state.mode === "extended"; }
+  private get active() { return this.activePlugins.has(this.inner.name); }
 
   onInit(agent: BaseAgent) { return this.inner.onInit?.(agent); }
   getSystemPromptFragment(ctx?: string) { return this.active ? (this.inner.getSystemPromptFragment?.(ctx) ?? "") : ""; }
@@ -60,6 +57,16 @@ Your primary context is the current workspace and its documents.
 Be concise and precise. Prefer structured Markdown output when providing content.
 When editing or generating text, preserve the user's voice and style.`;
 
+/** Names of mode-gated plugins, in registration order. */
+export const MODE_GATED_PLUGIN_NAMES = [
+  "Citation",
+  "StyleGuide",
+  "Diagram",
+  "Contradiction",
+] as const;
+
+export type ModeGatedPluginName = (typeof MODE_GATED_PLUGIN_NAMES)[number];
+
 export interface EpistemeAgentBundle {
   agent: CortexAgent;
   editorContext: EditorContextPlugin;
@@ -73,9 +80,17 @@ export interface EpistemeAgentBundle {
   planning: PlanningPlugin;
   workspaceDb: WorkspaceDb;
   shortTermMemory: MemoryPlugin;
-  /** Current agent mode. Mutate via setMode(). */
-  modeState: { mode: AgentMode };
-  setMode: (mode: AgentMode) => void;
+  /** Names of mode-gated plugins currently active. Mutate via activatePlugin/deactivatePlugin. */
+  activePlugins: Set<string>;
+  /** All mode-gated plugin names that exist (active or not). */
+  availablePlugins: readonly string[];
+  /** Activate a single mode-gated plugin by name. Returns true if the set changed. */
+  activatePlugin: (name: string) => boolean;
+  /** Deactivate a single mode-gated plugin by name. Returns true if the set changed. */
+  deactivatePlugin: (name: string) => boolean;
+  isPluginActive: (name: string) => boolean;
+  /** Optional listener fired after any activation set change. */
+  onActiveChange?: (active: string[]) => void;
 }
 
 export function createEpistemAgent(
@@ -98,9 +113,10 @@ export function createEpistemAgent(
     permissionManager,
   });
 
-  // Shared mode state — mutated by setMode(), read by every ModeGated wrapper
-  // on each tick so mode changes take effect without restarting the agent.
-  const modeState: { mode: AgentMode } = { mode: "standard" };
+  // Shared active-plugin set — mutated by activate/deactivate, read by
+  // every ModeGated wrapper on each tick so changes take effect without
+  // restarting the agent.
+  const activePlugins = new Set<string>();
 
   const editorContext = new EditorContextPlugin();
   const workspace = new WorkspacePlugin(workspaceRoot, workspaceDb);
@@ -121,10 +137,6 @@ export function createEpistemAgent(
     workspaceDb,
   );
   const planning = new PlanningPlugin(workspaceDb);
-  const dynamicAgent = new DynamicAgentPlugin(llm, {
-    permissionManager,
-    parentMemory: agent.memoryPlugin,
-  });
 
   const shortTermMemory = new MemoryPlugin(llm, { minMessages: 10, maxMessages: 15 });
 
@@ -138,20 +150,15 @@ export function createEpistemAgent(
   agent.registerPlugin(planning);
 
   // Mode-gated plugins — always registered (so onInit fires during agent.start())
-  // but their tool surface and system-prompt fragments are suppressed in standard mode.
-  agent.registerPlugin(new ModeGated(styleGuide, modeState));
-  agent.registerPlugin(new ModeGated(citation, modeState));
-  agent.registerPlugin(new ModeGated(diagram, modeState));
+  // but their tool surface and system-prompt fragments are suppressed unless
+  // their name is in `activePlugins`.
+  agent.registerPlugin(new ModeGated(styleGuide, activePlugins));
+  agent.registerPlugin(new ModeGated(citation, activePlugins));
+  agent.registerPlugin(new ModeGated(diagram, activePlugins));
   agent.registerPlugin(aiFill); // zero tools, no fragment — no need to gate
-  agent.registerPlugin(new ModeGated(contradiction, modeState));
-  agent.registerPlugin(new ModeGated(dynamicAgent, modeState));
+  agent.registerPlugin(new ModeGated(contradiction, activePlugins));
 
-  function setMode(mode: AgentMode) {
-    modeState.mode = mode;
-    agent.invalidateToolCache();
-  }
-
-  return {
+  const bundle: EpistemeAgentBundle = {
     agent,
     editorContext,
     workspace,
@@ -164,7 +171,25 @@ export function createEpistemAgent(
     planning,
     workspaceDb,
     shortTermMemory,
-    modeState,
-    setMode,
+    activePlugins,
+    availablePlugins: MODE_GATED_PLUGIN_NAMES,
+    activatePlugin(name: string) {
+      if (activePlugins.has(name)) return false;
+      activePlugins.add(name);
+      agent.invalidateToolCache();
+      bundle.onActiveChange?.([...activePlugins]);
+      return true;
+    },
+    deactivatePlugin(name: string) {
+      if (!activePlugins.delete(name)) return false;
+      agent.invalidateToolCache();
+      bundle.onActiveChange?.([...activePlugins]);
+      return true;
+    },
+    isPluginActive(name: string) {
+      return activePlugins.has(name);
+    },
   };
+
+  return bundle;
 }

@@ -243,6 +243,26 @@
   color: var(--red);
 }
 
+/* Auto-activation events — passive notice that a mode-gated plugin came online. */
+.sidecar-system-event {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  opacity: 0.85;
+}
+.sidecar-system-event-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+  display: inline-flex;
+}
+.sidecar-system-event-text {
+  flex: 1;
+}
+
 /* Expandable details for completed/failed tool rows */
 details.sidecar-tool-row {
   display: block;

@@ -117,7 +117,8 @@ export type ServerMsg =
   | { type: "plan_step_started"; planId: string; stepId: string }
   | { type: "plan_step_completed"; planId: string; stepId: string; summary: string }
   | { type: "plan_step_failed"; planId: string; stepId: string; error: string }
-  | { type: "plan_complete"; planId: string };
+  | { type: "plan_complete"; planId: string }
+  | { type: "agent_mode_changed"; activePlugins: string[]; availablePlugins: string[] };
 
 export function assertNever(x: never): never {
   throw new Error(`Unhandled protocol message: ${JSON.stringify(x)}`);

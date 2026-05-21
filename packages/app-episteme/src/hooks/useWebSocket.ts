@@ -100,6 +100,7 @@ export function useWebSocket(): UseWebSocketReturn {
       case "plan_step_completed":
       case "plan_step_failed":
       case "plan_complete":
+      case "agent_mode_changed":
         break;
       default:
         assertNever(msg);

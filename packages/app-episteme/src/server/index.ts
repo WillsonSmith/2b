@@ -69,17 +69,65 @@ async function collectSubdirectories(root: string, rel = ""): Promise<string[]> 
   return results.sort();
 }
 
+/**
+ * Auto-activate a mode-gated plugin when its companion UI feature is used.
+ * Called from `dispatch` before delegating to the matching handler.
+ */
+function autoActivateForMessage(msg: ClientMsg, ctx: WsContext): void {
+  switch (msg.type) {
+    case "diagram_request":
+      ctx.activatePlugin("Diagram");
+      return;
+    case "check_citations_request":
+    case "format_citation_request":
+      ctx.activatePlugin("Citation");
+      return;
+    case "contradictions_request":
+    case "contradiction_scan_request":
+      ctx.activatePlugin("Contradiction");
+      return;
+  }
+}
+
+/**
+ * Heuristic activation: scan free-form text (user input or AI response) for
+ * keywords that signal the user/agent intends to use a mode-gated capability,
+ * and activate the matching plugin so its tools are available next tick.
+ *
+ * Substring match is intentional — false positives just add a small amount of
+ * extra tool surface; false negatives are the real cost (user types
+ * "scan for contradictions" and the tool isn't there).
+ */
+const KEYWORD_TRIGGERS: ReadonlyArray<{ plugin: string; keywords: readonly string[] }> = [
+  { plugin: "Diagram", keywords: ["diagram", "chart", "flowchart"] },
+  { plugin: "Citation", keywords: ["citation", "cite ", "bibtex", "reference list"] },
+  { plugin: "Contradiction", keywords: ["contradict", "conflict", "inconsist"] },
+  { plugin: "StyleGuide", keywords: ["style guide", "tone of voice"] },
+];
+
+function autoActivateForText(text: string, ctx: WsContext): void {
+  if (!text) return;
+  const lower = text.toLowerCase();
+  for (const { plugin, keywords } of KEYWORD_TRIGGERS) {
+    if (keywords.some((kw) => lower.includes(kw))) {
+      ctx.activatePlugin(plugin);
+    }
+  }
+}
+
 async function dispatch(
   msg: ClientMsg,
   ctx: WsContext,
   ws: ServerWebSocket<unknown>,
 ): Promise<void> {
+  autoActivateForMessage(msg, ctx);
   switch (msg.type) {
     case "send": {
       const original = msg.text.trim();
       if (!original) return;
       // Agent is executing a plan step — queue message for after completion
       if (ctx.planning.isLocked) return;
+      autoActivateForText(original, ctx);
       ctx.workspaceDb.appendChatMessage("user", original);
       const mentionPattern = /@([\w\-./ ]+\.md)/g;
       const mentions = [...original.matchAll(mentionPattern)].map((m) => m[1]!.trim());
@@ -267,6 +315,16 @@ export async function startEpistemServer(
     suppressExternalChange: (absolutePath: string) => {
       recentSelfWrites.set(absolutePath, Date.now());
     },
+    activatePlugin: (name: string) => { bundle.activatePlugin(name); },
+  };
+
+  // Broadcast active-plugin changes so the chat sidecar can show inline events.
+  bundle.onActiveChange = (active) => {
+    broadcast({
+      type: "agent_mode_changed",
+      activePlugins: active,
+      availablePlugins: [...bundle.availablePlugins],
+    });
   };
 
   workspace.setIndexProgressListener((indexed, total) => {
@@ -300,6 +358,7 @@ export async function startEpistemServer(
   agent.on("speak", (text) => {
     workspaceDb.appendChatMessage("assistant", text);
     broadcast({ type: "speak", text });
+    autoActivateForText(text, ctx);
   });
   agent.on("state_change", (state) => broadcast({ type: "state_change", state }));
   agent.on("tool_call", (name, args) => broadcast({ type: "tool_call", name, args }));
@@ -343,15 +402,33 @@ export async function startEpistemServer(
         },
       },
       "/api/agent-mode": {
-        GET: () => json({ mode: bundle.modeState.mode }),
+        GET: () => json({
+          activePlugins: [...bundle.activePlugins],
+          availablePlugins: [...bundle.availablePlugins],
+        }),
         POST: async (req: Request) => {
           try {
-            const { mode } = await req.json() as { mode: string };
-            if (mode !== "standard" && mode !== "extended") {
-              return json({ error: `Invalid mode "${mode}". Use "standard" or "extended".` }, 400);
+            const body = await req.json() as {
+              activate?: string;
+              deactivate?: string;
+            };
+            if (typeof body.activate === "string") {
+              if (!bundle.availablePlugins.includes(body.activate)) {
+                return json({ error: `Unknown plugin "${body.activate}".` }, 400);
+              }
+              bundle.activatePlugin(body.activate);
+            } else if (typeof body.deactivate === "string") {
+              if (!bundle.availablePlugins.includes(body.deactivate)) {
+                return json({ error: `Unknown plugin "${body.deactivate}".` }, 400);
+              }
+              bundle.deactivatePlugin(body.deactivate);
+            } else {
+              return json({ error: "Body must contain { activate } or { deactivate }." }, 400);
             }
-            bundle.setMode(mode);
-            return json({ mode });
+            return json({
+              activePlugins: [...bundle.activePlugins],
+              availablePlugins: [...bundle.availablePlugins],
+            });
           } catch {
             return json({ error: "Invalid JSON body" }, 400);
           }
@@ -363,6 +440,7 @@ export async function startEpistemServer(
           try {
             const content = await req.text();
             await styleGuide.save(content);
+            bundle.activatePlugin("StyleGuide");
             return json({ success: true });
           } catch {
             return json({ error: "Failed to save style guide" }, 500);

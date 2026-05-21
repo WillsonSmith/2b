@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import { Check, CheckCircle2, CornerDownRight, Loader2, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2, AlertCircle, Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen, ClipboardList, MoreHorizontal } from "lucide-react";
+import { Check, CheckCircle2, CornerDownRight, Loader2, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2, AlertCircle, Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen, ClipboardList, MoreHorizontal, Layers } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
 import { PlanModeOptions } from "./PlanModeOptions.tsx";
 import { usePanelResize } from "../hooks/usePanelResize.ts";
@@ -12,6 +12,7 @@ export type SidecarMessage =
   | { role: "assistant"; text: string; id?: number }
   | { role: "tool"; name: string; status: "calling" | "done" | "error"; error?: string }
   | { role: "notification"; text: string; actionLabel: string; onAction: () => void }
+  | { role: "system_event"; text: string; plugin?: string }
   | {
       role: "plan_step";
       planId: string;
@@ -272,6 +273,15 @@ const MessageList = memo(function MessageList({ messages, isThinking, endRef, on
             <div key={i} className="sidecar-msg notification">
               <span className="sidecar-notification-text">{m.text}</span>
               <button className="sidecar-action-btn" onClick={m.onAction}>{m.actionLabel}</button>
+            </div>
+          );
+        }
+
+        if (m.role === "system_event") {
+          return (
+            <div key={i} className="sidecar-system-event">
+              <span className="sidecar-system-event-icon"><Layers size={11} /></span>
+              <span className="sidecar-system-event-text">{m.text}</span>
             </div>
           );
         }

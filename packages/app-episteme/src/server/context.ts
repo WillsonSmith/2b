@@ -43,4 +43,6 @@ export interface WsContext {
   resolveWorkspacePath: (path: string) => string | null;
   scheduleWorkspaceRefresh: () => void;
   suppressExternalChange: (absolutePath: string) => void;
+  /** Activate a mode-gated plugin by name. No-op if already active or unknown. */
+  activatePlugin: (name: string) => void;
 }
