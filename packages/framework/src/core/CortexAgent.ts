@@ -186,6 +186,11 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
     return this.inner.getRegisteredPlugins();
   }
 
+  /** Clears the tool cache so the next tick or getAvailableTools call rebuilds it. */
+  public invalidateToolCache(): void {
+    this.inner.invalidateToolCache();
+  }
+
   public get name(): string {
     return this.inner.name;
   }

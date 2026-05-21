@@ -342,6 +342,21 @@ export async function startEpistemServer(
           });
         },
       },
+      "/api/agent-mode": {
+        GET: () => json({ mode: bundle.modeState.mode }),
+        POST: async (req: Request) => {
+          try {
+            const { mode } = await req.json() as { mode: string };
+            if (mode !== "standard" && mode !== "extended") {
+              return json({ error: `Invalid mode "${mode}". Use "standard" or "extended".` }, 400);
+            }
+            bundle.setMode(mode);
+            return json({ mode });
+          } catch {
+            return json({ error: "Invalid JSON body" }, 400);
+          }
+        },
+      },
       "/api/style-guide": {
         GET: () => json({ content: styleGuide.currentContent }),
         PATCH: async (req: Request) => {

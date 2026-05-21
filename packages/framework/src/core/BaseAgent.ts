@@ -225,6 +225,11 @@ export class BaseAgent extends EventEmitter {
     return this.collectTools();
   }
 
+  /** Clears the tool cache so the next tick (or getAvailableTools call) rebuilds it. */
+  public invalidateToolCache(): void {
+    this.cachedTools = null;
+  }
+
   /** Returns the assembled system prompt from the most recent tick. */
   public getLastSystemPrompt(): string {
     return this.lastSystemPrompt;
