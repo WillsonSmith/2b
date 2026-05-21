@@ -28,7 +28,7 @@ import { EventEmitter } from "node:events";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
 import type { AgentPlugin, ToolDefinition } from "./Plugin.ts";
 import type { InputSource } from "./InputSource.ts";
-import type { AgentConfig, AmbientOptions, Message, MemoryWriteRequest } from "./types.ts";
+import type { AgentConfig, AmbientOptions, Message, MemoryWriteRequest, TickMetrics } from "./types.ts";
 import { logger } from "../logger.ts";
 import { setPlatform } from "../platform/platform.ts";
 
@@ -58,6 +58,12 @@ export class BaseAgent extends EventEmitter {
    * enqueuing, allowing the in-flight LLM tool loop to resume.
    */
   private yieldResolver: ((input: string) => void) | null = null;
+  /**
+   * Per-tick map of tool name → invocation count. Reset at the start of every act().
+   * Read by emitTickMetrics() so each TickMetrics records which tools the LLM
+   * actually invoked this turn.
+   */
+  private currentTickToolCalls: Record<string, number> = {};
 
   public get name(): string {
     return this.config.name ?? "Agent";
@@ -347,10 +353,22 @@ export class BaseAgent extends EventEmitter {
     return { messages, userContent };
   }
 
+  /** Sum of `content.length` across all messages — used for tick metrics. */
+  private historySize(messages: Message[]): number {
+    let total = 0;
+    for (const m of messages) total += m.content.length;
+    return total;
+  }
+
   private async collectSystemPrompt(
     allInputs: string[],
     mustRespond: boolean,
-  ): Promise<{ systemPrompt: string; systemPromptFragments: string[] }> {
+  ): Promise<{
+    systemPrompt: string;
+    systemPromptFragments: string[];
+    pluginContextMs: Record<string, number>;
+    contextContributors: number;
+  }> {
     const inputContext = allInputs.join(" ");
 
     // All plugins run concurrently to overlap their async work (e.g. embedding calls,
@@ -361,6 +379,7 @@ export class BaseAgent extends EventEmitter {
     // are assembled in a deterministic sequence regardless of which plugin finishes first.
     const results = await Promise.allSettled(
       this.plugins.map(async (plugin) => {
+        const pluginStart = performance.now();
         let fragment: string | undefined;
         let ctx: string | undefined;
         if (plugin.getSystemPromptFragment) {
@@ -380,17 +399,21 @@ export class BaseAgent extends EventEmitter {
             logger.error("BaseAgent", `Plugin error in ${plugin.name} getContext:`, e);
           }
         }
-        return { plugin, fragment, ctx };
+        return { plugin, fragment, ctx, elapsedMs: performance.now() - pluginStart };
       }),
     );
 
     const systemPromptFragments: string[] = [];
+    const pluginContextMs: Record<string, number> = {};
     let pluginContext = "";
+    let contextContributors = 0;
     for (const result of results) {
       if (result.status === "rejected") continue;
-      const { plugin, fragment, ctx } = result.value;
+      const { plugin, fragment, ctx, elapsedMs } = result.value;
+      pluginContextMs[plugin.name] = elapsedMs;
       if (fragment) systemPromptFragments.push(fragment);
       if (ctx) {
+        contextContributors++;
         logger.debug("BaseAgent", `Context from ${plugin.name}: "${ctx.slice(0, 120)}${ctx.length > 120 ? "…" : ""}"`);
         pluginContext += `\n${plugin.name}: ${ctx.trim()}`;
       }
@@ -398,7 +421,7 @@ export class BaseAgent extends EventEmitter {
 
     const systemPrompt = this.buildSystemPrompt(mustRespond, pluginContext, systemPromptFragments);
     this.lastSystemPrompt = systemPrompt;
-    return { systemPrompt, systemPromptFragments };
+    return { systemPrompt, systemPromptFragments, pluginContextMs, contextContributors };
   }
 
   /**
@@ -445,6 +468,7 @@ export class BaseAgent extends EventEmitter {
                 return { error: "Interrupted." };
               }
               this.emit("tool_call", toolName, args);
+              this.currentTickToolCalls[toolName] = (this.currentTickToolCalls[toolName] ?? 0) + 1;
 
               // ── Retry loop ───────────────────────────────────────────────
               const retryPolicy = rawTool.retry;
@@ -555,16 +579,43 @@ export class BaseAgent extends EventEmitter {
     const allInputs = [...direct, ...ambient];
     const mustRespond = direct.length > 0;
 
+    // ── Metrics scaffolding ──────────────────────────────────────────────
+    const tickStart = performance.now();
+    let llmMs = 0;
+    let augmentMs = 0;
+    let dispatchMs = 0;
+    let ignored = false;
+    this.currentTickToolCalls = {};
+
+    const collectMessagesStart = performance.now();
     const { messages, userContent } = await this.collectMessages(allInputs);
-    const { systemPrompt, systemPromptFragments } = await this.collectSystemPrompt(allInputs, mustRespond);
+    const collectMessagesMs = performance.now() - collectMessagesStart;
+
+    const collectSystemPromptStart = performance.now();
+    const { systemPrompt, systemPromptFragments, pluginContextMs, contextContributors } =
+      await this.collectSystemPrompt(allInputs, mustRespond);
+    const collectSystemPromptMs = performance.now() - collectSystemPromptStart;
+
     const tools = this.collectTools();
+
+    // Best-effort serialize-for-size; tool params can contain non-stringifiable values
+    // in adversarial cases, so fall back to a name-only estimate.
+    let toolsChars = 0;
+    try {
+      toolsChars = JSON.stringify(tools.map(t => ({ name: t.name, description: t.description, parameters: t.parameters }))).length;
+    } catch {
+      toolsChars = tools.reduce((s, t) => s + t.name.length + (t.description?.length ?? 0), 0);
+    }
+    const historyChars = this.historySize(messages);
 
     logger.info("BaseAgent", `Dispatching to LLM — messages=${messages.length} tools=${tools.map((t) => t.name).join(", ")}`);
     logger.debug("BaseAgent", `System prompt (${systemPromptFragments.length} fragments):\n${systemPrompt.slice(0, 400)}…`);
 
     await this.dispatchMessage("user", userContent, "input");
 
+    const llmStart = performance.now();
     const { response, nonReasoningContent, reasoningText } = await this.llm.chat(messages, systemPrompt, undefined, tools, this.tokenCallback, this.currentAbortController.signal);
+    llmMs = performance.now() - llmStart;
     logger.info("BaseAgent", `LLM response received (${response.length} chars)`);
 
     if (reasoningText) logger.debug("BaseAgent", `Reasoning extracted (${reasoningText.length} chars)`);
@@ -575,10 +626,28 @@ export class BaseAgent extends EventEmitter {
 
     // Ambient-only: respect the model's choice to stay silent
     if (!mustRespond && cleanResponse.includes(this.IGNORE_KEYWORD)) {
+      ignored = true;
+      this.emitTickMetrics({
+        totalMs: performance.now() - tickStart,
+        llmMs,
+        collectMessagesMs,
+        collectSystemPromptMs,
+        pluginContextMs,
+        augmentMs,
+        dispatchMs,
+        systemPromptChars: systemPrompt.length,
+        toolsChars,
+        historyChars,
+        toolCount: tools.length,
+        contextContributors,
+        toolsCalled: { ...this.currentTickToolCalls },
+        ignored,
+      });
       return;
     }
 
     // Allow plugins to augment or replace the response before it is spoken
+    const augmentStart = performance.now();
     let finalResponse = cleanResponse;
     for (const plugin of this.plugins) {
       if (plugin.augmentResponse) {
@@ -589,11 +658,54 @@ export class BaseAgent extends EventEmitter {
         }
       }
     }
+    augmentMs = performance.now() - augmentStart;
 
     logger.debug("BaseAgent", "Dispatching assistant message to plugins");
+    const dispatchStart = performance.now();
     await this.dispatchMessage("assistant", finalResponse, "direct");
+    dispatchMs = performance.now() - dispatchStart;
     logger.info("BaseAgent", `--- Final response (${finalResponse.length} chars) ---`);
     this.emit("speak", finalResponse);
+
+    this.emitTickMetrics({
+      totalMs: performance.now() - tickStart,
+      llmMs,
+      collectMessagesMs,
+      collectSystemPromptMs,
+      pluginContextMs,
+      augmentMs,
+      dispatchMs,
+      systemPromptChars: systemPrompt.length,
+      toolsChars,
+      historyChars,
+      toolCount: tools.length,
+      contextContributors,
+      toolsCalled: { ...this.currentTickToolCalls },
+      ignored,
+    });
+  }
+
+  /**
+   * Emit a `tick_metrics` event and log a one-line debug summary.
+   * Called at the end of every act() invocation, including [IGNORE] paths.
+   */
+  private emitTickMetrics(metrics: TickMetrics): void {
+    this.emit("tick_metrics", metrics);
+    // One-line summary at debug level — opt-in via logger filter.
+    // Format: total/llm/sysprompt-collect/msg-collect/augment/dispatch ms | chars: prompt/tools/history | tools=N ctx=N
+    const callsSummary = Object.keys(metrics.toolsCalled).length === 0
+      ? "none"
+      : Object.entries(metrics.toolsCalled).map(([n, c]) => c === 1 ? n : `${n}×${c}`).join(",");
+    logger.debug(
+      "BaseAgent",
+      `[tick] ${metrics.totalMs.toFixed(0)}ms ` +
+      `(llm=${metrics.llmMs.toFixed(0)} sysprompt=${metrics.collectSystemPromptMs.toFixed(0)} ` +
+      `msgs=${metrics.collectMessagesMs.toFixed(0)} augment=${metrics.augmentMs.toFixed(0)} ` +
+      `dispatch=${metrics.dispatchMs.toFixed(0)}) ` +
+      `| prompt=${metrics.systemPromptChars}ch tools=${metrics.toolsChars}ch history=${metrics.historyChars}ch ` +
+      `| tools=${metrics.toolCount} ctxBlocks=${metrics.contextContributors} called=${callsSummary}` +
+      (metrics.ignored ? " [IGNORED]" : ""),
+    );
   }
 
   private buildSystemPrompt(

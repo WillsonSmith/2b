@@ -1,0 +1,192 @@
+import type { TickMetrics } from "./types.ts";
+
+/**
+ * Rolling buffer of TickMetrics with derived aggregates.
+ *
+ * Subscribe an instance to a BaseAgent's `tick_metrics` event and call
+ * `snapshot()` to read summary stats. Cheap: O(N) over the window per snapshot.
+ *
+ *     const agg = new TickMetricsAggregator(50);
+ *     agent.on("tick_metrics", (m) => agg.record(m));
+ *     const stats = agg.snapshot();
+ *
+ * Default window size is 50 ticks.
+ */
+export class TickMetricsAggregator {
+  private readonly capacity: number;
+  private readonly buffer: TickMetrics[] = [];
+
+  constructor(capacity = 50) {
+    if (capacity < 1) throw new RangeError("TickMetricsAggregator capacity must be >= 1");
+    this.capacity = capacity;
+  }
+
+  record(m: TickMetrics): void {
+    this.buffer.push(m);
+    if (this.buffer.length > this.capacity) this.buffer.shift();
+  }
+
+  clear(): void {
+    this.buffer.length = 0;
+  }
+
+  /** Number of ticks currently in the window. */
+  get size(): number {
+    return this.buffer.length;
+  }
+
+  /**
+   * Aggregated view across the current window.
+   * `pluginContextMs` is averaged per plugin name and sorted descending by avgMs
+   * (the dev-tool-friendly order).
+   */
+  snapshot(): TickMetricsSnapshot {
+    const n = this.buffer.length;
+    if (n === 0) return EMPTY_SNAPSHOT;
+
+    let totalMs = 0;
+    let llmMs = 0;
+    let collectMessagesMs = 0;
+    let collectSystemPromptMs = 0;
+    let augmentMs = 0;
+    let dispatchMs = 0;
+    let systemPromptChars = 0;
+    let toolsChars = 0;
+    let historyChars = 0;
+    let toolCount = 0;
+    let contextContributors = 0;
+    let ignoredCount = 0;
+
+    // sum and per-plugin sum
+    const pluginTotals = new Map<string, { sum: number; count: number; max: number }>();
+    // per-tool: total invocations, ticks where tool was used at least once
+    const toolTotals = new Map<string, { totalCalls: number; ticksUsed: number }>();
+
+    for (const m of this.buffer) {
+      totalMs += m.totalMs;
+      llmMs += m.llmMs;
+      collectMessagesMs += m.collectMessagesMs;
+      collectSystemPromptMs += m.collectSystemPromptMs;
+      augmentMs += m.augmentMs;
+      dispatchMs += m.dispatchMs;
+      systemPromptChars += m.systemPromptChars;
+      toolsChars += m.toolsChars;
+      historyChars += m.historyChars;
+      toolCount += m.toolCount;
+      contextContributors += m.contextContributors;
+      if (m.ignored) ignoredCount++;
+
+      for (const [name, ms] of Object.entries(m.pluginContextMs)) {
+        const entry = pluginTotals.get(name) ?? { sum: 0, count: 0, max: 0 };
+        entry.sum += ms;
+        entry.count++;
+        if (ms > entry.max) entry.max = ms;
+        pluginTotals.set(name, entry);
+      }
+
+      for (const [name, calls] of Object.entries(m.toolsCalled)) {
+        if (calls <= 0) continue;
+        const entry = toolTotals.get(name) ?? { totalCalls: 0, ticksUsed: 0 };
+        entry.totalCalls += calls;
+        entry.ticksUsed++;
+        toolTotals.set(name, entry);
+      }
+    }
+
+    const pluginContextMs: PluginAggregateRow[] = [...pluginTotals.entries()]
+      .map(([name, e]) => ({
+        name,
+        avgMs: e.sum / e.count,
+        maxMs: e.max,
+        samples: e.count,
+      }))
+      .sort((a, b) => b.avgMs - a.avgMs);
+
+    const toolsCalled: ToolAggregateRow[] = [...toolTotals.entries()]
+      .map(([name, e]) => ({
+        name,
+        totalCalls: e.totalCalls,
+        ticksUsed: e.ticksUsed,
+        callsPerTick: e.totalCalls / n,
+      }))
+      .sort((a, b) => b.totalCalls - a.totalCalls);
+
+    return {
+      sampleCount: n,
+      ignoredCount,
+      avg: {
+        totalMs: totalMs / n,
+        llmMs: llmMs / n,
+        collectMessagesMs: collectMessagesMs / n,
+        collectSystemPromptMs: collectSystemPromptMs / n,
+        augmentMs: augmentMs / n,
+        dispatchMs: dispatchMs / n,
+        systemPromptChars: systemPromptChars / n,
+        toolsChars: toolsChars / n,
+        historyChars: historyChars / n,
+        toolCount: toolCount / n,
+        contextContributors: contextContributors / n,
+      },
+      pluginContextMs,
+      toolsCalled,
+    };
+  }
+}
+
+export interface PluginAggregateRow {
+  name: string;
+  avgMs: number;
+  maxMs: number;
+  samples: number;
+}
+
+export interface ToolAggregateRow {
+  name: string;
+  /** Total invocations across the window. */
+  totalCalls: number;
+  /** Number of ticks where this tool was called at least once. */
+  ticksUsed: number;
+  /** totalCalls / sampleCount — fractional average per tick. */
+  callsPerTick: number;
+}
+
+export interface TickMetricsSnapshot {
+  sampleCount: number;
+  ignoredCount: number;
+  avg: {
+    totalMs: number;
+    llmMs: number;
+    collectMessagesMs: number;
+    collectSystemPromptMs: number;
+    augmentMs: number;
+    dispatchMs: number;
+    systemPromptChars: number;
+    toolsChars: number;
+    historyChars: number;
+    toolCount: number;
+    contextContributors: number;
+  };
+  pluginContextMs: PluginAggregateRow[];
+  /** Per-tool invocation totals across the window, sorted descending by totalCalls. */
+  toolsCalled: ToolAggregateRow[];
+}
+
+const EMPTY_SNAPSHOT: TickMetricsSnapshot = {
+  sampleCount: 0,
+  ignoredCount: 0,
+  avg: {
+    totalMs: 0,
+    llmMs: 0,
+    collectMessagesMs: 0,
+    collectSystemPromptMs: 0,
+    augmentMs: 0,
+    dispatchMs: 0,
+    systemPromptChars: 0,
+    toolsChars: 0,
+    historyChars: 0,
+    toolCount: 0,
+    contextContributors: 0,
+  },
+  pluginContextMs: [],
+  toolsCalled: [],
+};

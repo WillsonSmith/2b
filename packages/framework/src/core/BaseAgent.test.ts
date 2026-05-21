@@ -817,3 +817,129 @@ describe("BaseAgent - createInputSources hook", () => {
     await agent.stop();
   });
 });
+
+describe("BaseAgent - tick_metrics", () => {
+  test("emits tick_metrics after a direct tick with expected shape", async () => {
+    const agent = new BaseAgent(makeLLM("hello"), makeConfig());
+
+    // Register a plugin that contributes a context block so contextContributors > 0
+    const ctxPlugin: AgentPlugin = {
+      name: "CtxContributor",
+      getContext: () => "some-context-block",
+      getSystemPromptFragment: () => "fragment-string",
+    };
+    agent.registerPlugin(ctxPlugin);
+
+    const metricsPromise = waitForEvent(agent, "tick_metrics", 500);
+    await agent.start();
+    agent.addDirect("hi");
+
+    const [metrics] = (await metricsPromise) as [import("./types").TickMetrics];
+
+    expect(metrics.totalMs).toBeGreaterThanOrEqual(0);
+    expect(metrics.llmMs).toBeGreaterThanOrEqual(0);
+    expect(metrics.collectMessagesMs).toBeGreaterThanOrEqual(0);
+    expect(metrics.collectSystemPromptMs).toBeGreaterThanOrEqual(0);
+    expect(metrics.systemPromptChars).toBeGreaterThan(0);
+    expect(metrics.toolCount).toBe(0);
+    expect(metrics.contextContributors).toBe(1);
+    expect(metrics.ignored).toBe(false);
+    expect(metrics.pluginContextMs).toHaveProperty("CtxContributor");
+    expect(metrics.pluginContextMs.CtxContributor).toBeGreaterThanOrEqual(0);
+
+    await agent.stop();
+  });
+
+  test("ignored=true when ambient input is suppressed via [IGNORE]", async () => {
+    const agent = new BaseAgent(makeLLM("[IGNORE]"), makeConfig());
+
+    const metricsPromise = waitForEvent(agent, "tick_metrics", 500);
+    await agent.start();
+    agent.addAmbient("ambient noise", { forceTick: true });
+
+    const [metrics] = (await metricsPromise) as [import("./types").TickMetrics];
+    expect(metrics.ignored).toBe(true);
+    expect(metrics.augmentMs).toBe(0);
+    expect(metrics.dispatchMs).toBe(0);
+
+    await agent.stop();
+  });
+
+  test("toolsCalled records per-tick invocation counts", async () => {
+    // LLM stub that invokes `do_thing` twice and `other` once, then returns text.
+    const llm: LLMProvider = {
+      chat: mock(async (_msgs, _sys, _schema, tools) => {
+        const doThing = tools?.find((t) => t.name === "do_thing");
+        const other = tools?.find((t) => t.name === "other");
+        if (doThing?.implementation) {
+          await doThing.implementation({});
+          await doThing.implementation({});
+        }
+        if (other?.implementation) {
+          await other.implementation({});
+        }
+        return { response: "done", nonReasoningContent: "done", reasoningContent: "", reasoningText: "" };
+      }),
+      embed: mock(async () => []),
+    } as unknown as LLMProvider;
+
+    const agent = new BaseAgent(llm, makeConfig());
+
+    const toolsPlugin: AgentPlugin = {
+      name: "TestTools",
+      getTools: () => [
+        { name: "do_thing", description: "d", parameters: { type: "object", properties: {} } },
+        { name: "other", description: "o", parameters: { type: "object", properties: {} } },
+      ],
+      executeTool: async (name) => `ran ${name}`,
+    };
+    agent.registerPlugin(toolsPlugin);
+
+    const metricsPromise = waitForEvent(agent, "tick_metrics", 500);
+    await agent.start();
+    agent.addDirect("go");
+
+    const [metrics] = (await metricsPromise) as [import("./types").TickMetrics];
+    expect(metrics.toolsCalled).toEqual({ do_thing: 2, other: 1 });
+
+    await agent.stop();
+  });
+
+  test("toolsCalled resets between ticks", async () => {
+    let callCount = 0;
+    const llm: LLMProvider = {
+      chat: mock(async (_msgs, _sys, _schema, tools) => {
+        callCount++;
+        // Only call the tool on the first tick.
+        if (callCount === 1) {
+          const t = tools?.find((tt) => tt.name === "do_thing");
+          if (t?.implementation) await t.implementation({});
+        }
+        return { response: "done", nonReasoningContent: "done", reasoningContent: "", reasoningText: "" };
+      }),
+      embed: mock(async () => []),
+    } as unknown as LLMProvider;
+
+    const agent = new BaseAgent(llm, makeConfig());
+    agent.registerPlugin({
+      name: "TestTools",
+      getTools: () => [{ name: "do_thing", description: "d", parameters: { type: "object", properties: {} } }],
+      executeTool: async () => "ok",
+    });
+
+    const metrics: import("./types").TickMetrics[] = [];
+    agent.on("tick_metrics", (m) => metrics.push(m));
+
+    await agent.start();
+    agent.addDirect("first");
+    await waitForIdle(agent);
+    agent.addDirect("second");
+    await waitForIdle(agent);
+
+    expect(metrics).toHaveLength(2);
+    expect(metrics[0]!.toolsCalled).toEqual({ do_thing: 1 });
+    expect(metrics[1]!.toolsCalled).toEqual({});
+
+    await agent.stop();
+  });
+});

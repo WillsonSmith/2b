@@ -5,6 +5,8 @@
  *
  * REST:
  *   GET   /api/health
+ *   GET   /api/metrics        rolling-window agent tick metrics (last 50 ticks),
+ *                              registered tool inventory, and never-called list
  *   GET   /api/style-guide
  *   PATCH /api/style-guide    body: raw Markdown text
  *   GET   /api/config
@@ -19,6 +21,7 @@ import type { EpistemeAgentBundle } from "../agent.ts";
 import type { EpistemeConfig } from "../config.ts";
 import { saveConfig, featureModel } from "../config.ts";
 import { createProvider } from "@2b/framework/providers/llm/createProvider.ts";
+import { TickMetricsAggregator } from "@2b/framework/core/TickMetricsAggregator.ts";
 import { PlanningController } from "../planning/PlanningController.ts";
 import { AutocompleteRunner } from "../features/autocomplete.ts";
 import { LintRunner } from "../features/lint.ts";
@@ -289,6 +292,10 @@ export async function startEpistemServer(
     }
   });
 
+  // Tick metrics: rolling window of the last 50 ticks, exposed at /api/metrics.
+  const tickMetrics = new TickMetricsAggregator(50);
+  agent.on("tick_metrics", (m) => tickMetrics.record(m));
+
   agent.on("error", (err: Error) => broadcast({ type: "error", message: err.message }));
   agent.on("speak", (text) => {
     workspaceDb.appendChatMessage("assistant", text);
@@ -319,6 +326,21 @@ export async function startEpistemServer(
       "/api/health": {
         GET: () =>
           json({ status: "ok", app: "episteme", workspace: workspaceRoot }),
+      },
+      "/api/metrics": {
+        GET: () => {
+          const snap = tickMetrics.snapshot();
+          const registeredTools = agent.getAvailableTools().map((t) => t.name).sort();
+          const calledNames = new Set(snap.toolsCalled.map((r) => r.name));
+          const neverCalled = registeredTools.filter((n) => !calledNames.has(n));
+          return json({
+            ...snap,
+            registeredToolCount: registeredTools.length,
+            registeredTools,
+            neverCalled,
+            plugins: agent.getRegisteredPlugins(),
+          });
+        },
       },
       "/api/style-guide": {
         GET: () => json({ content: styleGuide.currentContent }),

@@ -38,6 +38,43 @@ export interface AgentEventMap {
   "behaviors_loaded": [core: Array<{ id: string; text: string; weight: number }>, contextual: Array<{ id: string; text: string; score: number; weight: number }>];
   /** Emitted when the agent yields control mid-turn, awaiting user continuation. */
   "agent_yield": [reason: string | undefined, partialResult: string | undefined];
+  /** Per-tick timing and size breakdown for performance analysis. Emitted at the end of each tick. */
+  tick_metrics: [metrics: TickMetrics];
+}
+
+/**
+ * Per-tick performance breakdown. Emitted at the end of every act() call.
+ * All durations in milliseconds; all sizes in characters.
+ */
+export interface TickMetrics {
+  /** Wall time for the whole tick (collect → llm → augment → dispatch). */
+  totalMs: number;
+  /** Wall time for the LLM call alone. Usually dominates totalMs. */
+  llmMs: number;
+  /** Wall time collecting history from all plugins' getMessages. */
+  collectMessagesMs: number;
+  /** Wall time collecting system prompt fragments + context from all plugins. */
+  collectSystemPromptMs: number;
+  /** Per-plugin breakdown of getContext + getSystemPromptFragment time, keyed by plugin name. */
+  pluginContextMs: Record<string, number>;
+  /** Wall time for the augmentResponse chain. */
+  augmentMs: number;
+  /** Wall time dispatching onMessage to all plugins (assistant message only). */
+  dispatchMs: number;
+  /** Assembled system prompt size in chars. */
+  systemPromptChars: number;
+  /** Serialized tool list size in chars (best-effort JSON.stringify). */
+  toolsChars: number;
+  /** Total chars in conversation history sent to the LLM. */
+  historyChars: number;
+  /** Number of tools available this tick. */
+  toolCount: number;
+  /** Number of plugins that contributed a getContext block. */
+  contextContributors: number;
+  /** Per-tool invocation count during this tick. Empty when no tools fired. */
+  toolsCalled: Record<string, number>;
+  /** Whether the LLM response was [IGNORE]-suppressed (ambient-only). */
+  ignored: boolean;
 }
 
 /**
