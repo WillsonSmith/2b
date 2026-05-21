@@ -176,6 +176,16 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
     return this;
   }
 
+  /** Returns all tools currently registered across all plugins. */
+  public getAvailableTools() {
+    return this.inner.getAvailableTools();
+  }
+
+  /** Returns a summary of registered plugins and their tool counts. */
+  public getRegisteredPlugins() {
+    return this.inner.getRegisteredPlugins();
+  }
+
   public get name(): string {
     return this.inner.name;
   }
