@@ -184,6 +184,10 @@ ${conversationText}`;
         this.extractProcedures(toSummarize, systemPrompt).catch((e) =>
           logger.error("MemoryPlugin", "Failed to extract procedures:", e),
         );
+
+        this.extractBehaviors(toSummarize).catch((e) =>
+          logger.error("MemoryPlugin", "Failed to extract behaviors:", e),
+        );
       }
     } catch (error) {
       logger.error("MemoryPlugin", "Failed to summarize context:", error);
@@ -233,5 +237,61 @@ ${conversationText}`;
       source: "MemoryPlugin",
     });
     logger.info("MemoryPlugin", "Extracted procedure from summarized context");
+  }
+
+  /**
+   * Scans the summarized message window for stated user preferences, corrections,
+   * and recurring rules, then persists each distinct one as a behavior memory.
+   * Runs fire-and-forget after summarization; dedup in writeMemory (0.92 threshold)
+   * prevents near-identical behaviors from accumulating across summarization cycles.
+   */
+  private async extractBehaviors(messages: Message[]): Promise<void> {
+    const hasPreferenceSignal = messages.some((m) =>
+      m.role === "user" && /\b(prefer|always|never|stop|don't|avoid|please|instead|rather|want you to|should)\b/i.test(m.content),
+    );
+    if (!hasPreferenceSignal) return;
+
+    const conversationText = messages
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => `${m.role}: ${m.content.slice(0, 500)}`)
+      .join("\n");
+
+    const extractionPrompt = `Review this conversation and extract any persistent behavioral rules for the AI assistant.
+
+Look for:
+- User corrections: "stop doing X", "don't X", "avoid Y"
+- Stated preferences: "I prefer X", "always use Y", "I want you to Z"
+- Workflow rules: "when doing X, always Y first"
+- Style preferences: formatting, tone, naming conventions
+
+Output each rule on its own line prefixed with "RULE:". Keep rules concise (under 120 chars).
+If no behavioral rules are present, output: NONE
+
+Conversation:
+${conversationText}`;
+
+    const { nonReasoningContent: response } = await this.llm.chat([
+      { role: "user", content: extractionPrompt },
+    ]);
+
+    if (!response || response.trim() === "NONE") return;
+
+    const rules = response
+      .split("\n")
+      .map((line) => line.replace(/^RULE:\s*/i, "").trim())
+      .filter((line) => line.length > 5 && line.length <= 200);
+
+    for (const rule of rules) {
+      this.agent?.requestMemoryWrite({
+        text: rule,
+        type: "behavior",
+        tags: ["auto_extracted"],
+        source: "MemoryPlugin:auto",
+      });
+    }
+
+    if (rules.length > 0) {
+      logger.info("MemoryPlugin", `Extracted ${rules.length} behavior(s) from summarized context`);
+    }
   }
 }

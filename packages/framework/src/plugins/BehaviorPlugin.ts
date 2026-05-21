@@ -72,16 +72,11 @@ export class BehaviorPlugin implements AgentPlugin {
   async getSystemPromptFragment(context?: string): Promise<string> {
     const parts: string[] = [
       "## Behavior System",
-      "You have a self-shaping behavior system. Behaviors are persistent rules that actively shape how you respond.",
-      "Use `save_behavior` to record a new behavioral rule.",
-      "  - `weight` (0.0–1.0): how strongly this rule applies. 1.0 = always active (personality-level). 0.5 = general preference. 0.1 = situational only. Default: 0.5.",
-      "  - `core: true` is shorthand for weight 1.0 — always injected into every turn.",
-      "  - Tagging behaviors with profile names (e.g. `tags: [\"technical\"]`) lets you `activate_profile(\"technical\")` to load all matching behaviors for the session.",
-      "Use `synthesize_behaviors` to resolve a flagged conflict between two behaviors.",
-      "Use `activate_profile` to force-load all behaviors tagged with a given profile name.",
-      "Use `force_behavior` to pin a specific behavior ID as active for this session.",
-      "Use `suppress_behavior` to exclude a specific behavior ID from this session.",
-      "When a conflict is detected after saving a behavior, call `synthesize_behaviors` to resolve it — or dismiss by ignoring the warning.",
+      "Behaviors are persistent rules injected every turn that actively shape how you respond. Active behaviors are listed below.",
+      "",
+      "**When to use behavior tools:**",
+      "- `save_behavior` — when the user corrects how you respond ('stop doing X', 'always do Y'), states a preference ('I prefer X over Y'), or when you notice a recurring pattern that should become a rule. Use `weight: 1.0` for personality-level rules, `0.5` for general preferences, `0.1` for situational rules.",
+      "- `synthesize_behaviors` — when a conflict is flagged after `save_behavior`, call this to merge the two conflicting rules into one. IDs are provided in the conflict warning.",
     ];
 
     try {
@@ -217,40 +212,6 @@ export class BehaviorPlugin implements AgentPlugin {
           required: ["id_a", "id_b"],
         },
       },
-      {
-        name: "activate_profile",
-        description:
-          "Force-load all behaviors tagged with a given profile name for the rest of this session, regardless of their weight or semantic relevance. Use to switch into a mode like 'technical' or 'creative'.",
-        parameters: {
-          type: "object",
-          properties: {
-            profile: { type: "string", description: "The tag/profile name to activate" },
-          },
-          required: ["profile"],
-        },
-      },
-      {
-        name: "force_behavior",
-        description: "Pin a specific behavior by ID as always-active for this session.",
-        parameters: {
-          type: "object",
-          properties: {
-            id: { type: "string", description: "Behavior memory ID to force-activate" },
-          },
-          required: ["id"],
-        },
-      },
-      {
-        name: "suppress_behavior",
-        description: "Exclude a specific behavior by ID from firing for the rest of this session.",
-        parameters: {
-          type: "object",
-          properties: {
-            id: { type: "string", description: "Behavior memory ID to suppress" },
-          },
-          required: ["id"],
-        },
-      },
     ];
   }
 
@@ -258,6 +219,7 @@ export class BehaviorPlugin implements AgentPlugin {
     try {
       if (name === "save_behavior") return await this.handleSaveBehavior(args);
       if (name === "synthesize_behaviors") return await this.handleSynthesizeBehaviors(args);
+      // Internal/server-callable — not in LLM tool surface
       if (name === "activate_profile") return this.handleActivateProfile(args);
       if (name === "force_behavior") return this.handleForceBehavior(args);
       if (name === "suppress_behavior") return this.handleSuppressBehavior(args);

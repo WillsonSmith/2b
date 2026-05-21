@@ -268,23 +268,18 @@ export class CortexMemoryPlugin implements AgentPlugin {
 
     const parts = [
       "## Memory System",
-      "You have a long-term memory system with four types of memories:",
-      "- **factual**: specific details from conversations, decisions, established facts.",
-      "- **thought**: your internal reasoning and reflections (written by your thought system).",
-      "- **behavior**: learned preferences and behavioral rules (managed by the Behavior system).",
-      "- **procedure**: step-by-step instructions for accomplishing a task you have previously solved.",
-      "Relevant factual memories and procedures are automatically surfaced in your context at the start of each turn — check there before calling search_memory.",
-      "Use `save_memory` to preserve important facts or decisions.",
-      "Use `save_behavior` to record a persistent behavioral rule. See Behavior System instructions for details.",
-      "Use `save_procedure` after successfully completing a non-trivial task to record the steps taken.",
-      "Use `edit_memory` to update the text of an existing memory by its ID.",
-      "Use `delete_memory` to remove a memory. Single form: `{ id }`. Batch form: `{ ids: [id1, id2, ...] }` — deletes multiple memories in one call and triggers one cache invalidation regardless of how many IDs are provided.",
-      "Use `get_linked_memories` to follow chains of related ideas.",
-      "When saving a memory that updates a prior one, use `supersedes` to preserve the lineage rather than deleting the old memory.",
-      "Use `query_memories` to filter memories by type, tags, date range, or full-text content.",
-      "Use `hybrid_search` to combine semantic similarity search with metadata filters.",
-      "Use `synthesize_memories` to consolidate memories across types into a single insight; pass `save_as` to persist the result.",
-      "Use `reflect_on_topic` before beginning complex tasks to integrate everything you know; 'deep' depth also derives a behavioral insight and saves the reflection.",
+      "Relevant memories are automatically surfaced in your context at the start of each turn — read them before deciding whether to search.",
+      "",
+      "**When to use memory tools:**",
+      "- `save_memory` — when the user explicitly says 'remember this', 'don't forget', or when a one-off fact or decision is stated that won't be captured in the session summary (e.g. a specific date, a name, a confirmed preference).",
+      "- `hybrid_search` — when the user asks you to search or recall something specific ('what do you know about X', 'find memories about Y'), or when you need more context than was auto-surfaced to answer a multi-hop question.",
+      "- `synthesize_memories` — when you need to consolidate what you know across multiple memory types before answering a complex question. Pass `save_as` to persist the result.",
+      "- `reflect_on_topic` — before beginning a substantial task on a topic you have worked on before. 'deep' depth also saves the reflection and derives a behavioral insight. Skip for simple or one-off requests.",
+      "",
+      "**When NOT to use memory tools:**",
+      "- Do not call `hybrid_search` if the answer is already in the surfaced memories above.",
+      "- Do not call `reflect_on_topic` on every turn — only before complex multi-step work.",
+      "- Procedures are saved automatically; you do not need to save them explicitly.",
     ];
 
     return parts.join("\n");
@@ -415,23 +410,6 @@ export class CortexMemoryPlugin implements AgentPlugin {
   getTools(): ToolDefinition[] {
     return [
       {
-        name: "search_memory",
-        description:
-          "Search long-term memory by semantic similarity. Optionally filter by type.",
-        parameters: {
-          type: "object",
-          properties: {
-            query: { type: "string", description: "The query to search for" },
-            type: {
-              type: "string",
-              enum: ["factual", "thought", "behavior", "procedure"],
-              description: "Optional memory type filter",
-            },
-          },
-          required: ["query"],
-        },
-      },
-      {
         name: "save_memory",
         description: "Save a new memory with a given type.",
         parameters: {
@@ -457,121 +435,6 @@ export class CortexMemoryPlugin implements AgentPlugin {
             },
           },
           required: ["content", "type"],
-        },
-      },
-      {
-        name: "save_procedure",
-        description:
-          "Save a reusable step-by-step procedure after successfully completing a non-trivial task. Include a clear goal description and numbered steps. Relevant procedures are automatically surfaced when similar tasks arise in future conversations.",
-        parameters: {
-          type: "object",
-          properties: {
-            goal: {
-              type: "string",
-              description:
-                "A short description of what the procedure accomplishes, e.g. 'Clip a segment from a Twitch VOD'",
-            },
-            steps: {
-              type: "string",
-              description:
-                "Numbered step-by-step instructions describing exactly what was done",
-            },
-          },
-          required: ["goal", "steps"],
-        },
-      },
-      {
-        name: "edit_memory",
-        description:
-          "Edit the text content of an existing memory by its ID. The embedding will be updated automatically.",
-        parameters: {
-          type: "object",
-          properties: {
-            id: { type: "string", description: "The memory ID to edit" },
-            content: {
-              type: "string",
-              description: "The new text content for the memory",
-            },
-          },
-          required: ["id", "content"],
-        },
-      },
-      {
-        name: "delete_memory",
-        description:
-          "Delete a memory by ID. Single form: pass `id` (string). Batch form: pass `ids` (array of strings) to delete multiple memories in one call — triggers one cache invalidation regardless of how many IDs are provided.",
-        parameters: {
-          type: "object",
-          properties: {
-            id: { type: "string", description: "The memory ID to delete (single form)" },
-            ids: {
-              type: "array",
-              items: { type: "string" },
-              description: "Array of memory IDs to delete in one call (batch form)",
-            },
-          },
-        },
-      },
-      {
-        name: "get_linked_memories",
-        description: "Get all memories linked to a given memory ID.",
-        parameters: {
-          type: "object",
-          properties: {
-            id: {
-              type: "string",
-              description: "The memory ID to look up links for",
-            },
-            link_type: {
-              type: "string",
-              description: "Filter to only links of a specific type: 'related', 'supersedes', 'reconstructed_from'",
-            },
-          },
-          required: ["id"],
-        },
-      },
-      {
-        name: "query_memories",
-        description:
-          "Filter memories by metadata: type, tags, date range, and/or full-text content. Returns results ordered by recency. Pass status: ['superseded'] to see superseded memories.",
-        parameters: {
-          type: "object",
-          properties: {
-            types: {
-              type: "array",
-              items: {
-                type: "string",
-                enum: ["factual", "thought", "behavior", "procedure"],
-              },
-              description: "Filter by memory types",
-            },
-            tags: {
-              type: "array",
-              items: { type: "string" },
-              description: "Filter by tags (all must match)",
-            },
-            after: {
-              type: "string",
-              description: "ISO date string - only memories after this date",
-            },
-            before: {
-              type: "string",
-              description: "ISO date string - only memories before this date",
-            },
-            contains: {
-              type: "string",
-              description: "Full-text search term",
-            },
-            limit: {
-              type: "number",
-              description: "Max results (default 20)",
-            },
-            status: {
-              type: "array",
-              items: { type: "string" },
-              description: "Filter by status. Default: ['active']. Pass ['superseded'] to see superseded memories.",
-            },
-          },
         },
       },
       {
@@ -663,21 +526,22 @@ export class CortexMemoryPlugin implements AgentPlugin {
 
   async executeTool(name: string, args: any): Promise<any> {
     try {
-      if (name === "search_memory") return await this.handleSearchMemory(args);
       if (name === "save_memory") return await this.handleSaveMemory(args);
       // save_behavior is handled by BehaviorPlugin
+      if (name === "hybrid_search") return await this.handleHybridSearch(args);
+      if (name === "synthesize_memories") return await this.handleSynthesizeMemories(args);
+      if (name === "reflect_on_topic") return await this.handleReflectOnTopic(args);
+      // Diagnostic/internal tools — not exposed in getTools() but callable by server routes
       if (name === "save_procedure") return await this.handleSaveProcedure(args);
+      if (name === "search_memory") return await this.handleSearchMemory(args);
+      if (name === "query_memories") return this.handleQueryMemories(args);
       if (name === "edit_memory") return await this.handleEditMemory(args);
       if (name === "delete_memory") return await this.handleDeleteMemory(args);
       if (name === "get_linked_memories") return await this.handleGetLinkedMemories(args);
       if (name === "get_memory_lineage") return JSON.stringify(await this.db.getLineage(args.id), null, 2);
-      if (name === "query_memories") return this.handleQueryMemories(args);
-      if (name === "hybrid_search") return await this.handleHybridSearch(args);
       if (name === "aggregate_memories") return this.handleAggregateMemories(args);
       if (name === "get_memory_timeline") return this.handleGetMemoryTimeline(args);
       if (name === "memory_retrieval_trace") return this.handleMemoryRetrievalTrace();
-      if (name === "synthesize_memories") return await this.handleSynthesizeMemories(args);
-      if (name === "reflect_on_topic") return await this.handleReflectOnTopic(args);
     } catch (e) {
       logger.error(this.name, `Tool error (${name}):`, e);
       return `Tool error: ${e instanceof Error ? e.message : String(e)}`;

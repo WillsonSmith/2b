@@ -10,13 +10,19 @@ User hypothesis: tools tend to be called only when the user explicitly invokes t
 
 This is an **exploration plan only** — no code edits, no fixes. The output is a written assessment that answers three questions and recommends a direction.
 
+## Framing assumption
+
+Before diagnosing *why tools aren't called*, establish *whether they should be*. The zero-invocation metric is only a problem if the tools serve a purpose that isn't being served otherwise. The exploration should treat "delete the tools" as a first-class possible outcome, not a fallback.
+
+What is memory *supposed to accomplish* in Episteme? Best read from the source: long-term context across writing sessions, preference/style learning, fact recall about the user's drafts and topics. Flag any assumption here as "needs user confirmation" in open questions.
+
 ## Goals — three questions to answer
 
-1. **Why are the memory tools not being called?** Is it a description problem (tool descriptions don't trigger the LLM), a redundancy problem (auto-surfacing already covers the need), a prompt problem (system prompt doesn't push toward saving), or a workflow problem (the user-facing tasks just don't require explicit memory ops)?
+1. **Should the memory tools exist at all?** Given auto-surfacing already injects relevant memories every tick, and given the zero-invocation metric, is the tool surface adding capability or just adding prompt weight? A clean answer of "delete most of them" is acceptable.
 
-2. **Should the agent be calling them automatically?** If auto-surfacing already retrieves memories effectively, is there even a need for tool-based search? What about saving — is there an information-loss problem where useful facts pass through the conversation without being persisted?
+2. **Why are the memory tools not being called?** Conditional on the answer to (1) being "they should exist": is it a description problem (tool descriptions don't trigger the LLM), a redundancy problem (auto-surfacing already covers the need), a prompt problem (system prompt doesn't push toward saving), or a workflow problem (the user-facing tasks just don't require explicit memory ops)?
 
-3. **What's the right architecture going forward?** Should memory remain tool-shaped (LLM chooses), shift to framework-triggered (heuristics or hooks save/search automatically — similar pattern to the auto-activation work just landed), or a hybrid? Where else could memory be improved — schema, retrieval ranking, write-side defaults?
+3. **What's the right architecture going forward?** Should memory remain tool-shaped (LLM chooses), shift to framework-triggered (heuristics or hooks save/search automatically — similar pattern to the auto-activation work just landed), a hybrid, or just be trimmed? Where else could memory be improved — schema, retrieval ranking, write-side defaults?
 
 ## Investigation areas
 
@@ -60,6 +66,8 @@ Each area lists the files to read and the questions that area should answer. No 
 - Is there evidence (in metrics or saved memories) of *useful* facts being mentioned and then lost because nothing saved them?
 - What's the relationship between Episteme's WorkspaceDB knowledge graph and CortexMemory? Do they serve the same role? Different ones? Are they competing?
 
+**Success criterion:** produce 2–3 concrete worked examples (real or synthesized from existing memories) where you can compare what auto-surfacing returns vs. what tool-based search would return. Without examples, this question gets answered by intuition.
+
 ### Area 4 — Behavior vs. memory tools
 
 **Files:**
@@ -83,7 +91,9 @@ This is the synthesis area — informed by 1–4, sketch options and trade-offs.
 
 - **Hybrid.** Auto-save common patterns (preferences, stated facts, decisions); keep tool surface for explicit "remember this" / "what did I say about X" requests. Tools become a power-user override, not the default path.
 
-- **LLM-as-saver in a separate pass.** After each turn, a small cheap LLM call extracts memory candidates from the exchange. Independent of the main turn — no impact on prompt size, no reliance on the main model reaching for tools.
+- **LLM-as-saver in a separate pass.** After each turn, a small cheap LLM call extracts memory candidates from the exchange. Independent of the main turn — no impact on prompt size, no reliance on the main model reaching for tools. **Cost note: this doubles per-turn LLM calls.** Weigh honestly against the others; cheap doesn't mean free.
+
+- **Delete most of them.** If auto-surfacing handles retrieval and information loss on the save side turns out to be minor or already covered by WorkspaceDB, the right move may be to delete the tool surface entirely (or keep one explicit "remember this" tool). Frees prompt budget; aligns with the tool-efficiency work already in flight.
 
 For each, note: prompt-size impact, latency impact, what kind of memory it captures well/poorly, and what becomes hard.
 
@@ -98,7 +108,7 @@ For each, note: prompt-size impact, latency impact, what kind of memory it captu
 
 A markdown document at `docs/plans/Episteme_Memory_Tool_Assessment.md` containing:
 
-1. **Findings table** — every memory/behavior tool with current description and a verdict (redundant / useful / needs better description / candidate for auto-trigger).
+1. **Findings table** — every memory/behavior tool with current description and a verdict: `delete` / `redundant-with-X` / `useful-as-is` / `needs-better-description` / `candidate-for-auto-trigger`.
 2. **Answers to the three goal questions**, each in one paragraph.
 3. **Recommended direction** — pick one of the four architectures above, with two-or-three-sentence justification and an explicit list of what would need to change.
 4. **Open questions** — anything the source alone couldn't answer; flag as needing real-session data or user input.
@@ -112,3 +122,4 @@ Target length: tight enough to read in five minutes, detailed enough that the fo
 - Memory storage backend changes (SQLite vs. anything else)
 - Cross-agent memory (Episteme ↔ 2b chat agent)
 - The `find_files` and `yield_control` never-called tools from the same metric (separate cleanup, not memory-related)
+- Changes to embedding model or similarity threshold (in-scope concerns may surface here in Area 3, but tuning is a follow-on, not part of this assessment)
