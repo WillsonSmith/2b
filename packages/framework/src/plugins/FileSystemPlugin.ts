@@ -202,9 +202,8 @@ export class FileSystemPlugin implements AgentPlugin {
       "- stat_file: Get metadata: type (file/directory/symlink/other), size, last-modified time, and symlink target if applicable.",
       "- find_files: Search for files matching a glob pattern. Dotfiles excluded by default — pass includeDotfiles: true to include .env, .gitignore, etc.",
       "- search_in_files: Search for a regex pattern across file contents. Uses ripgrep if available, with a built-in fallback.",
-      "- patch_file: Edit specific sections of an existing file using search/replace pairs. Preferred over write_file for targeted changes. Not for files over 10 MB.",
-      "- patch_file_range: Replace a line range (by 1-indexed line numbers) in a file. Streams the file — use this for files over 10 MB. Call read_file with offset/limit first to find the target line numbers.",
-      "IMPORTANT: Use patch_file instead of write_file when modifying existing files. Only use write_file for new files or complete rewrites. For files over 10 MB, use patch_file_range. Always call read_file first to get exact text or line numbers.",
+      "- patch_file: Edit specific sections of an existing file using search/replace pairs. Preferred over write_file for targeted changes.",
+      "IMPORTANT: Use patch_file instead of write_file when modifying existing files. Only use write_file for new files or complete rewrites. Always call read_file first to get exact text.",
     ].join("\n");
   }
 
@@ -251,22 +250,6 @@ export class FileSystemPlugin implements AgentPlugin {
             },
           },
           required: [],
-        },
-      },
-      {
-        name: "stat_file",
-        description:
-          "Get metadata for a file or directory: type (file/directory/symlink/other), size in bytes, last-modified timestamp. For symlinks, also returns isSymlink: true and symlinkTarget.",
-        parameters: {
-          type: "object",
-          properties: {
-            path: {
-              type: "string",
-              description:
-                "Absolute path, or path relative to the working directory.",
-            },
-          },
-          required: ["path"],
         },
       },
       {
@@ -367,35 +350,6 @@ export class FileSystemPlugin implements AgentPlugin {
             },
           },
           required: ["path", "edits"],
-        },
-      },
-      {
-        name: "patch_file_range",
-        permission: "per_call" as const,
-        description:
-          "Replace a range of lines in a file by line number. Streams the file so it is safe for files over 10 MB. Use read_file with offset/limit to identify the target line numbers first. startLine and endLine are both inclusive and 1-indexed.",
-        parameters: {
-          type: "object",
-          properties: {
-            path: {
-              type: "string",
-              description: "Absolute path, or path relative to the working directory.",
-            },
-            startLine: {
-              type: "number",
-              description: "1-indexed line number of the first line to replace (inclusive).",
-            },
-            endLine: {
-              type: "number",
-              description: "1-indexed line number of the last line to replace (inclusive). Must be >= startLine.",
-            },
-            newContent: {
-              type: "string",
-              description:
-                "Replacement text. Pass an empty string to delete the line range without inserting anything.",
-            },
-          },
-          required: ["path", "startLine", "endLine", "newContent"],
         },
       },
       {
@@ -819,7 +773,7 @@ export class FileSystemPlugin implements AgentPlugin {
 
     if (fileSize > MAX_PATCH_BYTES) {
       throw new Error(
-        `File is ${fileSize} bytes, which exceeds the ${MAX_PATCH_BYTES / 1024 / 1024} MB limit for patch_file. Use patch_file_range instead.`,
+        `File is ${fileSize} bytes, which exceeds the ${MAX_PATCH_BYTES / 1024 / 1024} MB limit for patch_file. Use write_file to rewrite the file instead.`,
       );
     }
 

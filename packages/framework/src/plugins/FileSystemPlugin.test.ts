@@ -756,7 +756,7 @@ describe("patch_file size guard", () => {
         path: r(abs),
         edits: [{ search: "a", replace: "b" }],
       }),
-    ).rejects.toThrow("patch_file_range");
+    ).rejects.toThrow("write_file");
   });
 });
 

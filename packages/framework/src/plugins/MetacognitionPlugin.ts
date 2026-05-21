@@ -202,8 +202,6 @@ export class MetacognitionPlugin implements AgentPlugin {
       "You have metacognition tools available. Before searching memory, state your intent with " +
       "[Memory Search: <query>]. After tool-heavy turns, reflect on whether your reasoning relied " +
       "on retrieval or inference. Use the introspect tool to examine your current cognitive state. " +
-      "Use read_source_file, list_source_dir, and grep_source to read your own implementation code. " +
-      "Use efficiency_report to analyze your own tool-use patterns and identify redundancy or overuse. " +
       "Flag assumptions explicitly rather than presenting them as facts."
     );
   }
@@ -285,47 +283,6 @@ export class MetacognitionPlugin implements AgentPlugin {
         name: "memory_status",
         description:
           "Returns memory counts by type (factual, thought, behavior, procedure) and current turn memory access stats.",
-        parameters: { type: "object", properties: {} },
-      },
-      {
-        name: "show_active_rules",
-        description:
-          "Retrieves all behavior memories (the active behavioral rules currently injected into your system prompt) with their tags and creation dates.",
-        parameters: { type: "object", properties: {} },
-      },
-      // --- Runtime self-inspection ---
-      {
-        name: "list_registered_plugins",
-        description:
-          "Lists all plugins currently registered with the agent, showing each plugin's name and number of tools it exposes.",
-        parameters: { type: "object", properties: {} },
-      },
-      {
-        name: "list_available_tools",
-        description:
-          "Lists all tools currently available to the agent across all registered plugins, with their descriptions.",
-        parameters: { type: "object", properties: {} },
-      },
-      {
-        name: "get_system_prompt",
-        description:
-          "Returns the full assembled system prompt from the most recent LLM call, showing exactly what instructions the model received. NOTE: output may contain sensitive behavioral rules or injected correction text.",
-        parameters: { type: "object", properties: {} },
-      },
-      // --- Efficiency analysis ---
-      {
-        name: "efficiency_report",
-        description:
-          "Analyzes your own tool-use patterns across recent turns and the current turn. " +
-          "Identifies redundant calls, dead searches, saturation events, and hedging frequency. " +
-          "Use this to understand your own cognitive inefficiencies in concrete, measurable terms.",
-        parameters: { type: "object", properties: {} },
-      },
-      // --- Self-correction ---
-      {
-        name: "show_corrections",
-        description:
-          "Shows the history of self-corrections the agent has autonomously applied, including what pattern triggered each correction and what behavioral rule was saved as a result.",
         parameters: { type: "object", properties: {} },
       },
     ];

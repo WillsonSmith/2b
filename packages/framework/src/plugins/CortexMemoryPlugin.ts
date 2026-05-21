@@ -280,12 +280,9 @@ export class CortexMemoryPlugin implements AgentPlugin {
       "Use `edit_memory` to update the text of an existing memory by its ID.",
       "Use `delete_memory` to remove a memory. Single form: `{ id }`. Batch form: `{ ids: [id1, id2, ...] }` — deletes multiple memories in one call and triggers one cache invalidation regardless of how many IDs are provided.",
       "Use `get_linked_memories` to follow chains of related ideas.",
-      "Use `get_memory_lineage` to trace how a memory has evolved over time — what it replaced, and what has since replaced it.",
       "When saving a memory that updates a prior one, use `supersedes` to preserve the lineage rather than deleting the old memory.",
       "Use `query_memories` to filter memories by type, tags, date range, or full-text content.",
       "Use `hybrid_search` to combine semantic similarity search with metadata filters.",
-      "Use `aggregate_memories` to understand the shape and distribution of your memories.",
-      "Use `get_memory_timeline` to retrieve memories in chronological order.",
       "Use `synthesize_memories` to consolidate memories across types into a single insight; pass `save_as` to persist the result.",
       "Use `reflect_on_topic` before beginning complex tasks to integrate everything you know; 'deep' depth also derives a behavioral insight and saves the reflection.",
     ];
@@ -534,17 +531,6 @@ export class CortexMemoryPlugin implements AgentPlugin {
         },
       },
       {
-        name: "get_memory_lineage",
-        description: "Follow the supersession and reconstruction chain for a memory. Returns the full lineage: ancestors (what it was built from), the memory itself, and descendants (what has since replaced it).",
-        parameters: {
-          type: "object",
-          properties: {
-            id: { type: "string", description: "The memory ID to trace" },
-          },
-          required: ["id"],
-        },
-      },
-      {
         name: "query_memories",
         description:
           "Filter memories by metadata: type, tags, date range, and/or full-text content. Returns results ordered by recency. Pass status: ['superseded'] to see superseded memories.",
@@ -627,60 +613,6 @@ export class CortexMemoryPlugin implements AgentPlugin {
             },
           },
           required: ["query"],
-        },
-      },
-      {
-        name: "aggregate_memories",
-        description:
-          "Get counts grouped by type, tag, or date. Useful for understanding the shape of memory.",
-        parameters: {
-          type: "object",
-          properties: {
-            group_by: {
-              type: "string",
-              enum: ["type", "tag", "date"],
-              description: "The dimension to group by",
-            },
-            filter: {
-              type: "object",
-              description:
-                "Optional filter (same shape as query_memories params)",
-            },
-          },
-          required: ["group_by"],
-        },
-      },
-      {
-        name: "get_memory_timeline",
-        description:
-          "Retrieve memories in chronological order within an optional date range.",
-        parameters: {
-          type: "object",
-          properties: {
-            start: {
-              type: "string",
-              description: "ISO date string for range start",
-            },
-            end: {
-              type: "string",
-              description: "ISO date string for range end",
-            },
-            limit: {
-              type: "number",
-              description: "Max results (default 20)",
-            },
-          },
-        },
-      },
-      {
-        name: "memory_retrieval_trace",
-        description:
-          "Returns the retrieval trace from the most recent automatic context fetch. Shows which memory IDs were retrieved, their similarity scores, and the selection method. Use for debugging memory relevance.",
-        parameters: {
-          type: "object",
-          properties: {},
-          required: [],
-          additionalProperties: false,
         },
       },
       {

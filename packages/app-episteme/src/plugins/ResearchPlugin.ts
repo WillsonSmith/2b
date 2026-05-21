@@ -98,7 +98,7 @@ export class ResearchPlugin implements AgentPlugin {
   }
 
   getSystemPromptFragment(): string {
-    return "You can ingest URLs and PDFs, search arXiv and Wikipedia, run unified search across all sources, and detect knowledge gaps in the workspace via research tools.";
+    return "You can ingest URLs and PDFs, and search arXiv and Wikipedia via research tools.";
   }
 
   getTools() {
@@ -145,28 +145,6 @@ export class ResearchPlugin implements AgentPlugin {
             query: { type: "string", description: "Search query" },
           },
           required: ["query"],
-        },
-      },
-      {
-        name: "unified_search",
-        description: "Search arXiv, Wikipedia, and the workspace simultaneously. Returns merged and ranked results.",
-        parameters: {
-          type: "object",
-          properties: {
-            query: { type: "string", description: "Search query" },
-          },
-          required: ["query"],
-        },
-      },
-      {
-        name: "detect_gaps",
-        description: "Analyze workspace notes on a topic and identify missing perspectives, counterarguments, or sub-topics.",
-        parameters: {
-          type: "object",
-          properties: {
-            topic: { type: "string", description: "The topic to analyze for knowledge gaps" },
-          },
-          required: ["topic"],
         },
       },
     ];

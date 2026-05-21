@@ -58,12 +58,6 @@ export class WorkspacePlugin implements AgentPlugin {
   getTools(): ToolDefinition[] {
     return [
       {
-        name: "index_workspace",
-        description:
-          "Crawl the workspace and index all Markdown (.md) files into memory for search. Run this after opening a new workspace or when files have changed.",
-        parameters: { type: "object", properties: {}, required: [] },
-      },
-      {
         name: "search_workspace",
         description:
           "Search across all indexed Markdown files in the workspace by keyword or phrase. Returns matching file passages with paths.",
@@ -93,18 +87,6 @@ export class WorkspacePlugin implements AgentPlugin {
         name: "list_workspace_files",
         description: "List all Markdown files in the workspace with their first line and approximate word count.",
         parameters: { type: "object", properties: {}, required: [] },
-      },
-      {
-        name: "fact_check",
-        description:
-          "Search workspace memory for notes that confirm or contradict a given claim. Returns matching passages.",
-        parameters: {
-          type: "object",
-          properties: {
-            claim: { type: "string", description: "The claim or statement to fact-check." },
-          },
-          required: ["claim"],
-        },
       },
     ];
   }
