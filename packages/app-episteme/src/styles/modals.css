@@ -470,7 +470,7 @@
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg-elevated);
+  background: var(--bg-raised);
 }
 .permission-row-label {
   flex: 1;
@@ -527,7 +527,7 @@
   padding: 24px;
 }
 .permission-dialog {
-  background: var(--bg-elevated);
+  background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: 12px;
   width: min(720px, 100%);
