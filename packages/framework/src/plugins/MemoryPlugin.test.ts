@@ -128,21 +128,29 @@ describe("MemoryPlugin - auto-summarization", () => {
     expect((llm.chat as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
   });
 
-  test("after summarization, summary is prepended to first retained message", async () => {
+  test("after summarization, running summary is exposed as a system message and user messages are unmodified", async () => {
     const llm = makeLLM("Summary text here.");
     const plugin = new MemoryPlugin(llm, { maxMessages: 3, minMessages: 2 });
 
     await plugin.onMessage("user", "one", "test");
     await plugin.onMessage("user", "two", "test");
     await plugin.onMessage("user", "three", "test");
-    // 4th message triggers summarization
     await plugin.onMessage("user", "four", "test");
 
     const msgs = await plugin.getMessages();
-    // After summarization, first message should contain the summary attribution
-    const firstMsg = msgs.find((m) => m.role === "user");
-    expect(firstMsg?.content).toContain("Summary text here.");
-    expect(firstMsg?.content).toContain("SYSTEM NOTE");
+
+    // Summary lives on its own as a system entry, separate from any user message.
+    const summaryMsg = msgs.find(
+      (m) => m.role === "system" && m.content.includes("Running conversation summary"),
+    );
+    expect(summaryMsg).toBeDefined();
+    expect(summaryMsg?.content).toContain("Summary text here.");
+
+    // No user message should carry summary-attribution noise.
+    for (const u of msgs.filter((m) => m.role === "user")) {
+      expect(u.content).not.toContain("SYSTEM NOTE");
+      expect(u.content).not.toContain("Running conversation summary");
+    }
   });
 
   test("summarization failure falls back gracefully without crashing", async () => {
@@ -175,5 +183,163 @@ describe("MemoryPlugin - auto-summarization", () => {
 
     const msgs = await plugin.getMessages(3);
     expect(msgs.length).toBeLessThanOrEqual(3);
+  });
+
+  test("messages added while summarization is in flight are preserved", async () => {
+    // LLM mock that pauses until we explicitly resolve, so we can interleave
+    // a fresh onMessage call between the await and the splice.
+    let releaseChat: (value: { response: string; nonReasoningContent: string; reasoningContent: string; reasoningText: string }) => void = () => {};
+    const chatPromise = new Promise<{ response: string; nonReasoningContent: string; reasoningContent: string; reasoningText: string }>((resolve) => {
+      releaseChat = resolve;
+    });
+    const llm = {
+      chat: mock(async () => chatPromise),
+      embed: mock(async () => []),
+    } as unknown as LLMProvider;
+
+    const plugin = new MemoryPlugin(llm, { maxMessages: 3, minMessages: 2 });
+
+    await plugin.onMessage("user", "one", "test");
+    await plugin.onMessage("user", "two", "test");
+    await plugin.onMessage("user", "three", "test");
+    // 4th message triggers summarization; chat is now suspended on chatPromise
+    await plugin.onMessage("user", "four", "test");
+
+    // While summarization is suspended on the LLM call, push a fresh message.
+    await plugin.onMessage("user", "five-during-await", "test");
+
+    // Now release the LLM call.
+    releaseChat({
+      response: "Mid-flight summary.",
+      nonReasoningContent: "Mid-flight summary.",
+      reasoningContent: "",
+      reasoningText: "",
+    });
+    // Allow the summarization continuation to run.
+    await new Promise((r) => setTimeout(r, 0));
+
+    const msgs = await plugin.getMessages();
+    const contents = msgs.filter((m) => m.role === "user").map((m) => m.content);
+    // The race fix requires the message pushed during the await to still be present.
+    expect(contents).toContain("five-during-await");
+  });
+
+  test("empty summary response leaves history unchanged and produces no noise", async () => {
+    const llm = makeLLM("");
+    const plugin = new MemoryPlugin(llm, { maxMessages: 3, minMessages: 2 });
+
+    await plugin.onMessage("user", "a", "test");
+    await plugin.onMessage("user", "b", "test");
+    await plugin.onMessage("user", "c", "test");
+    await plugin.onMessage("user", "d", "test");
+
+    const msgs = await plugin.getMessages();
+    // Empty summary must not be injected as a system entry.
+    const summaryMsg = msgs.find(
+      (m) => m.role === "system" && m.content.includes("Running conversation summary"),
+    );
+    expect(summaryMsg).toBeUndefined();
+    // No user message should carry a degenerate "SYSTEM NOTE: " prefix.
+    for (const u of msgs.filter((m) => m.role === "user")) {
+      expect(u.content).not.toContain("SYSTEM NOTE");
+    }
+    // History is intact for a retry on the next trigger.
+    const userContents = msgs.filter((m) => m.role === "user").map((m) => m.content);
+    expect(userContents).toEqual(["a", "b", "c", "d"]);
+  });
+
+  test("rolling summary carries the prior summary into the next cycle", async () => {
+    const responses = ["First summary.", "Second summary that integrates earlier."];
+    let callIdx = 0;
+    const llm = {
+      chat: mock(async () => {
+        const text = responses[callIdx++] ?? "fallback";
+        return {
+          response: text,
+          nonReasoningContent: text,
+          reasoningContent: "",
+          reasoningText: "",
+        };
+      }),
+      embed: mock(async () => []),
+    } as unknown as LLMProvider;
+
+    const plugin = new MemoryPlugin(llm, { maxMessages: 4, minMessages: 2 });
+
+    // Cycle 1: push 5 messages (4 → trigger summarization at i=4)
+    for (let i = 0; i < 5; i++) {
+      await plugin.onMessage("user", `m${i}`, "test");
+    }
+    // Cycle 2: push enough more to trigger again
+    for (let i = 5; i < 10; i++) {
+      await plugin.onMessage("user", `m${i}`, "test");
+    }
+
+    const msgs = await plugin.getMessages();
+    const summaryMsg = msgs.find(
+      (m) => m.role === "system" && m.content.includes("Running conversation summary"),
+    );
+    expect(summaryMsg).toBeDefined();
+    // The final summary must be the second cycle's output, length-capped.
+    expect(summaryMsg?.content).toContain("Second summary that integrates earlier.");
+
+    // The second call to the summarizer must have received the first summary
+    // in its prompt — that's the rolling part of "rolling summary".
+    const chatCalls = (llm.chat as ReturnType<typeof mock>).mock.calls;
+    expect(chatCalls.length).toBeGreaterThanOrEqual(2);
+    const secondCallMessages = chatCalls[1]?.[0] as Array<{ role: string; content: string }>;
+    const userPromptInSecondCall = secondCallMessages.find((m) => m.role === "user")?.content ?? "";
+    expect(userPromptInSecondCall).toContain("First summary.");
+  });
+});
+
+describe("MemoryPlugin - limit accounting with summary", () => {
+  test("limit=1 with system + summary returns prefix only, never the full history", async () => {
+    const llm = makeLLM("A running summary.");
+    const plugin = new MemoryPlugin(llm, { maxMessages: 3, minMessages: 2 });
+
+    await plugin.onMessage("system", "MAIN_SYS", "test");
+    await plugin.onMessage("user", "one", "test");
+    await plugin.onMessage("user", "two", "test");
+    await plugin.onMessage("user", "three", "test");
+    await plugin.onMessage("user", "four", "test");
+
+    const msgs = await plugin.getMessages(1);
+
+    // The regression being guarded: limit=1 must NOT fall through to "return
+    // every conversation message" the way the original implementation did
+    // when conversationLimit went to zero. The prefix slots (main system +
+    // summary) are essential and stay; conversation must be empty.
+    expect(msgs.filter((m) => m.role === "user")).toHaveLength(0);
+    expect(msgs.filter((m) => m.role === "assistant")).toHaveLength(0);
+    // Both prefix entries are kept since both convey essential context.
+    expect(msgs).toHaveLength(2);
+    expect(msgs[0]?.content).toBe("MAIN_SYS");
+  });
+
+  test("limit=1 with only a main system message (no summary) returns just the system message", async () => {
+    // This is the original-review bug case: limit=1, hasSystem=true used to
+    // return the full history. It should now return only the system entry.
+    const plugin = new MemoryPlugin(makeLLM(), { maxMessages: 100, minMessages: 5 });
+    await plugin.onMessage("system", "SYS", "test");
+    for (let i = 0; i < 5; i++) {
+      await plugin.onMessage("user", `m${i}`, "test");
+    }
+    const msgs = await plugin.getMessages(1);
+    expect(msgs).toEqual([{ role: "system", content: "SYS" }]);
+  });
+
+  test("clear() resets running summary as well as messages", async () => {
+    const llm = makeLLM("Will be cleared.");
+    const plugin = new MemoryPlugin(llm, { maxMessages: 3, minMessages: 2 });
+
+    await plugin.onMessage("user", "a", "test");
+    await plugin.onMessage("user", "b", "test");
+    await plugin.onMessage("user", "c", "test");
+    await plugin.onMessage("user", "d", "test");
+
+    plugin.clear();
+    const msgs = await plugin.getMessages();
+    expect(msgs).toEqual([]);
   });
 });

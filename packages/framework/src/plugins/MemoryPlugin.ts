@@ -1,11 +1,16 @@
 /**
- * MemoryPlugin — short-term conversation history with automatic summarization.
+ * MemoryPlugin — short-term conversation history with a rolling summary.
  *
- * Stores the rolling message history that BaseAgent replays on each LLM call.
- * When the history exceeds MAX_MESSAGES (default 15), it fires a background LLM
- * pass to condense old messages into a structured summary, then optionally runs
- * a second pass to extract reusable procedures. The trimmed history plus summary
- * are what the agent "remembers" going forward.
+ * Stores the message history that BaseAgent replays on each LLM call. When the
+ * history exceeds MAX_MESSAGES (default 15), it fires a background LLM pass
+ * that integrates the oldest messages into a running narrative summary, then
+ * trims the summarized prefix from the history. The summary is length-capped
+ * (MAX_SUMMARY_CHARS) and carried across summarization cycles so context from
+ * earlier in the conversation is gradually compressed rather than lost.
+ *
+ * The running summary is injected into `getMessages()` as its own system-role
+ * entry, separate from the agent's main system message. It is NOT spliced into
+ * any user message.
  *
  * This is distinct from CortexMemoryPlugin (long-term semantic memory). This
  * plugin manages the LLM's context window; CortexMemoryPlugin manages
@@ -31,11 +36,13 @@ export class MemoryPlugin implements AgentPlugin {
 
   private messages: Message[] = [];
   private systemMessage: Message | null = null;
+  private runningSummary: string = "";
   private agent: BaseAgent | null = null;
   private summarizing = false;
 
   private readonly MAX_MESSAGES: number;
   private readonly MIN_MESSAGES: number;
+  private readonly MAX_SUMMARY_CHARS = 800;
 
   constructor(
     private llm: LLMProvider,
@@ -70,29 +77,43 @@ export class MemoryPlugin implements AgentPlugin {
   }
 
   /**
-   * Returns the chat history starting from the first user message,
-   * respecting the optional limit. If a system message was received via
-   * onMessage, it is prepended before the conversation messages and counts
-   * as one slot against the limit.
+   * Returns the chat history starting from the first user message.
+   *
+   * Prepended (in order, each consuming one slot against `limit`):
+   *  1. The main system message, if `onMessage("system", ...)` was called.
+   *  2. The running conversation summary, if non-empty, as its own system entry.
+   *
+   * `limit=0` and `limit=undefined` both mean "no limit" (consistent with the
+   * prior behavior). When `limit` is positive, the prefix slots are subtracted
+   * first; if no conversation slots remain, only the prefix is returned.
    */
   async getMessages(limit?: number): Promise<Message[]> {
     const hasSystem = this.systemMessage !== null;
-    const conversationLimit =
-      limit !== undefined && limit > 0
-        ? hasSystem
-          ? limit - 1
-          : limit
-        : undefined;
+    const hasSummary = this.runningSummary.length > 0;
+    const slotsUsed = (hasSystem ? 1 : 0) + (hasSummary ? 1 : 0);
 
-    let chatHistory =
-      conversationLimit !== undefined && conversationLimit > 0
-        ? this.messages.slice(-conversationLimit)
-        : [...this.messages];
+    let conversation: Message[];
+    if (limit !== undefined && limit > 0) {
+      const conversationLimit = Math.max(0, limit - slotsUsed);
+      const sliced =
+        conversationLimit === 0 ? [] : this.messages.slice(-conversationLimit);
+      const firstUserIdx = sliced.findIndex((m) => m.role === "user");
+      conversation = firstUserIdx === -1 ? [] : sliced.slice(firstUserIdx);
+    } else {
+      const firstUserIdx = this.messages.findIndex((m) => m.role === "user");
+      conversation = firstUserIdx === -1 ? [] : this.messages.slice(firstUserIdx);
+    }
 
-    const firstUserIdx = chatHistory.findIndex((m) => m.role === "user");
-    const conversation = firstUserIdx === -1 ? [] : chatHistory.slice(firstUserIdx);
+    const prefix: Message[] = [];
+    if (hasSystem) prefix.push(this.systemMessage!);
+    if (hasSummary) {
+      prefix.push({
+        role: "system",
+        content: `[Running conversation summary — auto-generated, not authored by the user]\n${this.runningSummary}`,
+      });
+    }
 
-    return hasSystem ? [this.systemMessage!, ...conversation] : conversation;
+    return [...prefix, ...conversation];
   }
 
   /**
@@ -114,11 +135,17 @@ export class MemoryPlugin implements AgentPlugin {
   clear(): void {
     this.messages = [];
     this.systemMessage = null;
+    this.runningSummary = "";
   }
 
   /**
-   * Condenses old messages into a structured summary and trims the history.
-   * Runs after each turn (triggered via state_change → idle).
+   * Integrates the oldest messages into the running narrative summary and
+   * trims them from the history.
+   *
+   * Race-safe: takes a slice for the LLM call, then splices the same prefix
+   * length out of `this.messages` after the await. Any messages appended via
+   * `onMessage` while the LLM call is in flight are preserved.
+   *
    * Uses the agent's last assembled system prompt so the summarizer has full
    * context about the agent's identity, tools, and learned behaviors.
    */
@@ -133,28 +160,30 @@ export class MemoryPlugin implements AgentPlugin {
         splitIndex++;
       }
 
-      const toSummarize = this.messages.slice(0, splitIndex);
-      const recentMessages = this.messages.slice(splitIndex);
-
-      if (toSummarize.length === 0) return;
-      if (recentMessages.length === 0) {
-        this.messages = this.messages.slice(-this.MIN_MESSAGES);
-        return;
+      if (splitIndex === this.messages.length) {
+        logger.warn(
+          "MemoryPlugin",
+          `No user message in recent tail of ${this.MIN_MESSAGES}; summarizing entire history.`,
+        );
       }
+
+      const summarizedCount = splitIndex;
+      const toSummarize = this.messages.slice(0, summarizedCount);
+      if (toSummarize.length === 0) return;
 
       const conversationText = toSummarize
         .map((m) => `${m.role}: ${m.content}`)
         .join("\n");
 
-      const summaryPrompt = `Analyze this conversation segment and respond with exactly these four labeled sections:
+      const summaryPrompt = `You are maintaining a running summary of an ongoing conversation. Update the existing summary by integrating the new messages below, then return the updated summary as plain prose. Compress older detail; preserve recent decisions, names, IDs, and any user preferences verbatim. The full output must be under ${this.MAX_SUMMARY_CHARS} characters.
 
-DECISIONS: Key decisions or conclusions reached (one per line, or "none")
-TOOLS: Tools called and what they returned or revealed (one per line, or "none")
-MEMORIES_SAVED: Facts or behaviors explicitly saved to long-term memory (one per line, or "none")
-OPEN_QUESTIONS: Unresolved questions or uncertainties that carry forward (one per line, or "none")
+EXISTING SUMMARY (may be empty):
+${this.runningSummary || "(none)"}
 
-Conversation:
-${conversationText}`;
+NEW MESSAGES:
+${conversationText}
+
+UPDATED SUMMARY (under ${this.MAX_SUMMARY_CHARS} chars, plain prose):`;
 
       const systemPrompt = this.agent?.getLastSystemPrompt();
       const summaryMessages: Message[] = [];
@@ -163,32 +192,33 @@ ${conversationText}`;
 
       const { nonReasoningContent: summaryResponse } = await this.llm.chat(summaryMessages);
 
-      // Prepend the summary to the first retained user message.
-      // Attributed and delimited to reduce prompt injection risk.
-      const firstRecent = recentMessages[0]!;
-      recentMessages[0] = {
-        role: firstRecent.role,
-        content: `[SYSTEM NOTE — auto-generated conversation summary, not authored by the user: ${summaryResponse}]\n\n${firstRecent.content}`,
-      };
-
-      this.messages = recentMessages;
-
-      if (summaryResponse) {
-        this.agent?.requestMemoryWrite({
-          text: `[SESSION_SUMMARY ${new Date().toISOString()}]\n${summaryResponse}`,
-          type: "factual",
-          tags: ["session_summary"],
-          source: "MemoryPlugin",
-        });
-
-        this.extractProcedures(toSummarize, systemPrompt).catch((e) =>
-          logger.error("MemoryPlugin", "Failed to extract procedures:", e),
+      const newSummary = summaryResponse?.trim() ?? "";
+      if (!newSummary) {
+        logger.warn(
+          "MemoryPlugin",
+          "Summarizer returned empty response; leaving history intact for retry on next trigger.",
         );
-
-        this.extractBehaviors(toSummarize).catch((e) =>
-          logger.error("MemoryPlugin", "Failed to extract behaviors:", e),
-        );
+        return;
       }
+
+      // Splice in place: anything appended during the await is preserved.
+      this.messages.splice(0, summarizedCount);
+      this.runningSummary = newSummary.slice(0, this.MAX_SUMMARY_CHARS);
+
+      this.agent?.requestMemoryWrite({
+        text: `[SESSION_SUMMARY ${new Date().toISOString()}]\n${this.runningSummary}`,
+        type: "factual",
+        tags: ["session_summary"],
+        source: "MemoryPlugin",
+      });
+
+      this.extractProcedures(toSummarize, systemPrompt).catch((e) =>
+        logger.error("MemoryPlugin", "Failed to extract procedures:", e),
+      );
+
+      this.extractBehaviors(toSummarize).catch((e) =>
+        logger.error("MemoryPlugin", "Failed to extract behaviors:", e),
+      );
     } catch (error) {
       logger.error("MemoryPlugin", "Failed to summarize context:", error);
     } finally {
@@ -202,8 +232,14 @@ ${conversationText}`;
    * Called fire-and-forget after summarization.
    */
   private async extractProcedures(messages: Message[], systemPrompt: string | undefined): Promise<void> {
+    // Tool calls live in a separate field on the agent; this plugin only sees
+    // prose. The regex catches assistant prose that explicitly names a tool —
+    // a coarse but cheap gate for the extraction LLM call. Source of truth for
+    // the tool list: getTools() in CortexMemoryPlugin, BehaviorPlugin,
+    // ThoughtPlugin, MetacognitionPlugin (plus diagnostic dispatch in
+    // CortexMemoryPlugin.executeTool).
     const hasToolActivity = messages.some((m) =>
-      /\b(tool|search|save|search_memory|hybrid_search|save_memory|save_behavior)\b/i.test(m.content),
+      /\b(save_memory|hybrid_search|synthesize_memories|reflect_on_topic|save_behavior|synthesize_behaviors|get_recent_thoughts|introspect|memory_status|search_memory|edit_memory|delete_memory)\b/i.test(m.content),
     );
     if (!hasToolActivity) return;
 
