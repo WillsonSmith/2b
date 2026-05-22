@@ -16,7 +16,7 @@ import { ContradictionPlugin } from "./plugins/ContradictionPlugin.ts";
 import { PlanningPlugin } from "./plugins/PlanningPlugin.ts";
 import { workspaceDbPath } from "./paths.ts";
 import { WorkspaceDb } from "./db/workspaceDb.ts";
-import { featureModel, type EpistemeConfig } from "./config.ts";
+import type { EpistemeConfig } from "./config.ts";
 import { WebSocketPermissionManager } from "./server/WebSocketPermissionManager.ts";
 
 /**
@@ -99,7 +99,10 @@ export function createEpistemAgent(
   workspaceRoot: string,
   config: EpistemeConfig,
 ): EpistemeAgentBundle {
-  const llm = createProvider(config.models.default, featureModel(config, "embedding"));
+  // Don't use featureModel() here: it would fall back to the chat default,
+  // and the chat model is never an embedder. Leave undefined when unset so
+  // OllamaProvider's built-in default ("nomic-embed-text") is used.
+  const llm = createProvider(config.models.default, config.models.embedding);
   const dbPath = workspaceDbPath(workspaceRoot);
   const workspaceDb = new WorkspaceDb(dbPath);
 

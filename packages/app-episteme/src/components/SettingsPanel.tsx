@@ -223,6 +223,7 @@ function ModelsSection({
   onLintEnabledChange,
 }: ModelsSectionProps) {
   const [models, setModels] = useState<string[]>([]);
+  const [embeddingModels, setEmbeddingModels] = useState<string[]>([]);
   const [modelConfig, setModelConfig] = useState<ModelConfig>({ default: "" });
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(false);
   const [autosaveEnabled, setAutosaveEnabled] = useState(true);
@@ -250,6 +251,11 @@ function ModelsSection({
       .then((r) => r.json())
       .then((data: { models?: string[] }) => setModels(data.models ?? []))
       .catch(() => {});
+
+    fetch("/api/models?capability=embedding")
+      .then((r) => r.json())
+      .then((data: { models?: string[] }) => setEmbeddingModels(data.models ?? []))
+      .catch(() => {});
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -272,6 +278,10 @@ function ModelsSection({
           fetch("/api/models")
             .then((r) => r.json())
             .then((data: { models?: string[] }) => setModels(data.models ?? []))
+            .catch(() => {});
+          fetch("/api/models?capability=embedding")
+            .then((r) => r.json())
+            .then((data: { models?: string[] }) => setEmbeddingModels(data.models ?? []))
             .catch(() => {});
           setUrlChangedNotice(true);
           setInitialOllamaBaseUrl(ollamaBaseUrl);
@@ -355,6 +365,9 @@ function ModelsSection({
       <datalist id="ollama-models">
         {models.map((m) => <option key={m} value={m} />)}
       </datalist>
+      <datalist id="ollama-embedding-models">
+        {embeddingModels.map((m) => <option key={m} value={m} />)}
+      </datalist>
       <div className="model-config-grid">
         {FEATURE_LABELS.map(({ key, label, desc }) => (
           <div key={key} className="model-config-row">
@@ -364,9 +377,15 @@ function ModelsSection({
             </div>
             <input
               className="model-config-input"
-              list="ollama-models"
+              list={key === "embedding" ? "ollama-embedding-models" : "ollama-models"}
               value={key === "default" ? modelConfig.default : (modelConfig[key] ?? "")}
-              placeholder={key === "default" ? "Model name" : `Default (${modelConfig.default || "not set"})`}
+              placeholder={
+                key === "default"
+                  ? "Model name"
+                  : key === "embedding"
+                    ? "Default (nomic-embed-text)"
+                    : `Default (${modelConfig.default || "not set"})`
+              }
               onChange={(e) => {
                 const val = e.target.value;
                 setModelConfig((prev) => {

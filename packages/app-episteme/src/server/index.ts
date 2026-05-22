@@ -460,14 +460,39 @@ export async function startEpistemServer(
         },
       },
       "/api/models": {
-        GET: async () => {
+        GET: async (req: Request) => {
           try {
             const ollamaHost = process.env["OLLAMA_URL"] ?? "http://127.0.0.1:11434";
             const res = await fetch(`${ollamaHost}/api/tags`);
             if (!res.ok) return json({ models: [] });
             const data = (await res.json()) as { models?: Array<{ name: string }> };
             const names = (data.models ?? []).map((m) => m.name).sort();
-            return json({ models: names });
+
+            const url = new URL(req.url);
+            const capability = url.searchParams.get("capability");
+            if (!capability) return json({ models: names });
+
+            // Filter by capability via /api/show fanout. Ollama doesn't expose
+            // a server-side capability filter, so we N+1 it ourselves. Cheap
+            // in practice — typical users have < 50 local models, and /api/show
+            // is fast (metadata-only, no model load).
+            const checks = await Promise.all(
+              names.map(async (name): Promise<string | null> => {
+                try {
+                  const showRes = await fetch(`${ollamaHost}/api/show`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: name }),
+                  });
+                  if (!showRes.ok) return null;
+                  const showData = (await showRes.json()) as { capabilities?: string[] };
+                  return showData.capabilities?.includes(capability) ? name : null;
+                } catch {
+                  return null;
+                }
+              }),
+            );
+            return json({ models: checks.filter((n): n is string => n !== null) });
           } catch {
             return json({ models: [] });
           }
