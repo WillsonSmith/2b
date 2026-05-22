@@ -221,6 +221,10 @@ async function dispatch(
     case "plan_cancel":
       return handlePlan(msg, ctx, ws);
 
+    case "permission_response":
+      ctx.permissionManager.resolveDecision(msg.id, msg.decision);
+      return;
+
     default:
       assertNever(msg);
   }
@@ -235,6 +239,7 @@ export async function startEpistemServer(
   const {
     agent, editorContext, workspace, styleGuide, research,
     citation, diagram, aiFill, contradiction, planning: planningPlugin, workspaceDb,
+    permissionManager,
   } = bundle;
   const absRoot = resolve(workspaceRoot);
 
@@ -263,6 +268,9 @@ export async function startEpistemServer(
   function send(ws: ServerWebSocket<unknown>, msg: ServerMsg): void {
     ws.send(JSON.stringify(msg));
   }
+
+  // Now that broadcast is defined, redirect permission prompts to the UI.
+  permissionManager.setSend((msg) => broadcast(msg as ServerMsg));
 
   const planning = new PlanningController(
     createProvider(featureModel(config, "default")),
@@ -319,6 +327,7 @@ export async function startEpistemServer(
       recentSelfWrites.set(absolutePath, Date.now());
     },
     activatePlugin: (name: string) => { bundle.activatePlugin(name); },
+    permissionManager,
   };
 
   // Broadcast active-plugin changes so the chat sidecar can show inline events.
@@ -484,11 +493,31 @@ export async function startEpistemServer(
               process.env.OLLAMA_URL = trimmed || "http://127.0.0.1:11434";
               dirty = true;
             }
+            if (body.permissions !== undefined) {
+              config.permissions = { ...body.permissions };
+              permissionManager.setModes(config.permissions);
+              dirty = true;
+            }
             if (dirty) await saveConfig(workspaceRoot, config);
             return json(config);
           } catch {
             return json({ error: "Invalid JSON body" }, 400);
           }
+        },
+      },
+      "/api/tools": {
+        GET: () => {
+          // Tools annotated permission !== "none" — these are the ones the
+          // settings UI surfaces in its Permissions section.
+          const tools = agent.getAvailableTools()
+            .filter((t) => t.permission && t.permission !== "none")
+            .map((t) => ({
+              name: t.name,
+              description: t.description,
+              permission: t.permission,
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          return json({ tools });
         },
       },
       "/api/chat-history": {

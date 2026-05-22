@@ -13,7 +13,21 @@ export interface EpistemModelConfig {
   linting?: string;
   /** Model for multi-format export rendering. */
   export?: string;
+  /**
+   * Embedding model for semantic memory and search. Unlike the other fields
+   * this is NOT a chat model — it must be an embedding-capable model
+   * (e.g. "nomic-embed-text"). When unset the framework default is used.
+   */
+  embedding?: string;
 }
+
+/**
+ * Per-tool permission mode for agent actions.
+ *   "ask"     — surface an approval dialog for every invocation
+ *   "session" — approve once, remember for the rest of the session
+ *   "never"   — auto-approve silently (no dialog)
+ */
+export type EpistemePermissionMode = "ask" | "session" | "never";
 
 export interface EpistemeFeatures {
   /** Whether inline ghost-text autocomplete is active. Default: false. */
@@ -40,6 +54,12 @@ export interface EpistemeConfig {
   contradictionScan?: ContradictionScanConfig;
   /** Override the Ollama HTTP endpoint. When set, replaces process.env.OLLAMA_URL. */
   ollamaBaseUrl?: string;
+  /**
+   * Per-tool approval mode. Tools not listed here fall back to whatever the
+   * tool's `permission` annotation declares (a tool declared `"none"` is
+   * never gated; a tool declared `"per_call"`/`"session"` defaults to "ask").
+   */
+  permissions?: Record<string, EpistemePermissionMode>;
 }
 
 function defaultConfig(): EpistemeConfig {

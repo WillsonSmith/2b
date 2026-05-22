@@ -78,7 +78,8 @@ export type ClientMsg =
   | { type: "plan_pause" }
   | { type: "plan_resume" }
   | { type: "plan_resume_auto" }
-  | { type: "plan_cancel" };
+  | { type: "plan_cancel" }
+  | { type: "permission_response"; id: string; decision: "allow_once" | "allow_session" | "deny" };
 
 export type ServerMsg =
   | { type: "speak"; text: string }
@@ -123,7 +124,16 @@ export type ServerMsg =
   | { type: "plan_step_completed"; planId: string; stepId: string; summary: string }
   | { type: "plan_step_failed"; planId: string; stepId: string; error: string }
   | { type: "plan_complete"; planId: string }
-  | { type: "agent_mode_changed"; activePlugins: string[]; availablePlugins: string[] };
+  | { type: "agent_mode_changed"; activePlugins: string[]; availablePlugins: string[] }
+  | {
+      type: "permission_request";
+      id: string;
+      agentName: string;
+      toolName: string;
+      args: Record<string, unknown>;
+      /** Optional file diff payload for file-write tools. */
+      fileDiff?: { path: string; currentContent: string; proposedContent: string };
+    };
 
 export function assertNever(x: never): never {
   throw new Error(`Unhandled protocol message: ${JSON.stringify(x)}`);

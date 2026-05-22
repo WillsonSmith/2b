@@ -14,6 +14,7 @@ import type { PlanningController } from "../planning/PlanningController.ts";
 import type { AutocompleteRunner } from "../features/autocomplete.ts";
 import type { LintRunner } from "../features/lint.ts";
 import type { ServerMsg } from "../protocol.ts";
+import type { WebSocketPermissionManager } from "./WebSocketPermissionManager.ts";
 
 /**
  * Bundle passed to every WebSocket message handler. Holds the agent + plugin
@@ -45,4 +46,6 @@ export interface WsContext {
   suppressExternalChange: (absolutePath: string) => void;
   /** Activate a mode-gated plugin by name. No-op if already active or unknown. */
   activatePlugin: (name: string) => void;
+  /** Resolves outstanding tool-approval requests with client-side decisions. */
+  permissionManager: WebSocketPermissionManager;
 }

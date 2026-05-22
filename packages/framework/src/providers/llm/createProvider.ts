@@ -14,8 +14,13 @@ import { ModelCapabilityProvider } from "./ModelCapabilityProvider.ts";
  *   OLLAMA_NUM_CTX  Context window in tokens (omitted by default — Ollama scales automatically)
  *   OLLAMA_THINK    Enable reasoning (default: true). Set to "false" to disable, or
  *                   "high"/"medium"/"low" for models that accept a budget level.
+ *
+ * @param model           Chat model name.
+ * @param embeddingModel  Optional override for the embedding model used by
+ *                        getEmbedding(). Defaults to OllamaProvider's built-in
+ *                        default ("nomic-embed-text") when omitted.
  */
-export function createProvider(model: string): ModelCapabilityProvider {
+export function createProvider(model: string, embeddingModel?: string): ModelCapabilityProvider {
   const rawNumCtx = process.env.OLLAMA_NUM_CTX;
   let numCtx: number | undefined;
   if (rawNumCtx !== undefined) {
@@ -52,6 +57,7 @@ export function createProvider(model: string): ModelCapabilityProvider {
       {
         numCtx,
         think,
+        embeddingModel,
       },
     ),
     model,

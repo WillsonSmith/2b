@@ -3,7 +3,6 @@ import { createProvider } from "@2b/framework/providers/llm/createProvider.ts";
 import { FileSystemPlugin } from "@2b/framework/plugins/FileSystemPlugin.ts";
 import { BehaviorPlugin } from "@2b/framework/plugins/BehaviorPlugin.ts";
 import { MemoryPlugin } from "@2b/framework/plugins/MemoryPlugin.ts";
-import { AutoApprovePermissionManager } from "@2b/framework/core/PermissionManager.ts";
 import type { AgentPlugin } from "@2b/framework/core/Plugin.ts";
 import type { BaseAgent } from "@2b/framework/core/BaseAgent.ts";
 import { EditorContextPlugin } from "./plugins/EditorContextPlugin.ts";
@@ -17,7 +16,8 @@ import { ContradictionPlugin } from "./plugins/ContradictionPlugin.ts";
 import { PlanningPlugin } from "./plugins/PlanningPlugin.ts";
 import { workspaceDbPath } from "./paths.ts";
 import { WorkspaceDb } from "./db/workspaceDb.ts";
-import type { EpistemeConfig } from "./config.ts";
+import { featureModel, type EpistemeConfig } from "./config.ts";
+import { WebSocketPermissionManager } from "./server/WebSocketPermissionManager.ts";
 
 /**
  * Wraps a plugin and suppresses its tool surface, system-prompt fragment, and
@@ -80,6 +80,8 @@ export interface EpistemeAgentBundle {
   planning: PlanningPlugin;
   workspaceDb: WorkspaceDb;
   shortTermMemory: MemoryPlugin;
+  /** Permission manager that surfaces approval prompts to the Episteme UI. */
+  permissionManager: WebSocketPermissionManager;
   /** Names of mode-gated plugins currently active. Mutate via activatePlugin/deactivatePlugin. */
   activePlugins: Set<string>;
   /** All mode-gated plugin names that exist (active or not). */
@@ -97,11 +99,20 @@ export function createEpistemAgent(
   workspaceRoot: string,
   config: EpistemeConfig,
 ): EpistemeAgentBundle {
-  const llm = createProvider(config.models.default);
+  const llm = createProvider(config.models.default, featureModel(config, "embedding"));
   const dbPath = workspaceDbPath(workspaceRoot);
   const workspaceDb = new WorkspaceDb(dbPath);
 
-  const permissionManager = new AutoApprovePermissionManager();
+  // The send callback is patched in by the server once a client connects.
+  // Until then, requests will be auto-denied after the timeout — which is
+  // correct: with no UI to prompt, the safe default is "no".
+  const permissionManager = new WebSocketPermissionManager(
+    workspaceRoot,
+    config.permissions,
+    () => {
+      /* no client yet — server.ts will replace this via setSend() */
+    },
+  );
 
   const agent = new CortexAgent(llm, {
     name: "Episteme",
@@ -171,6 +182,7 @@ export function createEpistemAgent(
     planning,
     workspaceDb,
     shortTermMemory,
+    permissionManager,
     activePlugins,
     availablePlugins: MODE_GATED_PLUGIN_NAMES,
     activatePlugin(name: string) {

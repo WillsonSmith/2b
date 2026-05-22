@@ -7,9 +7,20 @@ interface ModelConfig {
   linting?: string;
   research?: string;
   export?: string;
+  embedding?: string;
 }
 
-type SettingsSection = "style" | "models" | "help";
+type PermissionMode = "ask" | "session" | "never";
+
+interface ToolInfo {
+  name: string;
+  description: string;
+  permission: "per_call" | "session";
+}
+
+type SettingsSection = "style" | "models" | "permissions" | "help";
+
+export type SettingsPanelSection = SettingsSection;
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -43,11 +54,13 @@ const FEATURE_LABELS: Array<{ key: keyof ModelConfig; label: string; desc: strin
   { key: "autocomplete", label: "Autocomplete", desc: "Inline ghost-text suggestions" },
   { key: "linting", label: "Linting", desc: "AI writing quality checks (runs on save)" },
   { key: "research", label: "Research", desc: "Gap detection and deep research synthesis" },
+  { key: "embedding", label: "Embedding", desc: "Semantic memory and search (must be an embedding model, e.g. nomic-embed-text)" },
 ];
 
 const SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: "style", label: "Style guide" },
   { id: "models", label: "Models" },
+  { id: "permissions", label: "Permissions" },
   { id: "help", label: "Help & shortcuts" },
 ];
 
@@ -126,6 +139,7 @@ export function SettingsPanel({
               onLintEnabledChange={onLintEnabledChange}
             />
           )}
+          {activeSection === "permissions" && <PermissionsSection />}
           {activeSection === "help" && <HelpSection />}
         </main>
       </div>
@@ -378,6 +392,101 @@ function ModelsSection({
         {status === "saved" && !urlChangedNotice && <span className="modal-status-ok">Saved</span>}
         {status === "error" && <span className="modal-status-err">Save failed</span>}
         <button className="modal-btn-primary" onClick={handleSave} disabled={status === "saving"}>
+          {status === "saving" ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// ── Permissions section ─────────────────────────────────────────────────────
+
+function PermissionsSection() {
+  const [tools, setTools] = useState<ToolInfo[]>([]);
+  const [modes, setModes] = useState<Record<string, PermissionMode>>({});
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  useEffect(() => {
+    fetch("/api/tools")
+      .then((r) => r.json())
+      .then((data: { tools?: ToolInfo[] }) => setTools(data.tools ?? []))
+      .catch(() => {});
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((data: { permissions?: Record<string, PermissionMode> }) =>
+        setModes(data.permissions ?? {}),
+      )
+      .catch(() => {});
+  }, []);
+
+  const setMode = useCallback((name: string, mode: PermissionMode) => {
+    setModes((prev) => ({ ...prev, [name]: mode }));
+    setStatus("idle");
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setStatus("saving");
+    try {
+      const res = await fetch("/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ permissions: modes }),
+      });
+      setStatus(res.ok ? "saved" : "error");
+    } catch {
+      setStatus("error");
+    }
+  }, [modes]);
+
+  return (
+    <section className="settings-section">
+      <h2 className="settings-section-title">Permissions</h2>
+      <p className="modal-desc">
+        Decide which agent actions need your approval. "Ask" prompts every time,
+        "Session" remembers your approval until the agent restarts, "Never ask"
+        runs silently.
+      </p>
+      {tools.length === 0 ? (
+        <p style={{ color: "var(--text-dim)", fontSize: 13 }}>
+          No permission-gated tools registered.
+        </p>
+      ) : (
+        <div className="permissions-list">
+          {tools.map((tool) => {
+            const mode: PermissionMode = modes[tool.name] ?? "ask";
+            return (
+              <div key={tool.name} className="permission-row">
+                <div className="permission-row-label">
+                  <span className="permission-row-name">{tool.name}</span>
+                  <span className="permission-row-desc">{tool.description}</span>
+                </div>
+                <div className="permission-row-controls" role="radiogroup" aria-label={`Approval mode for ${tool.name}`}>
+                  {(["ask", "session", "never"] as const).map((opt) => (
+                    <label key={opt} className={`permission-pill${mode === opt ? " active" : ""}`}>
+                      <input
+                        type="radio"
+                        name={`perm-${tool.name}`}
+                        checked={mode === opt}
+                        onChange={() => setMode(tool.name, opt)}
+                      />
+                      <span>{opt === "ask" ? "Ask" : opt === "session" ? "Session" : "Never"}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="modal-footer">
+        <div style={{ flex: 1 }} />
+        {status === "saved" && <span className="modal-status-ok">Saved</span>}
+        {status === "error" && <span className="modal-status-err">Save failed</span>}
+        <button
+          className="modal-btn-primary"
+          onClick={handleSave}
+          disabled={status === "saving" || tools.length === 0}
+        >
           {status === "saving" ? "Saving…" : "Save"}
         </button>
       </div>

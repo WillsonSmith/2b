@@ -6,6 +6,7 @@ import { TocPanel } from "./components/TocPanel.tsx";
 import { AISidecar, type SidecarMessage } from "./components/AISidecar.tsx";
 import type { EpistemePlanStepType } from "./planning/types.ts";
 import { SettingsPanel } from "./components/SettingsPanel.tsx";
+import { PermissionDialog } from "./components/PermissionDialog.tsx";
 import { ResearchPanel } from "./components/ResearchPanel.tsx";
 import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
 import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
@@ -855,6 +856,7 @@ function App() {
           initialSection={settingsInitialSection}
         />
       )}
+      <PermissionDialog wsRef={ws.wsRef} subscribe={ws.subscribe} />
       {/* Drag-over overlay */}
       {isDragOver && (
         <div
