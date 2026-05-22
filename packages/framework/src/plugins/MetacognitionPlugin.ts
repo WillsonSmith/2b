@@ -110,6 +110,11 @@ export class MetacognitionPlugin implements AgentPlugin {
     // Reconstruct correction history from DB so effectiveness state survives restarts
     try {
       const CROSS_SESSION_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+      // Correction rules persisted from earlier versions may name memory tools
+      // that no longer exist in the LLM surface (search_memory, query_memories
+      // moved to diagnostic-only dispatch). Prune those so a stale rule does
+      // not keep telling the agent to avoid tools it cannot call anyway.
+      const STALE_TOOL_REF = /\b(search_memory|query_memories)\b/;
       const existing = this.memoryPlugin.queryMemoriesRaw({
         types: ["behavior"],
         tags: ["metacognition-correction"],
@@ -126,6 +131,15 @@ export class MetacognitionPlugin implements AgentPlugin {
           !["saturation", "redundancy", "hedged_no_search", "dead_search"].includes(trigger)
         )
           continue;
+
+        if (STALE_TOOL_REF.test(mem.text)) {
+          logger.info(
+            "MetacognitionPlugin",
+            `Pruning stale correction memory (references retired tool name): ${mem.id}`,
+          );
+          this.memoryPlugin.deleteMemoryById(mem.id).catch(() => {});
+          continue;
+        }
 
         const isIneffective = (mem.tags as string[]).includes(
           "metacognition-correction:ineffective",
@@ -246,13 +260,14 @@ export class MetacognitionPlugin implements AgentPlugin {
         this.turnHistory
           .at(-1)
           ?.uncertainty_markers.includes("tool_saturation") ?? false;
+      const toolList = this.formatSearchToolList();
       if (prevTurnAlsoSaturated) {
         parts.push(
-          "HARD STOP: Memory search threshold has been exceeded across multiple consecutive turns. You MUST NOT call search_memory, hybrid_search, or query_memories this turn. Synthesize entirely from already-retrieved context.",
+          `HARD STOP: Memory search threshold has been exceeded across multiple consecutive turns. You MUST NOT call ${toolList} this turn. Synthesize entirely from already-retrieved context.`,
         );
       } else {
         parts.push(
-          "DIRECTIVE: Memory search threshold exceeded. Do not call search_memory or hybrid_search again this turn. Synthesize from what is already retrieved.",
+          `DIRECTIVE: Memory search threshold exceeded. Do not call ${toolList} again this turn. Synthesize from what is already retrieved.`,
         );
       }
     }
@@ -738,6 +753,20 @@ export class MetacognitionPlugin implements AgentPlugin {
     return "other";
   }
 
+  /**
+   * Format the currently-blocked-on-saturation tools as a prose-grammatical list
+   * for inclusion in directives and saved correction rules. Driven by the
+   * runtime-built `searchToolNames` set, so it stays correct if the underlying
+   * memory plugin changes its tool surface.
+   */
+  private formatSearchToolList(): string {
+    const tools = [...this.searchToolNames].sort();
+    if (tools.length === 0) return "memory search tools";
+    if (tools.length === 1) return tools[0]!;
+    if (tools.length === 2) return `${tools[0]} or ${tools[1]}`;
+    return `${tools.slice(0, -1).join(", ")}, or ${tools.at(-1)}`;
+  }
+
   private async maybeAutoCorrect(): Promise<void> {
     await this.checkCorrectionEffectiveness();
 
@@ -751,7 +780,7 @@ export class MetacognitionPlugin implements AgentPlugin {
     if (saturationCount >= PATTERN_THRESHOLD) {
       await this.saveCorrectiveRule(
         "saturation",
-        `Before calling search_memory, hybrid_search, or query_memories, check whether the current turn context already contains the answer. If memory_access_count exceeds ${this.saturationThreshold}, synthesize from what is already retrieved rather than re-searching.`,
+        `Before calling ${this.formatSearchToolList()}, check whether the current turn context already contains the answer. If memory_access_count exceeds ${this.saturationThreshold}, synthesize from what is already retrieved rather than re-searching.`,
         window.length,
       );
     }

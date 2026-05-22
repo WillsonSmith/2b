@@ -143,7 +143,9 @@ describe("maybeAutoCorrect — pattern detection", () => {
 
     const saved = memPlugin.queryMemoriesRaw({ types: ["behavior"], tags: ["metacognition-correction"] });
     expect(saved.length).toBeGreaterThanOrEqual(1);
-    expect(saved[0]!.text).toContain("search_memory");
+    // Stable substring of the saturation rule body, robust to changes in the
+    // dynamic search-tool list that prefixes it.
+    expect(saved[0]!.text).toContain("memory_access_count exceeds");
   });
 
   test("saves redundancy rule when 3+ of last 5 turns have duplicate tool calls", async () => {
