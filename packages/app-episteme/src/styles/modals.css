@@ -237,6 +237,14 @@
   color: var(--text);
   margin: 0 0 4px;
 }
+.settings-subhead {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin: 12px 0 4px;
+}
 
 @keyframes settings-overlay-in {
   from { opacity: 0; }

@@ -30,6 +30,7 @@ import {
   PanelLeft,
   Focus,
 } from "lucide-react";
+import type { WritingAidsConfig } from "./config.ts";
 import { useFileManager } from "./hooks/useFileManager.ts";
 import { useFileTreeState } from "./hooks/useFileTreeState.ts";
 import { useEditorFeatures } from "./hooks/useEditorFeatures.ts";
@@ -122,6 +123,7 @@ function App() {
   } | null>(null);
   const [workspaceRoot, setWorkspaceRoot] = useState("");
   const [sidecarPendingInput, setSidecarPendingInput] = useState("");
+  const [writingAids, setWritingAids] = useState<WritingAidsConfig>({});
 
   const ws = useWebSocket();
   const planning = usePlanning(ws.wsRef, ws.subscribe);
@@ -248,6 +250,7 @@ function App() {
             autocomplete?: boolean;
             autosave?: boolean;
             lint?: boolean;
+            writingAids?: WritingAidsConfig;
           };
         }) => {
           if (data.features?.autocomplete !== undefined)
@@ -256,6 +259,8 @@ function App() {
             fileManager.setAutosaveEnabled(data.features.autosave);
           if (data.features?.lint !== undefined)
             editorFeatures.setLintEnabled(data.features.lint);
+          if (data.features?.writingAids)
+            setWritingAids(data.features.writingAids);
         },
       )
       .catch(() => {});
@@ -756,6 +761,25 @@ function App() {
   const charCount = fileManager.editorContent.length;
   const showLargeFileWarning = charCount > 50_000 && !dismissedLargeFile;
 
+  const posHighlightOptions = useMemo(() => ({
+    enabled: writingAids.posHighlight ?? false,
+    noun: writingAids.posNoun ?? true,
+    verb: writingAids.posVerb ?? true,
+    adjective: writingAids.posAdjective ?? true,
+    adverb: writingAids.posAdverb ?? true,
+  }), [writingAids]);
+  const focusModeOptions = useMemo(() => ({
+    enabled: writingAids.focusMode ?? false,
+    level: writingAids.focusLevel ?? "sentence" as const,
+  }), [writingAids]);
+  const styleCheckOptions = useMemo(() => ({
+    enabled: writingAids.styleCheck ?? false,
+    filler: writingAids.styleFiller ?? true,
+    cliche: writingAids.styleCliche ?? true,
+    redundancy: writingAids.styleRedundancy ?? true,
+  }), [writingAids]);
+  const punctuationHighlightOn = writingAids.punctuationHighlight ?? false;
+
   if (fileManager.needsWorkspace) {
     return (
       <div className="app">
@@ -853,6 +877,7 @@ function App() {
           onAutocompleteEnabledChange={editorFeatures.setAutocompleteEnabled}
           onAutosaveEnabledChange={fileManager.setAutosaveEnabled}
           onLintEnabledChange={editorFeatures.setLintEnabled}
+          onWritingAidsChange={setWritingAids}
           initialSection={settingsInitialSection}
         />
       )}
@@ -1021,6 +1046,10 @@ function App() {
             onCountsChange={handleCountsChange}
             editorMode={editorMode}
             currentFilePath={fileManager.activeFile ?? ""}
+            posHighlight={posHighlightOptions}
+            punctuationHighlight={punctuationHighlightOn}
+            focusMode={focusModeOptions}
+            styleCheck={styleCheckOptions}
           />
 
           {/* Status bar */}

@@ -36,6 +36,27 @@ export interface EpistemeFeatures {
   autosave?: boolean;
   /** Whether AI linting runs on a 5s idle debounce. Default: true. */
   lint?: boolean;
+  /** Writing-aid visualization layers (iA Writer-style). All default off. */
+  writingAids?: WritingAidsConfig;
+}
+
+export interface WritingAidsConfig {
+  /** Color parts of speech (noun/verb/adjective/adverb). */
+  posHighlight?: boolean;
+  posNoun?: boolean;
+  posVerb?: boolean;
+  posAdjective?: boolean;
+  posAdverb?: boolean;
+  /** Color punctuation characters. */
+  punctuationHighlight?: boolean;
+  /** Dim everything outside the active sentence/paragraph. */
+  focusMode?: boolean;
+  focusLevel?: "sentence" | "paragraph";
+  /** Underline fillers, clichés, and redundancies. */
+  styleCheck?: boolean;
+  styleFiller?: boolean;
+  styleCliche?: boolean;
+  styleRedundancy?: boolean;
 }
 
 /** Tunables for ContradictionPlugin's background scan. All fields optional. */

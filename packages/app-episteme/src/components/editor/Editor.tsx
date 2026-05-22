@@ -33,6 +33,10 @@ import { MermaidCodeBlock } from "./extensions/mermaid.tsx";
 import { DiagramPlaceholderExtension } from "./extensions/diagramPlaceholder.tsx";
 import { AIFillBlockExtension } from "./extensions/aiFillBlock.tsx";
 import { AIFillCommandExtension } from "./extensions/aiFillCommand.ts";
+import { PosHighlightExtension, defaultPosHighlightOptions, type PosHighlightOptions } from "./extensions/posHighlight.ts";
+import { PunctuationHighlightExtension } from "./extensions/punctuationHighlight.ts";
+import { FocusModeExtension, defaultFocusModeOptions, type FocusModeOptions } from "./extensions/focusMode.ts";
+import { StyleCheckExtension, defaultStyleCheckOptions, type StyleCheckOptions } from "./extensions/styleCheck.ts";
 import { EditorBubbleMenu } from "./BubbleMenu.tsx";
 import { LinkPicker } from "./LinkPicker.tsx";
 import { MarkdownToolbar } from "./MarkdownToolbar.tsx";
@@ -83,6 +87,10 @@ interface EditorProps {
   onCountsChange?: (words: number, chars: number) => void;
   editorMode?: "formatted" | "markdown";
   currentFilePath?: string;
+  posHighlight?: PosHighlightOptions;
+  punctuationHighlight?: boolean;
+  focusMode?: FocusModeOptions;
+  styleCheck?: StyleCheckOptions;
 }
 
 interface FindBarProps {
@@ -233,6 +241,10 @@ export function Editor({
   onCountsChange,
   editorMode: editorModeProp = "formatted",
   currentFilePath = "",
+  posHighlight: posHighlightProp,
+  punctuationHighlight: punctuationHighlightProp,
+  focusMode: focusModeProp,
+  styleCheck: styleCheckProp,
 }: EditorProps) {
   const ghostRef = useRef(ghostText);
   const lintRef = useRef<ResolvedIssue[]>([]);
@@ -241,6 +253,15 @@ export function Editor({
   filesRef.current = workspaceFiles;
   const currentFileRef = useRef(currentFilePath);
   currentFileRef.current = currentFilePath;
+
+  const posHighlightRef = useRef<PosHighlightOptions>(posHighlightProp ?? defaultPosHighlightOptions);
+  posHighlightRef.current = posHighlightProp ?? defaultPosHighlightOptions;
+  const punctuationHighlightRef = useRef<boolean>(punctuationHighlightProp ?? false);
+  punctuationHighlightRef.current = punctuationHighlightProp ?? false;
+  const focusModeRef = useRef<FocusModeOptions>(focusModeProp ?? defaultFocusModeOptions);
+  focusModeRef.current = focusModeProp ?? defaultFocusModeOptions;
+  const styleCheckRef = useRef<StyleCheckOptions>(styleCheckProp ?? defaultStyleCheckOptions);
+  styleCheckRef.current = styleCheckProp ?? defaultStyleCheckOptions;
 
   const findStateRef = useRef<FindState>({ matches: [], activeIndex: 0 });
   const [frontmatter, setFrontmatter] = useState<string | null>(
@@ -317,6 +338,10 @@ export function Editor({
       AIFillBlockExtension(aiFillCallbackRef),
       AIFillCommandExtension,
       MarkdownLinkDecorationExtension(localLinksRef),
+      PosHighlightExtension(posHighlightRef),
+      PunctuationHighlightExtension(punctuationHighlightRef),
+      FocusModeExtension(focusModeRef),
+      StyleCheckExtension(styleCheckRef),
     ],
     content: parseFrontmatter(content).body.trimStart(),
     onUpdate({ editor }) {
@@ -472,6 +497,24 @@ export function Editor({
     const { tr } = editor.state;
     editor.view.dispatch(tr.setMeta("lint-refresh", true));
   }, [lintIssues, editor]);
+
+  // Refresh writing-aid decorations when their toggles change.
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(editor.state.tr.setMeta("pos-highlight-refresh", true));
+  }, [editor, posHighlightProp]);
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(editor.state.tr.setMeta("punctuation-highlight-refresh", true));
+  }, [editor, punctuationHighlightProp]);
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(editor.state.tr.setMeta("focus-mode-refresh", true));
+  }, [editor, focusModeProp]);
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(editor.state.tr.setMeta("style-check-refresh", true));
+  }, [editor, styleCheckProp]);
 
   // Refresh link decorations when files list or current file changes
   useEffect(() => {

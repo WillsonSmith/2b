@@ -1,3 +1,36 @@
+/* ── POS highlighting ─────────────────────────────────────────────────── */
+.pos-noun { color: var(--pos-noun); }
+.pos-verb { color: var(--pos-verb); }
+.pos-adjective { color: var(--pos-adjective); }
+.pos-adverb { color: var(--pos-adverb); }
+.punct { color: var(--punct); }
+
+/* ── Focus mode (dim everything outside the active sentence/paragraph) ── */
+.focus-dimmed {
+  color: var(--focus-dim) !important;
+  opacity: 0.55;
+  transition: opacity 0.1s ease;
+}
+
+/* ── Style-check decorations (fillers, clichés, redundancies) ──────────── */
+.style-issue {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.style-issue--filler {
+  text-decoration-color: var(--style-filler);
+}
+.style-issue--cliche {
+  text-decoration-color: var(--style-cliche);
+  text-decoration-style: wavy;
+}
+.style-issue--redundancy {
+  text-decoration-color: var(--style-redundancy);
+}
+
 /* ── Lint decorations ────────────────────────────────────────────────── */
 .lint-clarity {
   border-bottom: 2px solid var(--accent);

@@ -40,6 +40,15 @@
   --hover-tint-sm: rgba(255, 255, 255, 0.02);
   --graph-node-file: #5588cc;
   --graph-link-wiki: #55cc88;
+  --pos-noun: #8aaed8;
+  --pos-verb: #c39060;
+  --pos-adjective: #b58cd8;
+  --pos-adverb: #6fbf8f;
+  --punct: #d8c060;
+  --focus-dim: #555555;
+  --style-filler: #cc9944;
+  --style-cliche: #cc5555;
+  --style-redundancy: #6699dd;
 }
 
 /* ── Light theme ───────────────────────────────────────────────────────────── */
@@ -84,4 +93,13 @@
   --hover-tint-sm: rgba(0, 0, 0, 0.02);
   --graph-node-file: #3366bb;
   --graph-link-wiki: #3a8a55;
+  --pos-noun: #2c5fa3;
+  --pos-verb: #b85a1a;
+  --pos-adjective: #7a3aa3;
+  --pos-adverb: #267a48;
+  --punct: #8a6500;
+  --focus-dim: #b8b8b8;
+  --style-filler: #b07a00;
+  --style-cliche: #b83232;
+  --style-redundancy: #3366bb;
 }

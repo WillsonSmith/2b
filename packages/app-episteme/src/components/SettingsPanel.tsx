@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ArrowLeft } from "lucide-react";
+import type { WritingAidsConfig } from "../config.ts";
 
 interface ModelConfig {
   default: string;
@@ -18,7 +19,7 @@ interface ToolInfo {
   permission: "per_call" | "session";
 }
 
-type SettingsSection = "style" | "models" | "permissions" | "help";
+type SettingsSection = "style" | "writing" | "models" | "permissions" | "help";
 
 export type SettingsPanelSection = SettingsSection;
 
@@ -27,6 +28,7 @@ interface SettingsPanelProps {
   onAutocompleteEnabledChange?: (enabled: boolean) => void;
   onAutosaveEnabledChange?: (enabled: boolean) => void;
   onLintEnabledChange?: (enabled: boolean) => void;
+  onWritingAidsChange?: (aids: WritingAidsConfig) => void;
   initialSection?: SettingsSection;
 }
 
@@ -59,6 +61,7 @@ const FEATURE_LABELS: Array<{ key: keyof ModelConfig; label: string; desc: strin
 
 const SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: "style", label: "Style guide" },
+  { id: "writing", label: "Writing aids" },
   { id: "models", label: "Models" },
   { id: "permissions", label: "Permissions" },
   { id: "help", label: "Help & shortcuts" },
@@ -73,6 +76,7 @@ export function SettingsPanel({
   onAutocompleteEnabledChange,
   onAutosaveEnabledChange,
   onLintEnabledChange,
+  onWritingAidsChange,
   initialSection,
 }: SettingsPanelProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? "style");
@@ -132,6 +136,9 @@ export function SettingsPanel({
         </nav>
         <main className="settings-content">
           {activeSection === "style" && <StyleGuideSection />}
+          {activeSection === "writing" && (
+            <WritingAidsSection onChange={onWritingAidsChange} />
+          )}
           {activeSection === "models" && (
             <ModelsSection
               onAutocompleteEnabledChange={onAutocompleteEnabledChange}
@@ -506,6 +513,172 @@ function PermissionsSection() {
           onClick={handleSave}
           disabled={status === "saving" || tools.length === 0}
         >
+          {status === "saving" ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// ── Writing aids section ────────────────────────────────────────────────────
+
+interface WritingAidsSectionProps {
+  onChange?: (aids: WritingAidsConfig) => void;
+}
+
+function WritingAidsSection({ onChange }: WritingAidsSectionProps) {
+  const [aids, setAids] = useState<WritingAidsConfig>({});
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  useEffect(() => {
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((data: { features?: { writingAids?: WritingAidsConfig } }) => {
+        setAids(data.features?.writingAids ?? {});
+      })
+      .catch(() => {});
+  }, []);
+
+  const update = useCallback(
+    (patch: Partial<WritingAidsConfig>) => {
+      setAids((prev) => ({ ...prev, ...patch }));
+      setStatus("idle");
+    },
+    [],
+  );
+
+  const handleSave = useCallback(async () => {
+    setStatus("saving");
+    try {
+      const res = await fetch("/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ features: { writingAids: aids } }),
+      });
+      if (res.ok) {
+        onChange?.(aids);
+        setStatus("saved");
+      } else {
+        setStatus("error");
+      }
+    } catch {
+      setStatus("error");
+    }
+  }, [aids, onChange]);
+
+  const Toggle = ({
+    name, desc, checked, onCheck, indent = false,
+  }: {
+    name: string;
+    desc: string;
+    checked: boolean;
+    onCheck: (v: boolean) => void;
+    indent?: boolean;
+  }) => (
+    <div className="model-config-row" style={{ marginBottom: 4, paddingLeft: indent ? 20 : 0 }}>
+      <div className="model-config-label">
+        <span className="model-config-name">{name}</span>
+        <span className="model-config-desc">{desc}</span>
+      </div>
+      <label className="settings-toggle">
+        <input type="checkbox" checked={checked} onChange={(e) => onCheck(e.target.checked)} />
+        <span className="settings-toggle-track" />
+      </label>
+    </div>
+  );
+
+  const posOn = aids.posHighlight ?? false;
+  const focusOn = aids.focusMode ?? false;
+  const styleOn = aids.styleCheck ?? false;
+
+  return (
+    <section className="settings-section">
+      <h2 className="settings-section-title">Writing aids</h2>
+      <p className="modal-desc">
+        iA Writer-style visual layers. All run locally — no AI calls.
+      </p>
+
+      <h3 className="settings-subhead">Syntax highlighting</h3>
+      <Toggle
+        name="Parts of speech"
+        desc="Color nouns, verbs, adjectives, and adverbs."
+        checked={posOn}
+        onCheck={(v) => update({ posHighlight: v })}
+      />
+      {posOn && (
+        <>
+          <Toggle name="Nouns" desc="" checked={aids.posNoun ?? true}
+            onCheck={(v) => update({ posNoun: v })} indent />
+          <Toggle name="Verbs" desc="" checked={aids.posVerb ?? true}
+            onCheck={(v) => update({ posVerb: v })} indent />
+          <Toggle name="Adjectives" desc="" checked={aids.posAdjective ?? true}
+            onCheck={(v) => update({ posAdjective: v })} indent />
+          <Toggle name="Adverbs" desc="" checked={aids.posAdverb ?? true}
+            onCheck={(v) => update({ posAdverb: v })} indent />
+        </>
+      )}
+      <Toggle
+        name="Punctuation"
+        desc="Tint commas, periods, dashes, and quotes."
+        checked={aids.punctuationHighlight ?? false}
+        onCheck={(v) => update({ punctuationHighlight: v })}
+      />
+
+      <h3 className="settings-subhead">Focus mode</h3>
+      <Toggle
+        name="Dim inactive text"
+        desc="Fade everything outside the active sentence or paragraph."
+        checked={focusOn}
+        onCheck={(v) => update({ focusMode: v })}
+      />
+      {focusOn && (
+        <div className="model-config-row" style={{ marginBottom: 4, paddingLeft: 20 }}>
+          <div className="model-config-label">
+            <span className="model-config-name">Focus level</span>
+            <span className="model-config-desc">Keep just the sentence or the whole paragraph visible.</span>
+          </div>
+          <div className="permission-row-controls" role="radiogroup" aria-label="Focus level">
+            {(["sentence", "paragraph"] as const).map((opt) => (
+              <label key={opt} className={`permission-pill${(aids.focusLevel ?? "sentence") === opt ? " active" : ""}`}>
+                <input
+                  type="radio"
+                  name="focus-level"
+                  checked={(aids.focusLevel ?? "sentence") === opt}
+                  onChange={() => update({ focusLevel: opt })}
+                />
+                <span>{opt === "sentence" ? "Sentence" : "Paragraph"}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <h3 className="settings-subhead">Style checks</h3>
+      <Toggle
+        name="Mark style issues"
+        desc="Underline fillers, clichés, and redundancies as you type."
+        checked={styleOn}
+        onCheck={(v) => update({ styleCheck: v })}
+      />
+      {styleOn && (
+        <>
+          <Toggle name="Fillers" desc='Words like "very", "just", "really".'
+            checked={aids.styleFiller ?? true}
+            onCheck={(v) => update({ styleFiller: v })} indent />
+          <Toggle name="Clichés" desc='Phrases like "at the end of the day".'
+            checked={aids.styleCliche ?? true}
+            onCheck={(v) => update({ styleCliche: v })} indent />
+          <Toggle name="Redundancies" desc='Pairs like "ATM machine", "free gift".'
+            checked={aids.styleRedundancy ?? true}
+            onCheck={(v) => update({ styleRedundancy: v })} indent />
+        </>
+      )}
+
+      <div className="modal-footer">
+        <div style={{ flex: 1 }} />
+        {status === "saved" && <span className="modal-status-ok">Saved</span>}
+        {status === "error" && <span className="modal-status-err">Save failed</span>}
+        <button className="modal-btn-primary" onClick={handleSave} disabled={status === "saving"}>
           {status === "saving" ? "Saving…" : "Save"}
         </button>
       </div>
