@@ -136,6 +136,125 @@
   color: var(--text);
 }
 
+/* ── Full-page settings (sidebar + content) ─────────────────────────────── */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 200;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 24px;
+  animation: settings-overlay-in 180ms ease-out;
+}
+.settings-overlay--exiting {
+  animation: settings-overlay-out 180ms ease-in forwards;
+}
+.settings-page {
+  flex: 1;
+  max-width: 1100px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  overflow: hidden;
+  box-shadow: var(--panel-shadow);
+  animation: settings-page-in 220ms ease-out;
+}
+.settings-page--exiting {
+  animation: settings-page-out 180ms ease-in forwards;
+}
+.settings-nav {
+  border-right: 1px solid var(--border);
+  padding: 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg);
+}
+.settings-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background 0.1s, color 0.1s;
+}
+.settings-back-btn:hover {
+  background: var(--bg-highlight);
+  color: var(--text);
+}
+.settings-nav-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-nav-list li button {
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 5px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.settings-nav-list li button:hover {
+  background: var(--bg-highlight);
+  color: var(--text);
+}
+.settings-nav-list li.active button {
+  background: var(--bg-highlight);
+  color: var(--text);
+  font-weight: 600;
+}
+.settings-content {
+  padding: 28px 36px;
+  overflow-y: auto;
+}
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+}
+.settings-section-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+
+@keyframes settings-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes settings-overlay-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@keyframes settings-page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes settings-page-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(8px); }
+}
+
 .model-config-grid {
   display: flex;
   flex-direction: column;

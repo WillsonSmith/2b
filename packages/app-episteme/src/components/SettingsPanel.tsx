@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { X } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { ArrowLeft } from "lucide-react";
 
 interface ModelConfig {
   default: string;
@@ -9,12 +9,14 @@ interface ModelConfig {
   export?: string;
 }
 
+type SettingsSection = "style" | "models" | "help";
+
 interface SettingsPanelProps {
   onClose: () => void;
   onAutocompleteEnabledChange?: (enabled: boolean) => void;
   onAutosaveEnabledChange?: (enabled: boolean) => void;
   onLintEnabledChange?: (enabled: boolean) => void;
-  initialTab?: "style" | "models" | "help";
+  initialSection?: SettingsSection;
 }
 
 const SHORTCUTS = [
@@ -43,12 +45,169 @@ const FEATURE_LABELS: Array<{ key: keyof ModelConfig; label: string; desc: strin
   { key: "research", label: "Research", desc: "Gap detection and deep research synthesis" },
 ];
 
-export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosaveEnabledChange, onLintEnabledChange, initialTab }: SettingsPanelProps) {
-  // Style guide state
-  const [content, setContent] = useState("");
-  const [styleStatus, setStyleStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+const SECTIONS: Array<{ id: SettingsSection; label: string }> = [
+  { id: "style", label: "Style guide" },
+  { id: "models", label: "Models" },
+  { id: "help", label: "Help & shortcuts" },
+];
 
-  // Model config state
+const CLOSE_ANIMATION_MS = 180;
+
+// ── Shell ────────────────────────────────────────────────────────────────────
+
+export function SettingsPanel({
+  onClose,
+  onAutocompleteEnabledChange,
+  onAutosaveEnabledChange,
+  onLintEnabledChange,
+  initialSection,
+}: SettingsPanelProps) {
+  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? "style");
+  const [exiting, setExiting] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleClose = useCallback(() => {
+    if (closeTimerRef.current) return;
+    setExiting(true);
+    closeTimerRef.current = setTimeout(() => {
+      onClose();
+    }, CLOSE_ANIMATION_MS);
+  }, [onClose]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") handleClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleClose]);
+
+  return (
+    <div
+      className={`settings-overlay${exiting ? " settings-overlay--exiting" : ""}`}
+      onClick={handleClose}
+    >
+      <div
+        className={`settings-page${exiting ? " settings-page--exiting" : ""}`}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+      >
+        <nav className="settings-nav" aria-label="Settings sections">
+          <button
+            className="settings-back-btn"
+            onClick={handleClose}
+            title="Close settings (Esc)"
+          >
+            <ArrowLeft size={14} />
+            <span>Back</span>
+          </button>
+          <ul className="settings-nav-list">
+            {SECTIONS.map(({ id, label }) => (
+              <li key={id} className={activeSection === id ? "active" : ""}>
+                <button onClick={() => setActiveSection(id)}>{label}</button>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        <main className="settings-content">
+          {activeSection === "style" && <StyleGuideSection />}
+          {activeSection === "models" && (
+            <ModelsSection
+              onAutocompleteEnabledChange={onAutocompleteEnabledChange}
+              onAutosaveEnabledChange={onAutosaveEnabledChange}
+              onLintEnabledChange={onLintEnabledChange}
+            />
+          )}
+          {activeSection === "help" && <HelpSection />}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+// ── Style guide section ─────────────────────────────────────────────────────
+
+function StyleGuideSection() {
+  const [content, setContent] = useState("");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  useEffect(() => {
+    fetch("/api/style-guide")
+      .then((r) => r.json())
+      .then((data: { content?: string }) => setContent(data.content ?? ""))
+      .catch(() => {});
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setStatus("saving");
+    try {
+      const res = await fetch("/api/style-guide", { method: "PATCH", body: content });
+      setStatus(res.ok ? "saved" : "error");
+    } catch {
+      setStatus("error");
+    }
+  }, [content]);
+
+  const handleClear = useCallback(async () => {
+    setContent("");
+    setStatus("saving");
+    try {
+      const res = await fetch("/api/style-guide", { method: "PATCH", body: "" });
+      setStatus(res.ok ? "saved" : "error");
+    } catch {
+      setStatus("error");
+    }
+  }, []);
+
+  return (
+    <section className="settings-section">
+      <h2 className="settings-section-title">Style guide</h2>
+      <p className="modal-desc">
+        Write style rules in Markdown. Episteme injects them into every editing and generation prompt.
+      </p>
+      <textarea
+        className="modal-textarea"
+        value={content}
+        onChange={(e) => { setContent(e.target.value); setStatus("idle"); }}
+        placeholder={"# Style Guide\n\n- Use active voice\n- Prefer short sentences (under 25 words)\n- Avoid jargon unless the audience is technical"}
+        spellCheck={false}
+      />
+      <div className="modal-footer">
+        <button className="modal-btn-ghost" onClick={handleClear} disabled={status === "saving"}>
+          Clear
+        </button>
+        <div style={{ flex: 1 }} />
+        {status === "saved" && <span className="modal-status-ok">Saved</span>}
+        {status === "error" && <span className="modal-status-err">Save failed</span>}
+        <button className="modal-btn-primary" onClick={handleSave} disabled={status === "saving"}>
+          {status === "saving" ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// ── Models section ──────────────────────────────────────────────────────────
+
+interface ModelsSectionProps {
+  onAutocompleteEnabledChange?: (enabled: boolean) => void;
+  onAutosaveEnabledChange?: (enabled: boolean) => void;
+  onLintEnabledChange?: (enabled: boolean) => void;
+}
+
+function ModelsSection({
+  onAutocompleteEnabledChange,
+  onAutosaveEnabledChange,
+  onLintEnabledChange,
+}: ModelsSectionProps) {
   const [models, setModels] = useState<string[]>([]);
   const [modelConfig, setModelConfig] = useState<ModelConfig>({ default: "" });
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(false);
@@ -57,16 +216,9 @@ export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosave
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState("");
   const [initialOllamaBaseUrl, setInitialOllamaBaseUrl] = useState("");
   const [urlChangedNotice, setUrlChangedNotice] = useState(false);
-  const [modelStatus, setModelStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-
-  const [activeTab, setActiveTab] = useState<"style" | "models" | "help">(initialTab ?? "style");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
-    fetch("/api/style-guide")
-      .then((r) => r.json())
-      .then((data: { content?: string }) => setContent(data.content ?? ""))
-      .catch(() => {});
-
     fetch("/api/config")
       .then((r) => r.json())
       .then((data: { models?: ModelConfig; features?: { autocomplete?: boolean; autosave?: boolean; lint?: boolean }; ollamaBaseUrl?: string }) => {
@@ -86,29 +238,8 @@ export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosave
       .catch(() => {});
   }, []);
 
-  const handleStyleSave = useCallback(async () => {
-    setStyleStatus("saving");
-    try {
-      const res = await fetch("/api/style-guide", { method: "PATCH", body: content });
-      setStyleStatus(res.ok ? "saved" : "error");
-    } catch {
-      setStyleStatus("error");
-    }
-  }, [content]);
-
-  const handleStyleClear = useCallback(async () => {
-    setContent("");
-    setStyleStatus("saving");
-    try {
-      const res = await fetch("/api/style-guide", { method: "PATCH", body: "" });
-      setStyleStatus(res.ok ? "saved" : "error");
-    } catch {
-      setStyleStatus("error");
-    }
-  }, []);
-
-  const handleModelSave = useCallback(async () => {
-    setModelStatus("saving");
+  const handleSave = useCallback(async () => {
+    setStatus("saving");
     try {
       const res = await fetch("/api/config", {
         method: "PATCH",
@@ -131,198 +262,145 @@ export function SettingsPanel({ onClose, onAutocompleteEnabledChange, onAutosave
           setUrlChangedNotice(true);
           setInitialOllamaBaseUrl(ollamaBaseUrl);
         }
-        setModelStatus("saved");
+        setStatus("saved");
       } else {
-        setModelStatus("error");
+        setStatus("error");
       }
     } catch {
-      setModelStatus("error");
+      setStatus("error");
     }
   }, [modelConfig, autocompleteEnabled, autosaveEnabled, lintEnabled, ollamaBaseUrl, initialOllamaBaseUrl, onAutocompleteEnabledChange, onAutosaveEnabledChange, onLintEnabledChange]);
 
-  // Close on Escape
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <span className="modal-title">Settings</span>
-          <button className="modal-close" onClick={onClose} title="Close"><X size={14} /></button>
+    <section className="settings-section">
+      <h2 className="settings-section-title">Models</h2>
+      <p className="modal-desc">
+        Assign different Ollama models per feature. Leave a feature on "Default" to inherit the default model.
+      </p>
+      <div className="model-config-row" style={{ marginBottom: 4 }}>
+        <div className="model-config-label">
+          <span className="model-config-name">Autosave</span>
+          <span className="model-config-desc">Automatically save after 2 seconds of inactivity</span>
         </div>
-
-        <div className="settings-tabs">
-          <button
-            className={`settings-tab${activeTab === "style" ? " active" : ""}`}
-            onClick={() => setActiveTab("style")}
-          >
-            Style Guide
-          </button>
-          <button
-            className={`settings-tab${activeTab === "models" ? " active" : ""}`}
-            onClick={() => setActiveTab("models")}
-          >
-            Models
-          </button>
-          <button
-            className={`settings-tab${activeTab === "help" ? " active" : ""}`}
-            onClick={() => setActiveTab("help")}
-          >
-            Shortcuts
-          </button>
-        </div>
-
-        {activeTab === "help" ? (
-          <table className="help-table">
-            <tbody>
-              {SHORTCUTS.map(({ key, desc }) => (
-                <tr key={key} className="help-row">
-                  <td className="help-key"><kbd>{key}</kbd></td>
-                  <td className="help-desc">{desc}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : activeTab === "style" ? (
-          <>
-            <p className="modal-desc">
-              Write style rules in Markdown. Episteme injects them into every editing and generation prompt.
-            </p>
-            <textarea
-              className="modal-textarea"
-              value={content}
-              onChange={(e) => { setContent(e.target.value); setStyleStatus("idle"); }}
-              placeholder={"# Style Guide\n\n- Use active voice\n- Prefer short sentences (under 25 words)\n- Avoid jargon unless the audience is technical"}
-              spellCheck={false}
-            />
-            <div className="modal-footer">
-              <button className="modal-btn-ghost" onClick={handleStyleClear} disabled={styleStatus === "saving"}>
-                Clear
-              </button>
-              <div style={{ flex: 1 }} />
-              {styleStatus === "saved" && <span className="modal-status-ok">Saved</span>}
-              {styleStatus === "error" && <span className="modal-status-err">Save failed</span>}
-              <button className="modal-btn-primary" onClick={handleStyleSave} disabled={styleStatus === "saving"}>
-                {styleStatus === "saving" ? "Saving…" : "Save"}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="modal-desc">
-              Assign different Ollama models per feature. Leave a feature on "Default" to inherit the default model.
-            </p>
-            <div className="model-config-row" style={{ marginBottom: 4 }}>
-              <div className="model-config-label">
-                <span className="model-config-name">Autosave</span>
-                <span className="model-config-desc">Automatically save after 2 seconds of inactivity</span>
-              </div>
-              <label className="settings-toggle">
-                <input
-                  type="checkbox"
-                  checked={autosaveEnabled}
-                  onChange={(e) => { setAutosaveEnabled(e.target.checked); setModelStatus("idle"); }}
-                />
-                <span className="settings-toggle-track" />
-              </label>
-            </div>
-            <div className="model-config-row" style={{ marginBottom: 4 }}>
-              <div className="model-config-label">
-                <span className="model-config-name">Autocomplete</span>
-                <span className="model-config-desc">Enable inline ghost-text suggestions while typing</span>
-              </div>
-              <label className="settings-toggle">
-                <input
-                  type="checkbox"
-                  checked={autocompleteEnabled}
-                  onChange={(e) => { setAutocompleteEnabled(e.target.checked); setModelStatus("idle"); }}
-                />
-                <span className="settings-toggle-track" />
-              </label>
-            </div>
-            <div className="model-config-row" style={{ marginBottom: 8 }}>
-              <div className="model-config-label">
-                <span className="model-config-name">Linting</span>
-                <span className="model-config-desc">Run AI writing quality checks after 5s of inactivity</span>
-              </div>
-              <label className="settings-toggle">
-                <input
-                  type="checkbox"
-                  checked={lintEnabled}
-                  onChange={(e) => { setLintEnabled(e.target.checked); setModelStatus("idle"); }}
-                />
-                <span className="settings-toggle-track" />
-              </label>
-            </div>
-            <div className="model-config-row" style={{ marginBottom: 8 }}>
-              <div className="model-config-label">
-                <span className="model-config-name">Ollama base URL</span>
-                <span className="model-config-desc">
-                  Point Episteme at a different Ollama-compatible host. Leave blank for http://127.0.0.1:11434.
-                </span>
-              </div>
-              <input
-                className="model-config-input"
-                type="text"
-                value={ollamaBaseUrl}
-                placeholder="http://127.0.0.1:11434"
-                onChange={(e) => {
-                  setOllamaBaseUrl(e.target.value);
-                  setModelStatus("idle");
-                  setUrlChangedNotice(false);
-                }}
-              />
-            </div>
-            <datalist id="ollama-models">
-              {models.map((m) => <option key={m} value={m} />)}
-            </datalist>
-            <div className="model-config-grid">
-              {FEATURE_LABELS.map(({ key, label, desc }) => (
-                <div key={key} className="model-config-row">
-                  <div className="model-config-label">
-                    <span className="model-config-name">{label}</span>
-                    <span className="model-config-desc">{desc}</span>
-                  </div>
-                  <input
-                    className="model-config-input"
-                    list="ollama-models"
-                    value={key === "default" ? modelConfig.default : (modelConfig[key] ?? "")}
-                    placeholder={key === "default" ? "Model name" : `Default (${modelConfig.default || "not set"})`}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setModelConfig((prev) => {
-                        if (key === "default") return { ...prev, default: val };
-                        if (!val) {
-                          const next = { ...prev };
-                          delete next[key];
-                          return next;
-                        }
-                        return { ...prev, [key]: val };
-                      });
-                      setModelStatus("idle");
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="modal-footer">
-              <div style={{ flex: 1 }} />
-              {urlChangedNotice && (
-                <span className="modal-status-ok">URL updated. Restart to switch the main chat agent.</span>
-              )}
-              {modelStatus === "saved" && !urlChangedNotice && <span className="modal-status-ok">Saved</span>}
-              {modelStatus === "error" && <span className="modal-status-err">Save failed</span>}
-              <button className="modal-btn-primary" onClick={handleModelSave} disabled={modelStatus === "saving"}>
-                {modelStatus === "saving" ? "Saving…" : "Save"}
-              </button>
-            </div>
-          </>
-        )}
+        <label className="settings-toggle">
+          <input
+            type="checkbox"
+            checked={autosaveEnabled}
+            onChange={(e) => { setAutosaveEnabled(e.target.checked); setStatus("idle"); }}
+          />
+          <span className="settings-toggle-track" />
+        </label>
       </div>
-    </div>
+      <div className="model-config-row" style={{ marginBottom: 4 }}>
+        <div className="model-config-label">
+          <span className="model-config-name">Autocomplete</span>
+          <span className="model-config-desc">Enable inline ghost-text suggestions while typing</span>
+        </div>
+        <label className="settings-toggle">
+          <input
+            type="checkbox"
+            checked={autocompleteEnabled}
+            onChange={(e) => { setAutocompleteEnabled(e.target.checked); setStatus("idle"); }}
+          />
+          <span className="settings-toggle-track" />
+        </label>
+      </div>
+      <div className="model-config-row" style={{ marginBottom: 8 }}>
+        <div className="model-config-label">
+          <span className="model-config-name">Linting</span>
+          <span className="model-config-desc">Run AI writing quality checks after 5s of inactivity</span>
+        </div>
+        <label className="settings-toggle">
+          <input
+            type="checkbox"
+            checked={lintEnabled}
+            onChange={(e) => { setLintEnabled(e.target.checked); setStatus("idle"); }}
+          />
+          <span className="settings-toggle-track" />
+        </label>
+      </div>
+      <div className="model-config-row" style={{ marginBottom: 8 }}>
+        <div className="model-config-label">
+          <span className="model-config-name">Ollama base URL</span>
+          <span className="model-config-desc">
+            Point Episteme at a different Ollama-compatible host. Leave blank for http://127.0.0.1:11434.
+          </span>
+        </div>
+        <input
+          className="model-config-input"
+          type="text"
+          value={ollamaBaseUrl}
+          placeholder="http://127.0.0.1:11434"
+          onChange={(e) => {
+            setOllamaBaseUrl(e.target.value);
+            setStatus("idle");
+            setUrlChangedNotice(false);
+          }}
+        />
+      </div>
+      <datalist id="ollama-models">
+        {models.map((m) => <option key={m} value={m} />)}
+      </datalist>
+      <div className="model-config-grid">
+        {FEATURE_LABELS.map(({ key, label, desc }) => (
+          <div key={key} className="model-config-row">
+            <div className="model-config-label">
+              <span className="model-config-name">{label}</span>
+              <span className="model-config-desc">{desc}</span>
+            </div>
+            <input
+              className="model-config-input"
+              list="ollama-models"
+              value={key === "default" ? modelConfig.default : (modelConfig[key] ?? "")}
+              placeholder={key === "default" ? "Model name" : `Default (${modelConfig.default || "not set"})`}
+              onChange={(e) => {
+                const val = e.target.value;
+                setModelConfig((prev) => {
+                  if (key === "default") return { ...prev, default: val };
+                  if (!val) {
+                    const next = { ...prev };
+                    delete next[key];
+                    return next;
+                  }
+                  return { ...prev, [key]: val };
+                });
+                setStatus("idle");
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="modal-footer">
+        <div style={{ flex: 1 }} />
+        {urlChangedNotice && (
+          <span className="modal-status-ok">URL updated. Restart to switch the main chat agent.</span>
+        )}
+        {status === "saved" && !urlChangedNotice && <span className="modal-status-ok">Saved</span>}
+        {status === "error" && <span className="modal-status-err">Save failed</span>}
+        <button className="modal-btn-primary" onClick={handleSave} disabled={status === "saving"}>
+          {status === "saving" ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// ── Help section ────────────────────────────────────────────────────────────
+
+function HelpSection() {
+  return (
+    <section className="settings-section">
+      <h2 className="settings-section-title">Help & shortcuts</h2>
+      <table className="help-table">
+        <tbody>
+          {SHORTCUTS.map(({ key, desc }) => (
+            <tr key={key} className="help-row">
+              <td className="help-key"><kbd>{key}</kbd></td>
+              <td className="help-desc">{desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }

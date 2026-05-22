@@ -107,7 +107,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const themeReady = useRef(false);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<"style" | "models" | "help">("style");
+  const [settingsInitialSection, setSettingsInitialSection] = useState<"style" | "models" | "help">("style");
   const [showToc, setShowToc] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [dismissedLargeFile, setDismissedLargeFile] = useState(false);
@@ -348,7 +348,7 @@ function App() {
         !(e.target instanceof HTMLInputElement) &&
         !(e.target instanceof HTMLTextAreaElement)
       ) {
-        setSettingsInitialTab("help");
+        setSettingsInitialSection("help");
         setShowSettings(true);
       }
       if (e.key === "p" && (e.metaKey || e.ctrlKey)) {
@@ -483,7 +483,7 @@ function App() {
       { id: "conflicts", label: "Conflicts Panel", description: "Detect contradictions", action: () => conflictsGraph.showConflicts ? conflictsGraph.setShowConflicts(false) : conflictsGraph.handleOpenConflicts() },
       { id: "graph", label: "Knowledge Graph", description: "Visualize note connections", action: () => conflictsGraph.showGraph ? conflictsGraph.setShowGraph(false) : conflictsGraph.handleOpenGraph() },
       { id: "settings", label: "Settings", description: "Style guide & features", action: () => setShowSettings(true) },
-      { id: "help", label: "Keyboard Shortcuts", description: "View all shortcuts", action: () => { setSettingsInitialTab("help"); setShowSettings(true); } },
+      { id: "help", label: "Keyboard Shortcuts", description: "View all shortcuts", action: () => { setSettingsInitialSection("help"); setShowSettings(true); } },
       { id: "newfile", label: "New File", description: "Create a new note", action: () => fileManager.createFile("untitled.md") },
       { id: "reindex", label: "Re-index Workspace", description: "Update search index", action: () => research.handleReindex() },
       { id: "save", label: "Save File", description: "Save current document", action: () => fileManager.saveFile() },
@@ -852,7 +852,7 @@ function App() {
           onAutocompleteEnabledChange={editorFeatures.setAutocompleteEnabled}
           onAutosaveEnabledChange={fileManager.setAutosaveEnabled}
           onLintEnabledChange={editorFeatures.setLintEnabled}
-          initialTab={settingsInitialTab}
+          initialSection={settingsInitialSection}
         />
       )}
       {/* Drag-over overlay */}
@@ -944,7 +944,7 @@ function App() {
               <button
                 className="rail-btn"
                 title="Settings"
-                onClick={() => { setSettingsInitialTab("style"); setShowSettings(true); }}
+                onClick={() => { setSettingsInitialSection("style"); setShowSettings(true); }}
               >
                 <Settings size={18} />
               </button>
