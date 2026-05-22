@@ -75,6 +75,13 @@ export interface TickMetrics {
   toolsCalled: Record<string, number>;
   /** Whether the LLM response was [IGNORE]-suppressed (ambient-only). */
   ignored: boolean;
+  /**
+   * Whether the tick threw — set by act() in its catch path before rethrowing.
+   * When true, downstream fields (llmMs, augmentMs, dispatchMs, etc.) reflect
+   * partial progress up to the failure point and may be zero if the error fired
+   * before the relevant stage ran.
+   */
+  errored: boolean;
 }
 
 /**
@@ -103,6 +110,19 @@ export class YieldSignal extends Error {
   constructor(public readonly partialResult?: string) {
     super("yield");
     this.name = "YieldSignal";
+  }
+}
+
+/**
+ * Thrown by `BaseAgent.yieldControl()` when the in-flight tick is interrupted
+ * before continuation input arrives. The retry loop in BaseAgent.buildTools
+ * treats this class as non-retryable — burning retries on an explicit interrupt
+ * would just produce N copies of the same "Yield interrupted." error.
+ */
+export class YieldInterruptedError extends Error {
+  constructor() {
+    super("Yield interrupted.");
+    this.name = "YieldInterruptedError";
   }
 }
 

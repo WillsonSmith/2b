@@ -942,4 +942,208 @@ describe("BaseAgent - tick_metrics", () => {
 
     await agent.stop();
   });
+
+  test("emits tick_metrics with errored=true when the LLM throws (F-2)", async () => {
+    const llm = {
+      chat: mock(async () => { throw new Error("LLM blew up"); }),
+      embed: mock(async () => []),
+    } as unknown as LLMProvider;
+
+    const agent = new BaseAgent(llm, makeConfig());
+    // Register a noop "error" listener so the EventEmitter doesn't throw when
+    // the rejected tick re-emits via tick()'s catch path.
+    agent.on("error", () => {});
+
+    const metricsPromise = waitForEvent(agent, "tick_metrics");
+    agent.addDirect("trigger");
+
+    const [metrics] = (await metricsPromise) as [import("./types").TickMetrics];
+    expect(metrics.errored).toBe(true);
+    expect(metrics.ignored).toBe(false);
+    // The LLM call never completed, so llmMs / augmentMs / dispatchMs are 0
+    expect(metrics.llmMs).toBe(0);
+    expect(metrics.augmentMs).toBe(0);
+    expect(metrics.dispatchMs).toBe(0);
+    agent.stop();
+  });
+
+  test("errored=false on a normal successful tick (F-2 invariant)", async () => {
+    const agent = new BaseAgent(makeLLM("ok"), makeConfig());
+
+    const metricsPromise = waitForEvent(agent, "tick_metrics");
+    agent.addDirect("hi");
+
+    const [metrics] = (await metricsPromise) as [import("./types").TickMetrics];
+    expect(metrics.errored).toBe(false);
+    agent.stop();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Audit fixes — regression locks
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BaseAgent - F-1: user dispatch deferred until after LLM call", () => {
+  test("user message is NOT dispatched to plugins when the LLM throws", async () => {
+    const llm = {
+      chat: mock(async () => { throw new Error("LLM failed"); }),
+      embed: mock(async () => []),
+    } as unknown as LLMProvider;
+
+    const onMessage = mock(async (_role: string, _content: string, _source: string) => {});
+    const plugin: AgentPlugin = { name: "Recorder", onMessage };
+    const agent = new BaseAgent(llm, makeConfig());
+    agent.registerPlugin(plugin);
+
+    const errorPromise = waitForEvent(agent, "error");
+    agent.addDirect("hello");
+    await errorPromise;
+
+    // Pre-fix: onMessage("user", "hello", ...) would have fired before the LLM
+    // call. After F-1, dispatch only happens on the success path.
+    const userCalls = onMessage.mock.calls.filter((c) => c[0] === "user");
+    expect(userCalls).toHaveLength(0);
+    agent.stop();
+  });
+
+  test("user message IS dispatched once on the success path", async () => {
+    const onMessage = mock(async (_role: string, _content: string, _source: string) => {});
+    const plugin: AgentPlugin = { name: "Recorder", onMessage };
+    const agent = new BaseAgent(makeLLM("ok"), makeConfig());
+    agent.registerPlugin(plugin);
+
+    const speakPromise = waitForEvent(agent, "speak");
+    agent.addDirect("hello");
+    await speakPromise;
+
+    const userCalls = onMessage.mock.calls.filter((c) => c[0] === "user");
+    expect(userCalls).toHaveLength(1);
+    expect(userCalls[0]![1]).toBe("hello");
+    agent.stop();
+  });
+});
+
+describe("BaseAgent - F-6: yield interrupts are not retried", () => {
+  test("YieldInterruptedError thrown from a tool with retry policy is surfaced once, not retried", async () => {
+    const { YieldInterruptedError } = await import("./types");
+    let attempts = 0;
+    const executeTool = mock(async () => {
+      attempts++;
+      throw new YieldInterruptedError();
+    });
+
+    const plugin: AgentPlugin = {
+      name: "YieldingPlugin",
+      getTools: () => [{
+        name: "may_yield",
+        description: "",
+        parameters: {},
+        permission: "none",
+        retry: { maxAttempts: 5, delayMs: 0 },
+      }],
+      executeTool,
+    };
+
+    const llm = makeLLM("ok");
+    const agent = new BaseAgent(llm, makeConfig());
+    agent.registerPlugin(plugin);
+    agent.addDirect("hi");
+    await waitForIdle(agent);
+
+    const tools = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
+    const result = await tools[0].implementation({});
+
+    expect(attempts).toBe(1);
+    expect(String(result)).toContain("Yield interrupted");
+    agent.stop();
+  });
+
+  test("non-yield errors still retry up to maxAttempts (regression guard)", async () => {
+    let attempts = 0;
+    const executeTool = mock(async () => {
+      attempts++;
+      throw new Error("transient");
+    });
+
+    const plugin: AgentPlugin = {
+      name: "TransientPlugin",
+      getTools: () => [{
+        name: "flaky",
+        description: "",
+        parameters: {},
+        permission: "none",
+        retry: { maxAttempts: 3, delayMs: 0 },
+      }],
+      executeTool,
+    };
+
+    const llm = makeLLM("ok");
+    const agent = new BaseAgent(llm, makeConfig());
+    agent.registerPlugin(plugin);
+    agent.addDirect("hi");
+    await waitForIdle(agent);
+
+    const tools = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
+    await tools[0].implementation({});
+
+    expect(attempts).toBe(3);
+    agent.stop();
+  });
+});
+
+describe("BaseAgent - F-13: veto runs before permission prompt", () => {
+  test("a vetoed tool never reaches the permission manager", async () => {
+    const requestApproval = mock(async () => true);
+    const pm = { requestApproval, isSessionApproved: () => false };
+    const executeTool = mock(async () => "should not run");
+
+    const onBeforeToolCall = mock(() => ({ allow: false as const, reason: "Blocked by safety policy." }));
+
+    const plugin: AgentPlugin = {
+      name: "GatedPlugin",
+      getTools: () => [{ name: "danger", description: "", parameters: {}, permission: "per_call" }],
+      executeTool,
+      onBeforeToolCall,
+    };
+
+    const llm = makeLLM("ok");
+    const agent = new BaseAgent(llm, makeConfig({ permissionManager: pm }));
+    agent.registerPlugin(plugin);
+    agent.addDirect("hi");
+    await waitForIdle(agent);
+
+    const tools = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
+    const result = await tools[0].implementation({});
+
+    expect(onBeforeToolCall).toHaveBeenCalledTimes(1);
+    expect(requestApproval).not.toHaveBeenCalled();
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(result).toBe("Blocked by safety policy.");
+    agent.stop();
+  });
+
+  test("veto allows pass-through to permission check, which can still deny", async () => {
+    const pm = new AutoDenyPermissionManager();
+    const executeTool = mock(async () => "approved");
+
+    const plugin: AgentPlugin = {
+      name: "GatedPlugin",
+      getTools: () => [{ name: "danger", description: "", parameters: {}, permission: "per_call" }],
+      executeTool,
+      onBeforeToolCall: () => ({ allow: true as const }),
+    };
+
+    const llm = makeLLM("ok");
+    const agent = new BaseAgent(llm, makeConfig({ permissionManager: pm }));
+    agent.registerPlugin(plugin);
+    agent.addDirect("hi");
+    await waitForIdle(agent);
+
+    const tools = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![3];
+    const result = await tools[0].implementation({});
+
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(result).toEqual({ error: "Permission denied by user." });
+    agent.stop();
+  });
 });

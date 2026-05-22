@@ -56,6 +56,7 @@ export class TickMetricsAggregator {
     let toolCount = 0;
     let contextContributors = 0;
     let ignoredCount = 0;
+    let erroredCount = 0;
 
     // sum and per-plugin sum
     const pluginTotals = new Map<string, { sum: number; count: number; max: number }>();
@@ -63,6 +64,12 @@ export class TickMetricsAggregator {
     const toolTotals = new Map<string, { totalCalls: number; ticksUsed: number }>();
 
     for (const m of this.buffer) {
+      if (m.errored) {
+        // Errored ticks have partial timings — including them would skew the
+        // success-path averages. Count them but exclude from timing/size sums.
+        erroredCount++;
+        continue;
+      }
       totalMs += m.totalMs;
       llmMs += m.llmMs;
       collectMessagesMs += m.collectMessagesMs;
@@ -93,6 +100,11 @@ export class TickMetricsAggregator {
       }
     }
 
+    // Successful-tick denominator for averages. When every tick in the window
+    // errored, fall back to 1 to avoid NaN — the resulting averages are all 0.
+    const successCount = n - erroredCount;
+    const avgDenom = successCount === 0 ? 1 : successCount;
+
     const pluginContextMs: PluginAggregateRow[] = [...pluginTotals.entries()]
       .map(([name, e]) => ({
         name,
@@ -114,18 +126,19 @@ export class TickMetricsAggregator {
     return {
       sampleCount: n,
       ignoredCount,
+      erroredCount,
       avg: {
-        totalMs: totalMs / n,
-        llmMs: llmMs / n,
-        collectMessagesMs: collectMessagesMs / n,
-        collectSystemPromptMs: collectSystemPromptMs / n,
-        augmentMs: augmentMs / n,
-        dispatchMs: dispatchMs / n,
-        systemPromptChars: systemPromptChars / n,
-        toolsChars: toolsChars / n,
-        historyChars: historyChars / n,
-        toolCount: toolCount / n,
-        contextContributors: contextContributors / n,
+        totalMs: totalMs / avgDenom,
+        llmMs: llmMs / avgDenom,
+        collectMessagesMs: collectMessagesMs / avgDenom,
+        collectSystemPromptMs: collectSystemPromptMs / avgDenom,
+        augmentMs: augmentMs / avgDenom,
+        dispatchMs: dispatchMs / avgDenom,
+        systemPromptChars: systemPromptChars / avgDenom,
+        toolsChars: toolsChars / avgDenom,
+        historyChars: historyChars / avgDenom,
+        toolCount: toolCount / avgDenom,
+        contextContributors: contextContributors / avgDenom,
       },
       pluginContextMs,
       toolsCalled,
@@ -153,6 +166,8 @@ export interface ToolAggregateRow {
 export interface TickMetricsSnapshot {
   sampleCount: number;
   ignoredCount: number;
+  /** Number of ticks in the window that threw before completing. */
+  erroredCount: number;
   avg: {
     totalMs: number;
     llmMs: number;
@@ -174,6 +189,7 @@ export interface TickMetricsSnapshot {
 const EMPTY_SNAPSHOT: TickMetricsSnapshot = {
   sampleCount: 0,
   ignoredCount: 0,
+  erroredCount: 0,
   avg: {
     totalMs: 0,
     llmMs: 0,
