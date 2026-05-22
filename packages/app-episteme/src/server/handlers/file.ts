@@ -1,6 +1,6 @@
 import type { ServerWebSocket } from "bun";
 import { dirname, join, normalize } from "node:path";
-import { rename as fsRename, mkdir } from "node:fs/promises";
+import { rename as fsRename, mkdir, unlink } from "node:fs/promises";
 import type { ClientMsg } from "../../protocol.ts";
 import type { WsContext } from "../context.ts";
 import { rewriteLinksForRename, isLocalLink } from "../../features/links.ts";
@@ -73,7 +73,7 @@ async function scanBacklinks(
 
 export type FileMsg = Extract<
   ClientMsg,
-  { type: "list_workspace" | "file_open" | "file_save" | "file_create" | "folder_create" | "folder_rename" | "file_rename" | "open_in_finder" | "backlinks_request" }
+  { type: "list_workspace" | "file_open" | "file_save" | "file_create" | "folder_create" | "folder_rename" | "file_rename" | "file_delete" | "open_in_finder" | "backlinks_request" | "get_filetree_expanded" | "set_filetree_expanded" }
 >;
 
 export async function handleFile(
@@ -225,6 +225,44 @@ export async function handleFile(
       } catch {
         send(ws, { type: "error", message: `Cannot rename: ${msg.oldPath}` });
       }
+      return;
+    }
+
+    case "file_delete": {
+      const absolute = resolveWorkspacePath(msg.path);
+      if (!absolute) {
+        send(ws, { type: "error", message: "Path escapes workspace boundary." });
+        return;
+      }
+      try {
+        await unlink(absolute);
+        const relPath = absolute.slice(absRoot.length + 1);
+        workspaceDb.deleteWorkspaceFile(relPath);
+        send(ws, { type: "file_deleted", path: relPath });
+        await sendWorkspaceFiles();
+      } catch {
+        send(ws, { type: "error", message: `Cannot delete: ${msg.path}` });
+      }
+      return;
+    }
+
+    case "get_filetree_expanded": {
+      const stored = workspaceDb.getMeta("filetree.expanded");
+      let paths: string[] = [];
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) paths = parsed.filter((p): p is string => typeof p === "string");
+        } catch {
+          // ignore malformed value
+        }
+      }
+      send(ws, { type: "filetree_expanded", paths });
+      return;
+    }
+
+    case "set_filetree_expanded": {
+      workspaceDb.setMeta("filetree.expanded", JSON.stringify(msg.paths));
       return;
     }
 

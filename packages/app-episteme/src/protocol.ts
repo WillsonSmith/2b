@@ -36,7 +36,10 @@ export type ClientMsg =
   | { type: "folder_create"; path: string }
   | { type: "folder_rename"; oldPath: string; newPath: string }
   | { type: "file_rename"; oldPath: string; newPath: string }
+  | { type: "file_delete"; path: string }
   | { type: "list_workspace" }
+  | { type: "get_filetree_expanded" }
+  | { type: "set_filetree_expanded"; paths: string[] }
   | { type: "autocomplete_request"; context: string }
   | { type: "ingest_url"; url: string }
   | { type: "ingest_pdf"; path: string }
@@ -88,6 +91,8 @@ export type ServerMsg =
   | { type: "file_saved" }
   | { type: "file_created"; path: string }
   | { type: "file_renamed"; oldPath: string; newPath: string }
+  | { type: "file_deleted"; path: string }
+  | { type: "filetree_expanded"; paths: string[] }
   | { type: "autocomplete_suggestion"; text: string }
   | { type: "ingest_result"; success: boolean; message: string }
   | { type: "tone_result"; text: string; from: number; to: number }

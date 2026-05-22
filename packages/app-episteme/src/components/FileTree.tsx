@@ -12,8 +12,11 @@ interface FileTreeProps {
   onCreateFolder?: (path: string) => void;
   onRenameFile: (oldPath: string, newPath: string) => void;
   onRenameFolder?: (oldPath: string, newPath: string) => void;
+  onDeleteFile: (path: string) => void;
   onOpenInFinder: (path: string) => void;
   workspaceRoot: string;
+  initialExpandedDirs: string[];
+  onExpandedChange: (paths: string[]) => void;
   collapsed?: boolean;
 }
 
@@ -119,8 +122,11 @@ export function FileTree({
   onCreateFolder,
   onRenameFile,
   onRenameFolder,
+  onDeleteFile,
   onOpenInFinder,
   workspaceRoot,
+  initialExpandedDirs,
+  onExpandedChange,
   collapsed = false,
 }: FileTreeProps) {
   const { width, handleMouseDown, isDragging } = usePanelResize(220, "file-tree", { direction: "right" });
@@ -154,40 +160,26 @@ export function FileTree({
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  // Expand state — persisted to localStorage per workspace; default is closed
-  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => {
-    if (!workspaceRoot) return new Set();
-    try {
-      const stored = localStorage.getItem(`episteme:filetree:expanded:${workspaceRoot}`);
-      return new Set(stored ? JSON.parse(stored) : []);
-    } catch {
-      return new Set();
-    }
-  });
+  // Pending delete confirmation
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const fileListRef = useRef<HTMLDivElement>(null);
 
-  // Re-initialize expand state when workspaceRoot becomes available
+  // Expand state — persisted to the workspace DB (see useFileTreeState).
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set(initialExpandedDirs));
+
+  // Re-sync expand state when the server-provided initial value changes.
+  const lastInitialRef = useRef<string[] | null>(null);
   useEffect(() => {
-    if (!workspaceRoot) return;
-    try {
-      const stored = localStorage.getItem(`episteme:filetree:expanded:${workspaceRoot}`);
-      setExpandedDirs(new Set(stored ? JSON.parse(stored) : []));
-    } catch {
-      setExpandedDirs(new Set());
-    }
-  }, [workspaceRoot]);
-
-  function persistExpanded(next: Set<string>) {
-    if (!workspaceRoot) return;
-    try {
-      localStorage.setItem(`episteme:filetree:expanded:${workspaceRoot}`, JSON.stringify([...next]));
-    } catch {}
-  }
+    if (lastInitialRef.current === initialExpandedDirs) return;
+    lastInitialRef.current = initialExpandedDirs;
+    setExpandedDirs(new Set(initialExpandedDirs));
+  }, [initialExpandedDirs]);
 
   function toggleDir(dir: string) {
     setExpandedDirs((prev) => {
       const next = new Set(prev);
       next.has(dir) ? next.delete(dir) : next.add(dir);
-      persistExpanded(next);
+      onExpandedChange([...next]);
       return next;
     });
   }
@@ -197,7 +189,7 @@ export function FileTree({
       if (prev.has(dir)) return prev;
       const next = new Set(prev);
       next.add(dir);
-      persistExpanded(next);
+      onExpandedChange([...next]);
       return next;
     });
   }
@@ -248,6 +240,24 @@ export function FileTree({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [contextMenu]);
+
+  // Esc cancels the delete confirmation
+  useEffect(() => {
+    if (!pendingDelete) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPendingDelete(null);
+      if (e.key === "Enter") confirmDelete();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [pendingDelete]);
+
+  // Scroll the active file into view when it changes (reveal-in-tree).
+  useEffect(() => {
+    if (!activeFile || !fileListRef.current) return;
+    const row = fileListRef.current.querySelector(`[data-path="${CSS.escape(activeFile)}"]`);
+    if (row instanceof HTMLElement) row.scrollIntoView({ block: "nearest" });
+  }, [activeFile, items]);
 
   function commitCreate() {
     const name = newFileName.trim();
@@ -304,6 +314,16 @@ export function FileTree({
     setContextMenu(null);
   }
 
+  function openDeleteConfirm(path: string) {
+    setContextMenu(null);
+    setPendingDelete(path);
+  }
+
+  function confirmDelete() {
+    if (pendingDelete) onDeleteFile(pendingDelete);
+    setPendingDelete(null);
+  }
+
   function openNewFileInDir(dirPath: string) {
     setContextMenu(null);
     setCreatingInDir(dirPath);
@@ -336,6 +356,7 @@ export function FileTree({
       </div>
 
       <div
+        ref={fileListRef}
         className="file-tree-list"
         onContextMenu={(e) => {
           if (e.target !== e.currentTarget) return;
@@ -507,6 +528,7 @@ export function FileTree({
             return (
               <div
                 key={item.path}
+                data-path={item.path}
                 className={`file-tree-item${item.path === activeFile ? " active" : ""}${draggingPath === item.path ? " dragging" : ""}`}
                 draggable
                 onClick={() => onFileSelect(item.path)}
@@ -589,6 +611,10 @@ export function FileTree({
                 Rename
               </button>
               <div className="file-tree-context-separator" />
+              <button className="file-tree-context-item" onClick={() => openDeleteConfirm(contextMenu.path)}>
+                Delete
+              </button>
+              <div className="file-tree-context-separator" />
               <button className="file-tree-context-item" onClick={() => copyToClipboard(basename(contextMenu.path))}>
                 Copy name
               </button>
@@ -606,6 +632,29 @@ export function FileTree({
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {pendingDelete && (
+        <div className="file-tree-confirm-backdrop" onClick={() => setPendingDelete(null)}>
+          <div className="file-tree-confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="file-tree-confirm-message">
+              Delete <strong>{basename(pendingDelete)}</strong>?
+            </div>
+            <div className="file-tree-confirm-detail">This cannot be undone.</div>
+            <div className="file-tree-confirm-actions">
+              <button className="file-tree-confirm-btn" onClick={() => setPendingDelete(null)}>
+                Cancel
+              </button>
+              <button
+                className="file-tree-confirm-btn file-tree-confirm-btn--danger"
+                onClick={confirmDelete}
+                autoFocus
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -70,6 +70,8 @@ export function useWebSocket(): UseWebSocketReturn {
       case "file_saved":
       case "file_created":
       case "file_renamed":
+      case "file_deleted":
+      case "filetree_expanded":
       case "autocomplete_suggestion":
       case "ingest_result":
       case "tone_result":

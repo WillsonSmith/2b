@@ -108,6 +108,10 @@ export function useFileManager(
     wsRef.current?.send(JSON.stringify({ type: "file_rename", oldPath, newPath }));
   }, [wsRef]);
 
+  const deleteFile = useCallback((path: string) => {
+    wsRef.current?.send(JSON.stringify({ type: "file_delete", path }));
+  }, [wsRef]);
+
   const openInFinder = useCallback((path: string) => {
     wsRef.current?.send(JSON.stringify({ type: "open_in_finder", path }));
   }, [wsRef]);
@@ -153,6 +157,14 @@ export function useFileManager(
     const unsubRenamed = subscribe("file_renamed", (msg) => {
       if (activeFileRef.current === msg.oldPath) setActiveFile(msg.newPath);
     });
+    const unsubDeleted = subscribe("file_deleted", (msg) => {
+      if (activeFileRef.current === msg.path) {
+        setActiveFile(null);
+        setEditorContent("");
+        setSavedContent("");
+        setIsDirty(false);
+      }
+    });
     const unsubSaved = subscribe("file_saved", () => {
       setSavedContent(editorContentRef.current);
       setIsDirty(false);
@@ -172,6 +184,7 @@ export function useFileManager(
       unsubContent();
       unsubCreated();
       unsubRenamed();
+      unsubDeleted();
       unsubSaved();
       unsubExternal();
     };
@@ -225,6 +238,7 @@ export function useFileManager(
     createFolder,
     renameFile,
     renameFolder,
+    deleteFile,
     refreshFiles,
     openInFinder,
     handleOpenWorkspace,

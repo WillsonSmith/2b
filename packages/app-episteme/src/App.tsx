@@ -30,6 +30,7 @@ import {
   Focus,
 } from "lucide-react";
 import { useFileManager } from "./hooks/useFileManager.ts";
+import { useFileTreeState } from "./hooks/useFileTreeState.ts";
 import { useEditorFeatures } from "./hooks/useEditorFeatures.ts";
 import { useResearch } from "./hooks/useResearch.ts";
 import { useConflictsAndGraph } from "./hooks/useConflictsAndGraph.ts";
@@ -133,6 +134,22 @@ function App() {
   }, [planning.plan !== null]);
 
   const fileManager = useFileManager(ws.wsRef, ws.agentState, ws.subscribe);
+  const fileTreeState = useFileTreeState(ws.wsRef, ws.agentState, ws.subscribe, workspaceRoot);
+
+  // Reveal-in-tree: when the active file changes, expand all ancestor folders
+  // so the file is visible. Expanding an already-expanded folder is a no-op,
+  // so this is safe regardless of how the file was opened.
+  useEffect(() => {
+    const path = fileManager.activeFile;
+    if (!path || !path.includes("/")) return;
+    const ancestors: string[] = [];
+    const parts = path.split("/");
+    for (let i = 1; i < parts.length; i++) ancestors.push(parts.slice(0, i).join("/"));
+    const current = new Set(fileTreeState.expandedDirs);
+    const missing = ancestors.filter((a) => !current.has(a));
+    if (missing.length === 0) return;
+    fileTreeState.setExpandedDirs([...current, ...missing]);
+  }, [fileManager.activeFile, fileTreeState]);
   const editorFeatures = useEditorFeatures(
     ws.wsRef,
     ws.agentState,
@@ -933,8 +950,11 @@ function App() {
           onCreateFolder={fileManager.createFolder}
           onRenameFile={fileManager.renameFile}
           onRenameFolder={fileManager.renameFolder}
+          onDeleteFile={fileManager.deleteFile}
           onOpenInFinder={fileManager.openInFinder}
           workspaceRoot={workspaceRoot}
+          initialExpandedDirs={fileTreeState.expandedDirs}
+          onExpandedChange={fileTreeState.setExpandedDirs}
           collapsed={fileTreeCollapsed}
         />
 

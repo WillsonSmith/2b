@@ -166,8 +166,11 @@ async function dispatch(
     case "folder_create":
     case "folder_rename":
     case "file_rename":
+    case "file_delete":
     case "open_in_finder":
     case "backlinks_request":
+    case "get_filetree_expanded":
+    case "set_filetree_expanded":
       return handleFile(msg, ctx, ws);
 
     case "editor_context":
