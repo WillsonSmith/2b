@@ -18,6 +18,10 @@ function tick(overrides: Partial<TickMetrics> = {}): TickMetrics {
     contextContributors: 3,
     toolsCalled: {},
     ignored: false,
+    errored: false,
+    retries: 0,
+    aborted: false,
+    queueDepthAtStart: 0,
     ...overrides,
   };
 }

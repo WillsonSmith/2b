@@ -198,3 +198,37 @@ describe("CortexAgent - event forwarding", () => {
     agent.stop();
   });
 });
+
+describe("CortexAgent - F-22: setSystemPrompt re-augments cortex directives", () => {
+  test("setSystemPrompt replaces the base prompt but keeps the three cortex directives", async () => {
+    const llm = makeLLM("ok");
+    const agent = new CortexAgent(llm, { ...BASE_CONFIG, systemPrompt: "ORIGINAL_BASE", heartbeatInterval: 100000 });
+
+    agent.setSystemPrompt("REPLACEMENT_BASE");
+    agent.addDirect("hi");
+    await waitForIdle(agent);
+
+    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![1];
+    expect(systemPrompt).toContain("REPLACEMENT_BASE");
+    expect(systemPrompt).not.toContain("ORIGINAL_BASE");
+    // Each of the three directives must still be present.
+    expect(systemPrompt).toContain("You have internal thoughts stored in thought memory");
+    expect(systemPrompt).toContain("You may act proactively");
+    expect(systemPrompt).toContain("Question the coherence of ideas you encounter");
+    agent.stop();
+  });
+
+  test("system_prompt_updated event fires with the augmented prompt", async () => {
+    const agent = new CortexAgent(makeLLM(), { ...BASE_CONFIG, systemPrompt: "ORIGINAL", heartbeatInterval: 100000 });
+
+    const fired: string[] = [];
+    agent.on("system_prompt_updated" as any, (p: string) => fired.push(p));
+
+    agent.setSystemPrompt("REPLACEMENT");
+
+    expect(fired).toHaveLength(1);
+    expect(fired[0]).toContain("REPLACEMENT");
+    expect(fired[0]).toContain("You have internal thoughts stored in thought memory");
+    agent.stop();
+  });
+});

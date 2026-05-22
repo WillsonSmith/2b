@@ -65,6 +65,12 @@ export class BaseAgent extends EventEmitter {
    * actually invoked this turn.
    */
   private currentTickToolCalls: Record<string, number> = {};
+  /**
+   * Per-tick total of retry attempts charged across all tool calls. Incremented
+   * by the buildTools wrapper each time it loops past its first attempt. Reset
+   * at the start of every act() and surfaced through TickMetrics.retries.
+   */
+  private currentTickRetries = 0;
 
   public get name(): string {
     return this.config.name ?? "Agent";
@@ -136,10 +142,27 @@ export class BaseAgent extends EventEmitter {
     this.emit("memory:write_request", request);
   }
 
-  /** Cancel the current LLM inference (e.g. for barge-in). */
-  public interrupt() {
+  /**
+   * Cancel the current LLM inference (e.g. for barge-in).
+   *
+   * Returns a Promise that resolves on the next `state_change("idle")` — i.e.
+   * once the in-flight tick has unwound. If the agent is already idle, the
+   * Promise resolves on the next microtask so the caller can `await` without
+   * deadlocking. Callers that don't `await` are unaffected (fire-and-forget).
+   */
+  public interrupt(): Promise<void> {
+    const wasThinking = this.isThinking;
     if (this.currentAbortController) this.currentAbortController.abort();
     this.emit("interrupt");
+    if (!wasThinking) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const onIdle = (state: "idle" | "thinking") => {
+        if (state !== "idle") return;
+        this.off("state_change", onIdle);
+        resolve();
+      };
+      this.on("state_change", onIdle);
+    });
   }
 
   /** Interrupt all in-flight subagent asks without stopping the main agent. */
@@ -152,10 +175,13 @@ export class BaseAgent extends EventEmitter {
     }
   }
 
-  /** Interrupt all subagents and the main agent's current LLM call. */
-  public interruptAll(): void {
+  /**
+   * Interrupt all subagents and the main agent's current LLM call.
+   * Returns the same idle-resolving Promise as `interrupt()`.
+   */
+  public interruptAll(): Promise<void> {
     this.interruptSubAgents();
-    this.interrupt();
+    return this.interrupt();
   }
 
   /**
@@ -236,6 +262,19 @@ export class BaseAgent extends EventEmitter {
     return this.lastSystemPrompt;
   }
 
+  /**
+   * Replace the base system prompt at runtime. The new value is used starting
+   * with the next tick — in-flight ticks are unaffected. Plugin
+   * getSystemPromptFragment / getContext contributions are still appended on
+   * top, as they are on every tick.
+   *
+   * Emits `system_prompt_updated` with the value that will be used.
+   */
+  public setSystemPrompt(prompt: string): void {
+    this.config.systemPrompt = prompt;
+    this.emit("system_prompt_updated", prompt);
+  }
+
   public async start() {
     logger.info("BaseAgent", `Starting ${this.name} with ${this.plugins.length} plugins`);
     // Initialize all plugins concurrently. allSettled is used instead of all so
@@ -300,7 +339,17 @@ export class BaseAgent extends EventEmitter {
   }
 
   private async tick() {
-    if (this.isThinking) return;
+    if (this.isThinking) {
+      // The agent is already mid-turn but new input has arrived — emit so UIs
+      // can surface "your message is queued" without polling. Only fire when
+      // there is something actually waiting; an empty tick re-entry is silent.
+      const directDepth = this.directQueue.length;
+      const ambientDepth = this.ambientQueue.length;
+      if (directDepth > 0 || ambientDepth > 0) {
+        this.emit("queued", { directDepth, ambientDepth });
+      }
+      return;
+    }
     if (this.tickTimer) clearTimeout(this.tickTimer);
 
     const direct = [...this.directQueue];
@@ -490,6 +539,7 @@ export class BaseAgent extends EventEmitter {
                     ? base * 2 ** (attempt - 2)
                     : base;
                   if (wait > 0) await new Promise(r => setTimeout(r, wait));
+                  this.currentTickRetries++;
                   this.emit("log", `[Retry] ${toolName}: attempt ${attempt}/${maxAttempts}`);
                 }
                 try {
@@ -608,7 +658,9 @@ export class BaseAgent extends EventEmitter {
     let toolCount = 0;
     let ignored = false;
     let errored = false;
+    const queueDepthAtStart = direct.length + ambient.length;
     this.currentTickToolCalls = {};
+    this.currentTickRetries = 0;
 
     try {
       const collectMessagesStart = performance.now();
@@ -701,6 +753,9 @@ export class BaseAgent extends EventEmitter {
         toolsCalled: { ...this.currentTickToolCalls },
         ignored,
         errored,
+        retries: this.currentTickRetries,
+        aborted: this.currentAbortController?.signal.aborted ?? false,
+        queueDepthAtStart,
       });
     }
   }

@@ -44,18 +44,7 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
    *                          Defaults to `llm` if omitted.
    */
   constructor(llm: LLMProvider, config: AgentConfig, synthesisProvider?: LLMProvider) {
-    // Append cortex-specific directives after the caller's system prompt so they
-    // can't accidentally be overridden and always appear in every tick.
-    const cortexSystemPrompt = [
-      config.systemPrompt,
-      "You have internal thoughts stored in thought memory. Review recent thoughts before responding.",
-      "You may act proactively — don't only respond to explicit requests.",
-      "Question the coherence of ideas you encounter. Look for contradictions.",
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-
-    this.inner = new BaseAgent(llm, { ...config, systemPrompt: cortexSystemPrompt });
+    this.inner = new BaseAgent(llm, { ...config, systemPrompt: this.augmentWithCortexDirectives(config.systemPrompt) });
 
     // cortexName determines the memory namespace. Falls back to config.name then "cortex".
     // Multiple unnamed CortexAgent instances will share the "cortex" namespace — assign
@@ -70,6 +59,31 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
     this.inner.registerPlugin(thoughtPlugin);
     this.inner.registerPlugin(metacognitionPlugin);
     this.inner.registerPlugin(new YieldPlugin());
+  }
+
+  /**
+   * Append the three cortex directives to the caller's system prompt. Called
+   * by the constructor and re-applied on every setSystemPrompt() so the
+   * directives can't be lost when the prompt is replaced at runtime.
+   */
+  private augmentWithCortexDirectives(basePrompt: string): string {
+    return [
+      basePrompt,
+      "You have internal thoughts stored in thought memory. Review recent thoughts before responding.",
+      "You may act proactively — don't only respond to explicit requests.",
+      "Question the coherence of ideas you encounter. Look for contradictions.",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }
+
+  /**
+   * Replace the base system prompt at runtime, then re-append the cortex
+   * directives so they always appear in every tick. The inner BaseAgent will
+   * emit `system_prompt_updated` with the augmented value.
+   */
+  public setSystemPrompt(prompt: string): void {
+    this.inner.setSystemPrompt(this.augmentWithCortexDirectives(prompt));
   }
 
   /** Register an additional plugin with the underlying agent. */
@@ -104,9 +118,13 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
     this.inner.addAmbient(text, opts);
   }
 
-  /** Cancel the current LLM inference (e.g. for barge-in). */
-  public interrupt(): void {
-    this.inner.interrupt();
+  /**
+   * Cancel the current LLM inference (e.g. for barge-in).
+   * Returns a Promise that resolves on the next idle transition. Callers that
+   * don't await are unaffected — the work fires regardless.
+   */
+  public interrupt(): Promise<void> {
+    return this.inner.interrupt();
   }
 
   /** Interrupt all in-flight subagent asks without stopping the main agent. */
@@ -114,9 +132,12 @@ export class CortexAgent<TEvents extends AgentEventMap = AgentEventMap> {
     this.inner.interruptSubAgents();
   }
 
-  /** Interrupt all subagents and the main agent's current LLM call. */
-  public interruptAll(): void {
-    this.inner.interruptAll();
+  /**
+   * Interrupt all subagents and the main agent's current LLM call.
+   * Returns the same idle-resolving Promise as `interrupt()`.
+   */
+  public interruptAll(): Promise<void> {
+    return this.inner.interruptAll();
   }
 
   /**

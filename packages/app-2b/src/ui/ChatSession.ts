@@ -34,9 +34,9 @@ import type {
  */
 export type AgentLike = {
   addDirect(text: string): void;
-  interrupt(): void;
+  interrupt(): Promise<void>;
   interruptSubAgents(): void;
-  interruptAll(): void;
+  interruptAll(): Promise<void>;
   setTokenCallback(fn: (token: string, isReasoning: boolean) => void): void;
 } & {
   on<K extends keyof AgentEventMap>(event: K, listener: (...args: AgentEventMap[K]) => void): AgentLike;

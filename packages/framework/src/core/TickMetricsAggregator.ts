@@ -57,6 +57,10 @@ export class TickMetricsAggregator {
     let contextContributors = 0;
     let ignoredCount = 0;
     let erroredCount = 0;
+    let abortedCount = 0;
+    let retriesSum = 0;
+    let queueDepthAtStartSum = 0;
+    let queueDepthAtStartMax = 0;
 
     // sum and per-plugin sum
     const pluginTotals = new Map<string, { sum: number; count: number; max: number }>();
@@ -64,6 +68,13 @@ export class TickMetricsAggregator {
     const toolTotals = new Map<string, { totalCalls: number; ticksUsed: number }>();
 
     for (const m of this.buffer) {
+      // The following three counters reflect what happened in the window
+      // regardless of success/failure — retries and aborts in errored ticks
+      // still occurred; queue depth at start is observed before the failure.
+      retriesSum += m.retries;
+      if (m.aborted) abortedCount++;
+      queueDepthAtStartSum += m.queueDepthAtStart;
+      if (m.queueDepthAtStart > queueDepthAtStartMax) queueDepthAtStartMax = m.queueDepthAtStart;
       if (m.errored) {
         // Errored ticks have partial timings — including them would skew the
         // success-path averages. Count them but exclude from timing/size sums.
@@ -127,6 +138,8 @@ export class TickMetricsAggregator {
       sampleCount: n,
       ignoredCount,
       erroredCount,
+      abortedCount,
+      retriesSum,
       avg: {
         totalMs: totalMs / avgDenom,
         llmMs: llmMs / avgDenom,
@@ -139,7 +152,10 @@ export class TickMetricsAggregator {
         historyChars: historyChars / avgDenom,
         toolCount: toolCount / avgDenom,
         contextContributors: contextContributors / avgDenom,
+        retries: retriesSum / n,
+        queueDepthAtStart: queueDepthAtStartSum / n,
       },
+      maxQueueDepthAtStart: queueDepthAtStartMax,
       pluginContextMs,
       toolsCalled,
     };
@@ -168,6 +184,10 @@ export interface TickMetricsSnapshot {
   ignoredCount: number;
   /** Number of ticks in the window that threw before completing. */
   erroredCount: number;
+  /** Number of ticks in the window whose AbortController fired before act() returned. */
+  abortedCount: number;
+  /** Total tool-retry attempts charged across the window (sum, not average). */
+  retriesSum: number;
   avg: {
     totalMs: number;
     llmMs: number;
@@ -180,7 +200,13 @@ export interface TickMetricsSnapshot {
     historyChars: number;
     toolCount: number;
     contextContributors: number;
+    /** Mean retries per tick across the window (includes errored ticks in the denominator). */
+    retries: number;
+    /** Mean combined queue depth at start across all ticks in the window. */
+    queueDepthAtStart: number;
   };
+  /** Largest combined queue depth observed at start of any tick in the window. */
+  maxQueueDepthAtStart: number;
   pluginContextMs: PluginAggregateRow[];
   /** Per-tool invocation totals across the window, sorted descending by totalCalls. */
   toolsCalled: ToolAggregateRow[];
@@ -190,6 +216,8 @@ const EMPTY_SNAPSHOT: TickMetricsSnapshot = {
   sampleCount: 0,
   ignoredCount: 0,
   erroredCount: 0,
+  abortedCount: 0,
+  retriesSum: 0,
   avg: {
     totalMs: 0,
     llmMs: 0,
@@ -202,7 +230,10 @@ const EMPTY_SNAPSHOT: TickMetricsSnapshot = {
     historyChars: 0,
     toolCount: 0,
     contextContributors: 0,
+    retries: 0,
+    queueDepthAtStart: 0,
   },
+  maxQueueDepthAtStart: 0,
   pluginContextMs: [],
   toolsCalled: [],
 };

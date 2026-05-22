@@ -1147,3 +1147,261 @@ describe("BaseAgent - F-13: veto runs before permission prompt", () => {
     agent.stop();
   });
 });
+
+describe("BaseAgent - F-22: setSystemPrompt() replaces prompt at runtime", () => {
+  test("setSystemPrompt swaps the prompt used on the next tick", async () => {
+    const llm = makeLLM("ok");
+    const agent = new BaseAgent(llm, makeConfig({ systemPrompt: "ORIGINAL_PROMPT" }));
+
+    agent.setSystemPrompt("REPLACEMENT_PROMPT");
+    agent.addDirect("hi");
+    await waitForIdle(agent);
+
+    const systemPrompt: string = (llm.chat as ReturnType<typeof mock>).mock.calls[0]![1];
+    expect(systemPrompt).toContain("REPLACEMENT_PROMPT");
+    expect(systemPrompt).not.toContain("ORIGINAL_PROMPT");
+    agent.stop();
+  });
+
+  test("setSystemPrompt emits system_prompt_updated with the new value", async () => {
+    const agent = new BaseAgent(makeLLM(), makeConfig({ systemPrompt: "OLD" }));
+
+    const fired: string[] = [];
+    agent.on("system_prompt_updated", (p) => fired.push(p));
+
+    agent.setSystemPrompt("NEW");
+    expect(fired).toEqual(["NEW"]);
+    agent.stop();
+  });
+});
+
+describe("BaseAgent - F-27: interrupt() returns Promise resolving on idle", () => {
+  test("interrupt() while thinking resolves only after state_change('idle')", async () => {
+    // LLM intentionally ignores the abort signal — it only resolves when we
+    // release the gate. This isolates the test to the interrupt-vs-idle race
+    // and removes any dependency on provider-side abort responsiveness.
+    let releaseLLM!: () => void;
+    const llmGate = new Promise<void>((resolve) => { releaseLLM = resolve; });
+    const llm: LLMProvider = {
+      chat: mock(async () => {
+        await llmGate;
+        return { response: "x", nonReasoningContent: "x", reasoningContent: "", reasoningText: "" };
+      }),
+      embed: mock(async () => []),
+    } as unknown as LLMProvider;
+
+    const agent = new BaseAgent(llm, makeConfig());
+    agent.on("error", () => {});
+
+    agent.addDirect("hi");
+    await new Promise((r) => setTimeout(r, 5)); // let act() reach the LLM call
+
+    let resolved = false;
+    const interruptPromise = agent.interrupt().then(() => { resolved = true; });
+
+    // interrupt() must NOT have resolved synchronously; the agent is still
+    // mid-LLM-call and hasn't emitted state_change("idle") yet.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(resolved).toBe(false);
+
+    releaseLLM();
+    await interruptPromise;
+    expect(resolved).toBe(true);
+    agent.stop();
+  });
+
+  test("interrupt() when idle resolves immediately", async () => {
+    const agent = new BaseAgent(makeLLM("ok"), makeConfig());
+    // Never sent any input — agent is idle and has no AbortController.
+    const t0 = performance.now();
+    await agent.interrupt();
+    const elapsed = performance.now() - t0;
+    expect(elapsed).toBeLessThan(50);
+    agent.stop();
+  });
+
+  test("interrupt() return value can be safely ignored (fire-and-forget)", async () => {
+    const agent = new BaseAgent(makeLLM("ok"), makeConfig());
+
+    // Discard the returned promise — should not produce an unhandled rejection
+    // and should not throw.
+    expect(() => { agent.interrupt(); }).not.toThrow();
+    // Wait a beat to ensure no rejection surfaces.
+    await new Promise((r) => setTimeout(r, 10));
+    agent.stop();
+  });
+});
+
+describe("BaseAgent - F-3: queued event when tick re-enters mid-turn", () => {
+  test("addDirect while a tick is in flight emits queued with the new direct depth", async () => {
+    // LLM that blocks until we explicitly release it, simulating a slow turn.
+    let releaseLLM!: () => void;
+    const llmGate = new Promise<void>((resolve) => { releaseLLM = resolve; });
+    const llm: LLMProvider = {
+      chat: mock(async () => {
+        await llmGate;
+        return { response: "ok", nonReasoningContent: "ok", reasoningContent: "", reasoningText: "" };
+      }),
+      embed: mock(async () => []),
+    } as unknown as LLMProvider;
+
+    const agent = new BaseAgent(llm, makeConfig());
+
+    const queuedPromise = waitForEvent(agent, "queued", 500);
+    agent.addDirect("first"); // kicks off tick; LLM call blocks
+    // Yield to the event loop so act() sets isThinking=true before the next addDirect.
+    await new Promise((r) => setTimeout(r, 5));
+    agent.addDirect("second"); // re-enters tick() while isThinking=true
+
+    const [payload] = (await queuedPromise) as [{ directDepth: number; ambientDepth: number }];
+    expect(payload.directDepth).toBe(1);
+    expect(payload.ambientDepth).toBe(0);
+
+    releaseLLM();
+    await waitForIdle(agent);
+    agent.stop();
+  });
+
+  test("queued event payload reflects ambient depth too", async () => {
+    let releaseLLM!: () => void;
+    const llmGate = new Promise<void>((resolve) => { releaseLLM = resolve; });
+    const llm: LLMProvider = {
+      chat: mock(async () => {
+        await llmGate;
+        return { response: "ok", nonReasoningContent: "ok", reasoningContent: "", reasoningText: "" };
+      }),
+      embed: mock(async () => []),
+    } as unknown as LLMProvider;
+
+    const agent = new BaseAgent(llm, makeConfig());
+
+    const queuedPromise = waitForEvent(agent, "queued", 500);
+    agent.addDirect("first");
+    await new Promise((r) => setTimeout(r, 5));
+    agent.addAmbient("ambient noise", { forceTick: true });
+
+    const [payload] = (await queuedPromise) as [{ directDepth: number; ambientDepth: number }];
+    expect(payload.directDepth).toBe(0);
+    expect(payload.ambientDepth).toBe(1);
+
+    releaseLLM();
+    await waitForIdle(agent);
+    agent.stop();
+  });
+
+  test("tick() re-entry with empty queues does NOT emit queued", async () => {
+    const agent = new BaseAgent(makeLLM("ok"), makeConfig());
+
+    const events: unknown[] = [];
+    agent.on("queued", (p) => events.push(p));
+
+    // No queue contents — calling tick() directly during a run shouldn't fire.
+    agent.addDirect("only");
+    await waitForIdle(agent);
+
+    expect(events).toHaveLength(0);
+    agent.stop();
+  });
+});
+
+describe("BaseAgent - F-25: extended tick_metrics (retries/aborted/queueDepthAtStart)", () => {
+  test("retries counts every attempt past the first across all tool calls in the tick", async () => {
+    let attempts = 0;
+    const llm: LLMProvider = {
+      chat: mock(async (_msgs, _sys, _schema, tools) => {
+        const flaky = tools?.find((t) => t.name === "flaky");
+        if (flaky?.implementation) await flaky.implementation({});
+        return { response: "done", nonReasoningContent: "done", reasoningContent: "", reasoningText: "" };
+      }),
+      embed: mock(async () => []),
+    } as unknown as LLMProvider;
+
+    const plugin: AgentPlugin = {
+      name: "FlakyPlugin",
+      getTools: () => [{
+        name: "flaky",
+        description: "",
+        parameters: {},
+        permission: "none",
+        retry: { maxAttempts: 3, delayMs: 0 },
+      }],
+      executeTool: async () => {
+        attempts++;
+        if (attempts < 3) throw new Error("transient");
+        return "ok";
+      },
+    };
+    const agent = new BaseAgent(llm, makeConfig());
+    agent.registerPlugin(plugin);
+
+    const metricsPromise = waitForEvent(agent, "tick_metrics", 500);
+    agent.addDirect("go");
+    const [metrics] = (await metricsPromise) as [import("./types").TickMetrics];
+
+    // 3 attempts → 2 retries past the first
+    expect(metrics.retries).toBe(2);
+    agent.stop();
+  });
+
+  test("retries is 0 when no tool calls happen", async () => {
+    const agent = new BaseAgent(makeLLM("hello"), makeConfig());
+    const metricsPromise = waitForEvent(agent, "tick_metrics", 500);
+    agent.addDirect("hi");
+    const [metrics] = (await metricsPromise) as [import("./types").TickMetrics];
+    expect(metrics.retries).toBe(0);
+    agent.stop();
+  });
+
+  test("aborted=true when interrupt() fires before the tick finishes", async () => {
+    // LLM chat resolves after a delay — we trigger interrupt() during that window
+    // so the abort signal observed at emit-time is set.
+    const llm: LLMProvider = {
+      chat: mock(async (_msgs, _sys, _schema, _tools, _cb, signal) => {
+        await new Promise<void>((resolve, reject) => {
+          const t = setTimeout(() => resolve(), 30);
+          signal?.addEventListener("abort", () => { clearTimeout(t); reject(new Error("aborted")); }, { once: true });
+        });
+        return { response: "x", nonReasoningContent: "x", reasoningContent: "", reasoningText: "" };
+      }),
+      embed: mock(async () => []),
+    } as unknown as LLMProvider;
+
+    const agent = new BaseAgent(llm, makeConfig());
+    agent.on("error", () => {});
+    const metricsPromise = waitForEvent(agent, "tick_metrics", 500);
+    agent.addDirect("hi");
+    // Let act() reach the LLM call before interrupting
+    setTimeout(() => agent.interrupt(), 5);
+
+    const [metrics] = (await metricsPromise) as [import("./types").TickMetrics];
+    expect(metrics.aborted).toBe(true);
+    expect(metrics.errored).toBe(true);
+    agent.stop();
+  });
+
+  test("aborted=false on a normal tick where interrupt() never fires", async () => {
+    const agent = new BaseAgent(makeLLM("ok"), makeConfig());
+    const metricsPromise = waitForEvent(agent, "tick_metrics", 500);
+    agent.addDirect("hi");
+    const [metrics] = (await metricsPromise) as [import("./types").TickMetrics];
+    expect(metrics.aborted).toBe(false);
+    agent.stop();
+  });
+
+  test("queueDepthAtStart reflects direct + ambient drained at the start of act()", async () => {
+    const agent = new BaseAgent(makeLLM("ok"), makeConfig());
+
+    // Stop the heartbeat loop from firing while we stack inputs.
+    // addAmbient without forceTick will NOT trigger a tick — so we can pile up
+    // two ambient items, then trigger with addDirect (which adds a third item).
+    agent.addAmbient("ambient-1");
+    agent.addAmbient("ambient-2");
+
+    const metricsPromise = waitForEvent(agent, "tick_metrics", 500);
+    agent.addDirect("direct-1");
+    const [metrics] = (await metricsPromise) as [import("./types").TickMetrics];
+
+    expect(metrics.queueDepthAtStart).toBe(3);
+    agent.stop();
+  });
+});

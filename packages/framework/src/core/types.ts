@@ -40,6 +40,20 @@ export interface AgentEventMap {
   "agent_yield": [reason: string | undefined, partialResult: string | undefined];
   /** Per-tick timing and size breakdown for performance analysis. Emitted at the end of each tick. */
   tick_metrics: [metrics: TickMetrics];
+  /**
+   * Emitted by tick() when it short-circuits because the agent is already
+   * mid-turn (isThinking=true) but the queues are non-empty — i.e. the input
+   * is waiting and will be processed when the current tick finishes. Lets UIs
+   * surface "your message is queued" without polling.
+   */
+  queued: [depth: { directDepth: number; ambientDepth: number }];
+  /**
+   * Emitted when the agent's base system prompt has been replaced at runtime
+   * via setSystemPrompt(). The payload is the prompt that will be used on the
+   * next tick — for CortexAgent this is the augmented version (directives
+   * already appended), not the raw value the caller passed in.
+   */
+  system_prompt_updated: [newSystemPrompt: string];
 }
 
 /**
@@ -82,6 +96,19 @@ export interface TickMetrics {
    * before the relevant stage ran.
    */
   errored: boolean;
+  /**
+   * Total tool-retry attempts charged during the tick. A tool that succeeds on
+   * its first try contributes 0; a tool with maxAttempts=3 that fails twice
+   * before succeeding contributes 2. Useful for spotting flaky tools / endpoints.
+   */
+  retries: number;
+  /** Whether the tick's AbortController fired before act() returned. */
+  aborted: boolean;
+  /**
+   * Combined queue depth (direct + ambient) observed when act() began. Lets
+   * observers distinguish "agent kept up with input" from "agent ran behind."
+   */
+  queueDepthAtStart: number;
 }
 
 /**
