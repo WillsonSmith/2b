@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import { Check, CheckCircle2, CornerDownRight, Loader2, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2, AlertCircle, Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen, ClipboardList, MoreHorizontal, Layers } from "lucide-react";
+import { Check, CheckCircle2, CornerDownRight, Loader2, ArrowUp, Zap, Maximize2, X, Square, Circle, CircleDashed, CircleDot, Trash2, AlertCircle, Search, List, PenLine, Pencil, Quote, BarChart2, FolderOpen, ClipboardList, MoreHorizontal, Layers, GitBranch } from "lucide-react";
 import { MarkdownView } from "./MarkdownView.tsx";
 import { PlanModeOptions } from "./PlanModeOptions.tsx";
 import { usePanelResize } from "../hooks/usePanelResize.ts";
@@ -42,6 +42,8 @@ interface AISidecarProps {
   activeFile?: string | null;
   onPlanRequest?: (goal: string, approvalMode: "all" | "per_step") => void;
   onPlanRequestFromDocument?: (path: string, goal: string, approvalMode: "all" | "per_step") => void;
+  activePlan?: { id: string; goal: string } | null;
+  onPlanFollowUp?: (goal: string, priorPlanId: string, approvalMode: "all" | "per_step") => void;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -94,10 +96,15 @@ interface AssistantMessageProps {
   onSendToPlan: (text: string) => void;
   onNavigate?: (path: string) => void;
   onDeleteMessage?: (index: number) => void;
+  activePlan?: { id: string; goal: string } | null;
+  onPlanFollowUp?: (goal: string, priorPlanId: string) => void;
+  onPlanRequest?: (goal: string) => void;
 }
 
-function AssistantMessage({ message, index, onRegenerate, onSendToPlan, onNavigate, onDeleteMessage }: AssistantMessageProps) {
+function AssistantMessage({ message, index, onRegenerate, onSendToPlan, onNavigate, onDeleteMessage, activePlan, onPlanFollowUp, onPlanRequest }: AssistantMessageProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [followUpOpen, setFollowUpOpen] = useState(false);
+  const [followUpGoal, setFollowUpGoal] = useState("");
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -110,6 +117,23 @@ function AssistantMessage({ message, index, onRegenerate, onSendToPlan, onNaviga
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [menuOpen]);
+
+  const submitFollowUp = () => {
+    const goal = followUpGoal.trim();
+    if (!goal) return;
+    if (activePlan && onPlanFollowUp) {
+      onPlanFollowUp(goal, activePlan.id);
+    } else if (onPlanRequest) {
+      onPlanRequest(goal);
+    }
+    setFollowUpGoal("");
+    setFollowUpOpen(false);
+  };
+
+  const cancelFollowUp = () => {
+    setFollowUpGoal("");
+    setFollowUpOpen(false);
+  };
 
   return (
     <div className="sidecar-msg assistant">
@@ -147,6 +171,14 @@ function AssistantMessage({ message, index, onRegenerate, onSendToPlan, onNaviga
                 >
                   Send to Plan
                 </button>
+                {(onPlanFollowUp || onPlanRequest) && (
+                  <button
+                    className="sidecar-dropdown-item"
+                    onClick={() => { setMenuOpen(false); setFollowUpOpen(true); }}
+                  >
+                    Follow up plan…
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -162,6 +194,43 @@ function AssistantMessage({ message, index, onRegenerate, onSendToPlan, onNaviga
         </div>
       </div>
       <MarkdownView content={message.text} className="sidecar-msg-markdown" onNavigate={onNavigate} />
+      {followUpOpen && (
+        <div className="sidecar-followup-composer">
+          {activePlan ? (
+            <div className="sidecar-followup-context">
+              Following up: <em>{activePlan.goal}</em>
+            </div>
+          ) : (
+            <div className="sidecar-followup-warn">
+              No prior plan — this will start a fresh plan.
+            </div>
+          )}
+          <textarea
+            className="sidecar-followup-input"
+            placeholder="What do you want to do next?"
+            value={followUpGoal}
+            rows={2}
+            autoFocus
+            onChange={(e) => setFollowUpGoal(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitFollowUp();
+              if (e.key === "Escape") cancelFollowUp();
+            }}
+          />
+          <div className="sidecar-followup-actions">
+            <button
+              className="sidecar-followup-submit"
+              onClick={submitFollowUp}
+              disabled={!followUpGoal.trim()}
+            >
+              {activePlan ? "Create follow-up" : "Create plan"}
+            </button>
+            <button className="sidecar-followup-cancel" onClick={cancelFollowUp}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -226,9 +295,12 @@ interface MessageListProps {
   onSendToPlan?: (text: string) => void;
   onDeleteMessage?: (index: number) => void;
   onRemoveMention?: (index: number, path: string) => void;
+  activePlan?: { id: string; goal: string } | null;
+  onPlanFollowUp?: (goal: string, priorPlanId: string) => void;
+  onPlanRequestFromMenu?: (goal: string) => void;
 }
 
-const MessageList = memo(function MessageList({ messages, isThinking, endRef, onNavigate, onRegenerate, onSendToPlan, onDeleteMessage, onRemoveMention }: MessageListProps) {
+const MessageList = memo(function MessageList({ messages, isThinking, endRef, onNavigate, onRegenerate, onSendToPlan, onDeleteMessage, onRemoveMention, activePlan, onPlanFollowUp, onPlanRequestFromMenu }: MessageListProps) {
   return (
     <div className="sidecar-messages">
       {messages.length === 0 && (
@@ -332,6 +404,9 @@ const MessageList = memo(function MessageList({ messages, isThinking, endRef, on
               onSendToPlan={onSendToPlan ?? (() => {})}
               onNavigate={onNavigate}
               onDeleteMessage={onDeleteMessage}
+              activePlan={activePlan}
+              onPlanFollowUp={onPlanFollowUp}
+              onPlanRequest={onPlanRequestFromMenu}
             />
           );
         }
@@ -411,17 +486,25 @@ interface ChatInputProps {
   activeFile?: string | null;
   onPlanRequest?: (goal: string, approvalMode: "all" | "per_step") => void;
   onPlanRequestFromDocument?: (path: string, goal: string, approvalMode: "all" | "per_step") => void;
+  activePlan?: { id: string; goal: string } | null;
+  onPlanFollowUp?: (goal: string, priorPlanId: string, approvalMode: "all" | "per_step") => void;
 }
 
-function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles = [], pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument }: ChatInputProps) {
+function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles = [], pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument, activePlan, onPlanFollowUp }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const [planMode, setPlanMode] = useState(false);
+  const [followUpMode, setFollowUpMode] = useState(false);
   const [approvalMode, setApprovalMode] = useState<"all" | "per_step">("per_step");
   const [useDocument, setUseDocument] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Auto-disable follow-up mode if the active plan disappears
+  useEffect(() => {
+    if (!activePlan && followUpMode) setFollowUpMode(false);
+  }, [activePlan, followUpMode]);
 
   useEffect(() => {
     if (pendingInput) {
@@ -470,6 +553,15 @@ function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles
   function submit() {
     const text = input.trim();
     if (!text || isThinking) return;
+
+    if (followUpMode && activePlan && onPlanFollowUp) {
+      onPlanFollowUp(text, activePlan.id, approvalMode);
+      setInput("");
+      setFollowUpMode(false);
+      onPendingInputConsumed?.();
+      closeMention();
+      return;
+    }
 
     if (planMode) {
       if (useDocument && activeFile && onPlanRequestFromDocument) {
@@ -567,7 +659,22 @@ function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles
         </div>
       )}
 
-      {planMode && (
+      {followUpMode && activePlan && (
+        <div className="sidecar-followup-badge">
+          <GitBranch size={11} />
+          <span>Following up: <em>{activePlan.goal}</em></span>
+          <button
+            type="button"
+            className="sidecar-followup-clear"
+            onClick={() => setFollowUpMode(false)}
+            title="Cancel follow-up"
+          >
+            <X size={10} />
+          </button>
+        </div>
+      )}
+
+      {(planMode || followUpMode) && (
         <PlanModeOptions
           approvalMode={approvalMode}
           onApprovalModeChange={setApprovalMode}
@@ -586,7 +693,13 @@ function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles
           ref={textareaRef}
           className="sidecar-input"
           value={input}
-          placeholder={planMode ? "Describe what you want to accomplish… (@ to reference files)" : "Ask or give a task… (@ to reference a file)"}
+          placeholder={
+            followUpMode
+              ? "What do you want to do next? (@ to reference files)"
+              : planMode
+                ? "Describe what you want to accomplish… (@ to reference files)"
+                : "Ask or give a task… (@ to reference a file)"
+          }
           rows={2}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
@@ -604,12 +717,28 @@ function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles
           </button>
           <button
             className={`sidecar-quick-toggle${planMode ? " active" : ""}`}
-            onClick={() => setPlanMode((v) => !v)}
+            onClick={() => { setPlanMode((v) => !v); if (followUpMode) setFollowUpMode(false); }}
             title={planMode ? "Exit planning mode" : "Create a plan"}
             disabled={isThinking}
           >
             <ClipboardList size={14} />
           </button>
+          {onPlanFollowUp && (
+            <button
+              className={`sidecar-quick-toggle${followUpMode ? " active" : ""}`}
+              onClick={() => { setFollowUpMode((v) => !v); if (planMode) setPlanMode(false); }}
+              title={
+                !activePlan
+                  ? "Follow up plan — disabled (no active plan)"
+                  : followUpMode
+                    ? "Exit follow-up mode"
+                    : `Follow up active plan: ${activePlan.goal}`
+              }
+              disabled={isThinking || !activePlan}
+            >
+              <GitBranch size={14} />
+            </button>
+          )}
           <span className={`sidecar-status${agentState === "thinking" ? " thinking" : agentState === "disconnected" ? " disconnected" : ""}`}>
             {agentState === "disconnected" ? (
               <span className="icon-inline"><Circle size={8} /> offline</span>
@@ -663,9 +792,13 @@ interface ChatModalProps {
   activeFile?: string | null;
   onPlanRequest?: (goal: string, approvalMode: "all" | "per_step") => void;
   onPlanRequestFromDocument?: (path: string, goal: string, approvalMode: "all" | "per_step") => void;
+  activePlan?: { id: string; goal: string } | null;
+  onPlanFollowUp?: (goal: string, priorPlanId: string, approvalMode: "all" | "per_step") => void;
+  onPlanRequestFromMenu?: (goal: string) => void;
+  onPlanFollowUpFromMenu?: (goal: string, priorPlanId: string) => void;
 }
 
-function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onRegenerate, onSendToPlan, onDeleteMessage, onRemoveMention, pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument }: ChatModalProps) {
+function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onRegenerate, onSendToPlan, onDeleteMessage, onRemoveMention, pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument, activePlan, onPlanFollowUp, onPlanRequestFromMenu, onPlanFollowUpFromMenu }: ChatModalProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -689,9 +822,12 @@ function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onCl
             onSendToPlan={onSendToPlan}
             onDeleteMessage={onDeleteMessage}
             onRemoveMention={onRemoveMention}
+            activePlan={activePlan}
+            onPlanFollowUp={onPlanFollowUpFromMenu}
+            onPlanRequestFromMenu={onPlanRequestFromMenu}
           />
         </div>
-        <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} />
+        <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} activePlan={activePlan} onPlanFollowUp={onPlanFollowUp} />
       </div>
     </div>
   );
@@ -717,6 +853,8 @@ export function AISidecar({
   activeFile,
   onPlanRequest,
   onPlanRequestFromDocument,
+  activePlan,
+  onPlanFollowUp,
 }: AISidecarProps) {
   const [expanded, setExpanded] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -736,6 +874,10 @@ export function AISidecar({
   onRemoveMentionRef.current = onRemoveMention;
   const onNavigateRef = useRef(onNavigate);
   onNavigateRef.current = onNavigate;
+  const onPlanRequestRef = useRef(onPlanRequest);
+  onPlanRequestRef.current = onPlanRequest;
+  const onPlanFollowUpRef = useRef(onPlanFollowUp);
+  onPlanFollowUpRef.current = onPlanFollowUp;
 
   const stableSend = useCallback((text: string) => onSendRef.current(text), []);
   const stableRegenerate = useCallback((idx: number) => onRegenerateRef.current?.(idx), []);
@@ -746,6 +888,16 @@ export function AISidecar({
     [],
   );
   const stableNavigate = useCallback((path: string) => onNavigateRef.current?.(path), []);
+  // Per-message menu callbacks: drop the approvalMode argument and use "per_step" by default.
+  // The chat-input button still routes through the full callback with approvalMode.
+  const stablePlanRequestFromMenu = useCallback(
+    (goal: string) => onPlanRequestRef.current?.(goal, "per_step"),
+    [],
+  );
+  const stablePlanFollowUpFromMenu = useCallback(
+    (goal: string, priorPlanId: string) => onPlanFollowUpRef.current?.(goal, priorPlanId, "per_step"),
+    [],
+  );
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -778,8 +930,11 @@ export function AISidecar({
             onSendToPlan={stableSendToPlan}
             onDeleteMessage={stableDeleteMessage}
             onRemoveMention={stableRemoveMention}
+            activePlan={activePlan}
+            onPlanFollowUp={stablePlanFollowUpFromMenu}
+            onPlanRequestFromMenu={stablePlanRequestFromMenu}
           />
-          <ChatInput isThinking={isThinking} agentState={agentState} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} />
+          <ChatInput isThinking={isThinking} agentState={agentState} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} activePlan={activePlan} onPlanFollowUp={onPlanFollowUp} />
         </div>
       </div>
 
@@ -802,6 +957,10 @@ export function AISidecar({
           activeFile={activeFile}
           onPlanRequest={onPlanRequest}
           onPlanRequestFromDocument={onPlanRequestFromDocument}
+          activePlan={activePlan}
+          onPlanFollowUp={onPlanFollowUp}
+          onPlanRequestFromMenu={stablePlanRequestFromMenu}
+          onPlanFollowUpFromMenu={stablePlanFollowUpFromMenu}
         />
       )}
     </>

@@ -271,6 +271,50 @@
   text-decoration: line-through;
 }
 
+/* ── Prior context callout ────────────────────────────────────────────────── */
+
+.plan-prior-context {
+  margin: 0 12px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  background: var(--accent-soft);
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+}
+.plan-prior-context-summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  color: var(--accent);
+  user-select: none;
+}
+.plan-prior-context-summary::-webkit-details-marker { display: none; }
+.plan-prior-context-chev {
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.plan-prior-context[open] .plan-prior-context-chev {
+  transform: rotate(90deg);
+}
+.plan-prior-context-body {
+  margin: 0;
+  padding: 6px 10px 8px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 /* ── Progress bar ─────────────────────────────────────────────────────────── */
 
 .plan-progress-bar {

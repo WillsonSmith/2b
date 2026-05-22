@@ -411,6 +411,17 @@ function App() {
     [planning, resolveMentions],
   );
 
+  const handleSidecarPlanFollowUp = useCallback(
+    async (goal: string, priorPlanId: string, approvalMode: "all" | "per_step") => {
+      const resolvedGoal = await resolveMentions(goal);
+      planning.resetPlan();
+      planning.requestPlan(resolvedGoal, approvalMode, priorPlanId);
+      setShowPlan(true);
+      setSidecarCollapsed(false);
+    },
+    [planning, resolveMentions],
+  );
+
   const interrupt = useCallback(() => {
     ws.interrupt();
   }, [ws]);
@@ -1183,6 +1194,8 @@ function App() {
           activeFile={fileManager.activeFile}
           onPlanRequest={handleSidecarPlanRequest}
           onPlanRequestFromDocument={handleSidecarPlanRequestFromDocument}
+          activePlan={planning.plan ? { id: planning.plan.id, goal: planning.plan.goal } : null}
+          onPlanFollowUp={handleSidecarPlanFollowUp}
         />
       </div>
     </div>

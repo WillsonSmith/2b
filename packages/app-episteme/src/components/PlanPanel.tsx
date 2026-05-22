@@ -650,6 +650,16 @@ export function PlanPanel({
               </span>
             </div>
 
+            {plan.priorContext && (
+              <details className="plan-prior-context">
+                <summary className="plan-prior-context-summary">
+                  <ChevronRight size={11} className="plan-prior-context-chev" />
+                  Building on previous plan
+                </summary>
+                <pre className="plan-prior-context-body">{plan.priorContext}</pre>
+              </details>
+            )}
+
             {total > 0 && (
               <div className="plan-progress-bar">
                 <div className="plan-progress-fill" style={{ width: `${progress}%` }} />
