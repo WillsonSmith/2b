@@ -18,14 +18,18 @@ interface SettingsPanelProps {
 }
 
 const SHORTCUTS = [
+  { key: "⌘P", desc: "Open search & actions" },
   { key: "⌘S", desc: "Save file" },
   { key: "⌘F", desc: "Find in document" },
+  { key: "⌘K", desc: "Insert link (in editor)" },
   { key: "⌘Z / ⌘⇧Z", desc: "Undo / Redo" },
   { key: "⌘B", desc: "Bold" },
   { key: "⌘I", desc: "Italic" },
   { key: "Tab", desc: "Accept ghost-text autocomplete" },
   { key: "Esc", desc: "Dismiss autocomplete" },
   { key: "Enter after /diagram: …", desc: "Generate Mermaid diagram" },
+  { key: "Enter after /fill …", desc: "Insert AI fill block" },
+  { key: "Shift+Enter in fill block", desc: "Generate AI fill content" },
   { key: "F1", desc: "Show keyboard shortcuts" },
   { key: "Select text → bubble menu", desc: "Tone rewrite, TL;DR, Table" },
   { key: "Paste/drop image", desc: "Insert image with AI alt text" },

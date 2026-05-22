@@ -682,6 +682,18 @@ export function Editor({
     editor?.commands.focus();
   }, [editor]);
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        if (!editor?.isFocused) return;
+        e.preventDefault();
+        openLinkPicker();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editor, openLinkPicker]);
+
   // ── Autocomplete ─────────────────────────────────────────────────────────────
 
   const autocompleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

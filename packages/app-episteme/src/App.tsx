@@ -351,13 +351,13 @@ function App() {
         setSettingsInitialTab("help");
         setShowSettings(true);
       }
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+      if (e.key === "p" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setShowSearch((v) => !v);
       }
     }
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    window.addEventListener("keydown", handleKey, { capture: true });
+    return () => window.removeEventListener("keydown", handleKey, { capture: true });
   }, []);
 
   // ── AI sidecar wrappers ─────────────────────────────────────────────────────

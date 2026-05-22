@@ -111,5 +111,36 @@ export function AIFillBlockExtension(
     addNodeView() {
       return ReactNodeViewRenderer(AIFillBlockView);
     },
+
+    addKeyboardShortcuts() {
+      return {
+        "Shift-Enter": () => {
+          const { $from } = this.editor.state.selection;
+          for (let depth = $from.depth; depth >= 0; depth--) {
+            const node = $from.node(depth);
+            if (node.type.name !== "aiFillBlock") continue;
+            if (node.attrs.generating) return true;
+            const instruction = node.textContent.trim();
+            if (!instruction || !callbackRef.current) return true;
+            let blockId = node.attrs.id as string | null;
+            if (!blockId) {
+              blockId = crypto.randomUUID();
+              this.editor
+                .chain()
+                .updateAttributes("aiFillBlock", { id: blockId, generating: true })
+                .run();
+            } else {
+              this.editor
+                .chain()
+                .updateAttributes("aiFillBlock", { generating: true })
+                .run();
+            }
+            callbackRef.current(blockId, instruction);
+            return true;
+          }
+          return false;
+        },
+      };
+    },
   });
 }
