@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ArrowLeft } from "lucide-react";
-import type { WritingAidsConfig } from "../config.ts";
+import type { WritingAidsConfig, WritingAidColors } from "../config.ts";
+import { DEFAULT_HIGHLIGHT_COLORS, type HighlightColorKey } from "../features/themedColor.ts";
 
 interface ModelConfig {
   default: string;
@@ -566,26 +567,69 @@ function WritingAidsSection({ onChange }: WritingAidsSectionProps) {
     }
   }, [aids, onChange]);
 
+  const setColor = useCallback((key: HighlightColorKey, value: string) => {
+    setAids((prev) => ({
+      ...prev,
+      colors: { ...(prev.colors ?? {}), [key]: value },
+    }));
+    setStatus("idle");
+  }, []);
+  const clearColor = useCallback((key: HighlightColorKey) => {
+    setAids((prev) => {
+      const nextColors: WritingAidColors = { ...(prev.colors ?? {}) };
+      delete nextColors[key];
+      return { ...prev, colors: nextColors };
+    });
+    setStatus("idle");
+  }, []);
+
   const Toggle = ({
-    name, desc, checked, onCheck, indent = false,
+    name, desc, checked, onCheck, indent = false, colorKey,
   }: {
     name: string;
     desc: string;
     checked: boolean;
     onCheck: (v: boolean) => void;
     indent?: boolean;
-  }) => (
-    <div className="model-config-row" style={{ marginBottom: 4, paddingLeft: indent ? 20 : 0 }}>
-      <div className="model-config-label">
-        <span className="model-config-name">{name}</span>
-        <span className="model-config-desc">{desc}</span>
+    colorKey?: HighlightColorKey;
+  }) => {
+    const customized = colorKey ? aids.colors?.[colorKey] != null : false;
+    const swatchValue = colorKey
+      ? (aids.colors?.[colorKey] ?? DEFAULT_HIGHLIGHT_COLORS[colorKey])
+      : undefined;
+    return (
+      <div className="model-config-row" style={{ marginBottom: 4, paddingLeft: indent ? 20 : 0 }}>
+        <div className="model-config-label">
+          <span className="model-config-name">{name}</span>
+          <span className="model-config-desc">{desc}</span>
+        </div>
+        {colorKey && swatchValue && (
+          <div className="color-swatch-group" title="Highlight color (auto-adjusts for theme)">
+            <input
+              type="color"
+              className="color-swatch"
+              value={swatchValue}
+              onChange={(e) => setColor(colorKey, e.target.value)}
+            />
+            {customized && (
+              <button
+                type="button"
+                className="color-swatch-reset"
+                title="Reset to default"
+                onClick={() => clearColor(colorKey)}
+              >
+                ↺
+              </button>
+            )}
+          </div>
+        )}
+        <label className="settings-toggle">
+          <input type="checkbox" checked={checked} onChange={(e) => onCheck(e.target.checked)} />
+          <span className="settings-toggle-track" />
+        </label>
       </div>
-      <label className="settings-toggle">
-        <input type="checkbox" checked={checked} onChange={(e) => onCheck(e.target.checked)} />
-        <span className="settings-toggle-track" />
-      </label>
-    </div>
-  );
+    );
+  };
 
   const posOn = aids.posHighlight ?? false;
   const focusOn = aids.focusMode ?? false;
@@ -608,13 +652,13 @@ function WritingAidsSection({ onChange }: WritingAidsSectionProps) {
       {posOn && (
         <>
           <Toggle name="Nouns" desc="" checked={aids.posNoun ?? true}
-            onCheck={(v) => update({ posNoun: v })} indent />
+            onCheck={(v) => update({ posNoun: v })} indent colorKey="posNoun" />
           <Toggle name="Verbs" desc="" checked={aids.posVerb ?? true}
-            onCheck={(v) => update({ posVerb: v })} indent />
+            onCheck={(v) => update({ posVerb: v })} indent colorKey="posVerb" />
           <Toggle name="Adjectives" desc="" checked={aids.posAdjective ?? true}
-            onCheck={(v) => update({ posAdjective: v })} indent />
+            onCheck={(v) => update({ posAdjective: v })} indent colorKey="posAdjective" />
           <Toggle name="Adverbs" desc="" checked={aids.posAdverb ?? true}
-            onCheck={(v) => update({ posAdverb: v })} indent />
+            onCheck={(v) => update({ posAdverb: v })} indent colorKey="posAdverb" />
         </>
       )}
       <Toggle
@@ -622,6 +666,7 @@ function WritingAidsSection({ onChange }: WritingAidsSectionProps) {
         desc="Tint commas, periods, dashes, and quotes."
         checked={aids.punctuationHighlight ?? false}
         onCheck={(v) => update({ punctuationHighlight: v })}
+        colorKey="punct"
       />
 
       <h3 className="settings-subhead">Focus mode</h3>
@@ -664,13 +709,13 @@ function WritingAidsSection({ onChange }: WritingAidsSectionProps) {
         <>
           <Toggle name="Fillers" desc='Words like "very", "just", "really".'
             checked={aids.styleFiller ?? true}
-            onCheck={(v) => update({ styleFiller: v })} indent />
+            onCheck={(v) => update({ styleFiller: v })} indent colorKey="styleFiller" />
           <Toggle name="Clichés" desc='Phrases like "at the end of the day".'
             checked={aids.styleCliche ?? true}
-            onCheck={(v) => update({ styleCliche: v })} indent />
+            onCheck={(v) => update({ styleCliche: v })} indent colorKey="styleCliche" />
           <Toggle name="Redundancies" desc='Pairs like "ATM machine", "free gift".'
             checked={aids.styleRedundancy ?? true}
-            onCheck={(v) => update({ styleRedundancy: v })} indent />
+            onCheck={(v) => update({ styleRedundancy: v })} indent colorKey="styleRedundancy" />
         </>
       )}
 

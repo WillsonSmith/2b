@@ -31,6 +31,7 @@ import {
   Focus,
 } from "lucide-react";
 import type { WritingAidsConfig } from "./config.ts";
+import { themedColor, HIGHLIGHT_CSS_VARS, type HighlightColorKey } from "./features/themedColor.ts";
 import { useFileManager } from "./hooks/useFileManager.ts";
 import { useFileTreeState } from "./hooks/useFileTreeState.ts";
 import { useEditorFeatures } from "./hooks/useEditorFeatures.ts";
@@ -779,6 +780,19 @@ function App() {
     redundancy: writingAids.styleRedundancy ?? true,
   }), [writingAids]);
   const punctuationHighlightOn = writingAids.punctuationHighlight ?? false;
+
+  // Apply user-picked highlight colors as CSS variables, clamped per theme so
+  // the chosen hue stays legible on both backgrounds.
+  useEffect(() => {
+    const colors = writingAids.colors ?? {};
+    const root = document.documentElement;
+    for (const key of Object.keys(HIGHLIGHT_CSS_VARS) as HighlightColorKey[]) {
+      const varName = HIGHLIGHT_CSS_VARS[key];
+      const picked = colors[key];
+      if (picked) root.style.setProperty(varName, themedColor(picked, theme));
+      else root.style.removeProperty(varName);
+    }
+  }, [writingAids.colors, theme]);
 
   if (fileManager.needsWorkspace) {
     return (

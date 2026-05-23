@@ -245,6 +245,42 @@
   color: var(--text-muted);
   margin: 12px 0 4px;
 }
+.color-swatch-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 10px;
+}
+.color-swatch {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+.color-swatch::-webkit-color-swatch-wrapper { padding: 2px; }
+.color-swatch::-webkit-color-swatch { border: none; border-radius: 2px; }
+.color-swatch::-moz-color-swatch { border: none; border-radius: 2px; }
+.color-swatch-reset {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.color-swatch-reset:hover {
+  color: var(--text);
+  background: var(--bg-highlight);
+}
 
 @keyframes settings-overlay-in {
   from { opacity: 0; }

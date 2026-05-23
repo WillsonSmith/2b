@@ -57,6 +57,19 @@ export interface WritingAidsConfig {
   styleFiller?: boolean;
   styleCliche?: boolean;
   styleRedundancy?: boolean;
+  /** User-picked highlight colors (hex). Lightness is auto-adjusted per theme. */
+  colors?: WritingAidColors;
+}
+
+export interface WritingAidColors {
+  posNoun?: string;
+  posVerb?: string;
+  posAdjective?: string;
+  posAdverb?: string;
+  punct?: string;
+  styleFiller?: string;
+  styleCliche?: string;
+  styleRedundancy?: string;
 }
 
 /** Tunables for ContradictionPlugin's background scan. All fields optional. */
