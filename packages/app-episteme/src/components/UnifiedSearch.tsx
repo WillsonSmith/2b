@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Search, FileText, Globe, Terminal } from "lucide-react";
 import type { UnifiedSearchResponse, SearchResult } from "./ResearchPanel.tsx";
 
@@ -41,6 +41,8 @@ const PLACEHOLDERS: Record<Scope, string> = {
   commands: "> command",
 };
 
+const CLOSE_ANIMATION_MS = 180;
+
 function fuzzyMatch(pattern: string, str: string): boolean {
   const p = pattern.toLowerCase();
   const s = str.toLowerCase();
@@ -75,9 +77,25 @@ export function UnifiedSearch({
   const [activeIndex, setActiveIndex] = useState(0);
   const [fullTextResults, setFullTextResults] = useState<FullTextResult[]>([]);
   const [isSearchingText, setIsSearchingText] = useState(false);
+  const [exiting, setExiting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleClose = useCallback(() => {
+    if (closeTimerRef.current) return;
+    setExiting(true);
+    closeTimerRef.current = setTimeout(() => {
+      onClose();
+    }, CLOSE_ANIMATION_MS);
+  }, [onClose]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
 
   // Reset on open
   useEffect(() => {
@@ -86,6 +104,11 @@ export function UnifiedSearch({
       setScope("files");
       setActiveIndex(0);
       setFullTextResults([]);
+      setExiting(false);
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
       setTimeout(() => inputRef.current?.focus(), 0);
     }
   }, [open]);
@@ -162,13 +185,13 @@ export function UnifiedSearch({
   function selectItem(index: number) {
     if (scope === "files") {
       const file = fileResults[index];
-      if (file) { onFileSelect(file); onClose(); }
+      if (file) { onFileSelect(file); handleClose(); }
     } else if (scope === "commands") {
       const cmd = commandResults[index];
-      if (cmd) { cmd.action(); onClose(); }
+      if (cmd) { cmd.action(); handleClose(); }
     } else if (scope === "fulltext") {
       const r = fullTextResults[index];
-      if (r) { onFileSelect(r.path); onClose(); }
+      if (r) { onFileSelect(r.path); handleClose(); }
     } else if (scope === "research") {
       const r = researchItems[index];
       if (r?.url) window.open(r.url, "_blank");
@@ -176,7 +199,7 @@ export function UnifiedSearch({
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Escape") { onClose(); return; }
+    if (e.key === "Escape") { handleClose(); return; }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActiveIndex((i) => Math.min(i + 1, totalResults - 1));
@@ -201,9 +224,12 @@ export function UnifiedSearch({
   if (!open) return null;
 
   return (
-    <div className="usearch-overlay" onClick={onClose}>
+    <div
+      className={`usearch-overlay${exiting ? " usearch-overlay--exiting" : ""}`}
+      onClick={handleClose}
+    >
       <div
-        className="usearch-container"
+        className={`usearch-container${exiting ? " usearch-container--exiting" : ""}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Scope tabs */}
