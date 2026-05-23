@@ -845,7 +845,7 @@ function App() {
         >
           <Search size={13} />
           <span>Search…</span>
-          <kbd>⌘K</kbd>
+          <kbd>⌘P</kbd>
         </button>
         <div className="app-header-actions">
           <button
