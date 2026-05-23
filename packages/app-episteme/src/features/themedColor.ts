@@ -52,14 +52,14 @@ export function hslToHex(h: number, s: number, l: number): string {
  * — the renderer applies `themedColor` to map them onto the active theme.
  */
 export const DEFAULT_HIGHLIGHT_COLORS = {
-  posNoun: "#6699dd",
-  posVerb: "#c08050",
-  posAdjective: "#a070c0",
-  posAdverb: "#4ca070",
+  posNoun: "#cf6040",
+  posVerb: "#5683b5",
+  posAdjective: "#b27b2b",
+  posAdverb: "#ab67a0",
   punct: "#cc9944",
-  styleFiller: "#cc9944",
-  styleCliche: "#cc5555",
-  styleRedundancy: "#6699dd",
+  styleFiller: "#707070",
+  styleCliche: "#707070",
+  styleRedundancy: "#707070",
 } as const;
 
 export type HighlightColorKey = keyof typeof DEFAULT_HIGHLIGHT_COLORS;
