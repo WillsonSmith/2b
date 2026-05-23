@@ -28,6 +28,8 @@ export function useFileManager(
   activeFileRef.current = activeFile;
   const isDirtyRef = useRef(isDirty);
   isDirtyRef.current = isDirty;
+  const savedContentRef = useRef(savedContent);
+  savedContentRef.current = savedContent;
 
   const debouncedContent = useDebounce(editorContent, 500);
   const lastSentHashRef = useRef<string>("");
@@ -171,6 +173,9 @@ export function useFileManager(
     });
     const unsubExternal = subscribe("file_externally_changed", (msg) => {
       if (msg.path !== activeFileRef.current) return;
+      // Spurious watcher event (metadata change, iCloud sync, autosave timing)
+      // — content on disk matches what we last wrote, so nothing actually changed.
+      if (msg.content === savedContentRef.current) return;
       if (!isDirtyRef.current) {
         setEditorContent(msg.content);
         setSavedContent(msg.content);
