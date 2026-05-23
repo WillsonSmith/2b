@@ -18,6 +18,27 @@ interface WindowState {
 
 const windows = new Map<BrowserWindow, WindowState>();
 
+interface MenuState {
+  posHighlight: boolean;
+  posNoun: boolean;
+  posVerb: boolean;
+  posAdjective: boolean;
+  posAdverb: boolean;
+}
+
+let menuState: MenuState = {
+  posHighlight: false,
+  posNoun: true,
+  posVerb: true,
+  posAdjective: true,
+  posAdverb: true,
+};
+
+function sendMenuCommand(command: string): void {
+  const focused = BrowserWindow.getFocusedWindow();
+  focused?.webContents.send("menu-command", command);
+}
+
 // --- Workspace persistence ---
 
 function readLastWorkspace(): string | undefined {
@@ -235,6 +256,12 @@ function buildMenu(): void {
       submenu: [
         { role: "about" },
         { type: "separator" },
+        {
+          label: "Preferences…",
+          accelerator: "CmdOrCtrl+,",
+          click: () => sendMenuCommand("open-preferences"),
+        },
+        { type: "separator" },
         { role: "services" },
         { type: "separator" },
         { role: "hide" },
@@ -398,6 +425,97 @@ function buildMenu(): void {
       ],
     },
     {
+      label: "Format",
+      submenu: [
+        {
+          label: "Bold",
+          accelerator: "CmdOrCtrl+B",
+          click: () => sendMenuCommand("format:bold"),
+        },
+        {
+          label: "Italic",
+          accelerator: "CmdOrCtrl+I",
+          click: () => sendMenuCommand("format:italic"),
+        },
+        {
+          label: "Strikethrough",
+          accelerator: "CmdOrCtrl+Shift+X",
+          click: () => sendMenuCommand("format:strike"),
+        },
+        {
+          label: "Inline Code",
+          accelerator: "CmdOrCtrl+E",
+          click: () => sendMenuCommand("format:code"),
+        },
+        { type: "separator" },
+        {
+          label: "Heading 1",
+          accelerator: "CmdOrCtrl+Alt+1",
+          click: () => sendMenuCommand("format:heading1"),
+        },
+        {
+          label: "Heading 2",
+          accelerator: "CmdOrCtrl+Alt+2",
+          click: () => sendMenuCommand("format:heading2"),
+        },
+        {
+          label: "Heading 3",
+          accelerator: "CmdOrCtrl+Alt+3",
+          click: () => sendMenuCommand("format:heading3"),
+        },
+        {
+          label: "Paragraph",
+          accelerator: "CmdOrCtrl+Alt+0",
+          click: () => sendMenuCommand("format:paragraph"),
+        },
+        { type: "separator" },
+        {
+          label: "Bullet List",
+          accelerator: "CmdOrCtrl+Shift+8",
+          click: () => sendMenuCommand("format:bulletList"),
+        },
+        {
+          label: "Ordered List",
+          accelerator: "CmdOrCtrl+Shift+7",
+          click: () => sendMenuCommand("format:orderedList"),
+        },
+        {
+          label: "Task List",
+          accelerator: "CmdOrCtrl+Shift+9",
+          click: () => sendMenuCommand("format:taskList"),
+        },
+        {
+          label: "Blockquote",
+          accelerator: "CmdOrCtrl+Shift+B",
+          click: () => sendMenuCommand("format:blockquote"),
+        },
+        {
+          label: "Code Block",
+          accelerator: "CmdOrCtrl+Alt+C",
+          click: () => sendMenuCommand("format:codeBlock"),
+        },
+        { type: "separator" },
+        {
+          label: "Insert Link…",
+          accelerator: "CmdOrCtrl+K",
+          click: () => sendMenuCommand("format:link"),
+        },
+        {
+          label: "Insert Horizontal Rule",
+          click: () => sendMenuCommand("format:horizontalRule"),
+        },
+        {
+          label: "Insert Table",
+          click: () => sendMenuCommand("format:table"),
+        },
+        { type: "separator" },
+        {
+          label: "Clear Formatting",
+          click: () => sendMenuCommand("format:clear"),
+        },
+      ],
+    },
+    {
       label: "View",
       submenu: [
         { role: "reload" },
@@ -405,6 +523,46 @@ function buildMenu(): void {
         { role: "toggleDevTools" },
         { type: "separator" },
         { role: "togglefullscreen" },
+        { type: "separator" },
+        {
+          label: "Highlight Parts of Speech",
+          type: "checkbox",
+          checked: menuState.posHighlight,
+          click: () => sendMenuCommand("toggle-pos-highlight"),
+        },
+        {
+          label: "Parts of Speech",
+          submenu: [
+            {
+              label: "Nouns",
+              type: "checkbox",
+              checked: menuState.posNoun,
+              enabled: menuState.posHighlight,
+              click: () => sendMenuCommand("toggle-pos-noun"),
+            },
+            {
+              label: "Verbs",
+              type: "checkbox",
+              checked: menuState.posVerb,
+              enabled: menuState.posHighlight,
+              click: () => sendMenuCommand("toggle-pos-verb"),
+            },
+            {
+              label: "Adjectives",
+              type: "checkbox",
+              checked: menuState.posAdjective,
+              enabled: menuState.posHighlight,
+              click: () => sendMenuCommand("toggle-pos-adjective"),
+            },
+            {
+              label: "Adverbs",
+              type: "checkbox",
+              checked: menuState.posAdverb,
+              enabled: menuState.posHighlight,
+              click: () => sendMenuCommand("toggle-pos-adverb"),
+            },
+          ],
+        },
       ],
     },
     {
@@ -470,6 +628,11 @@ ipcMain.handle("get-preference", (_event, key: string): string | null => {
   } catch {
     return null;
   }
+});
+
+ipcMain.handle("update-menu-state", (_event, patch: Partial<MenuState>): void => {
+  menuState = { ...menuState, ...patch };
+  buildMenu();
 });
 
 ipcMain.handle("set-preference", (_event, key: string, value: string): void => {

@@ -125,6 +125,12 @@ function App() {
   const [workspaceRoot, setWorkspaceRoot] = useState("");
   const [sidecarPendingInput, setSidecarPendingInput] = useState("");
   const [writingAids, setWritingAids] = useState<WritingAidsConfig>({});
+  const [editorCommand, setEditorCommand] = useState<{ name: string; nonce: number } | null>(null);
+  const editorCommandNonce = useRef(0);
+  const dispatchEditorCommand = useCallback((name: string) => {
+    editorCommandNonce.current += 1;
+    setEditorCommand({ name, nonce: editorCommandNonce.current });
+  }, []);
 
   const ws = useWebSocket();
   const planning = usePlanning(ws.wsRef, ws.subscribe);
@@ -362,10 +368,80 @@ function App() {
         e.preventDefault();
         setShowSearch((v) => !v);
       }
+      if (e.key === "," && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setSettingsInitialSection("style");
+        setShowSettings(true);
+      }
     }
     window.addEventListener("keydown", handleKey, { capture: true });
     return () => window.removeEventListener("keydown", handleKey, { capture: true });
   }, []);
+
+  // ── Writing-aid persistence + menu state ────────────────────────────────────
+
+  const updateWritingAids = useCallback(
+    (patch: Partial<WritingAidsConfig>) => {
+      setWritingAids((prev) => {
+        const next = { ...prev, ...patch };
+        fetch("/api/config", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ features: { writingAids: next } }),
+        }).catch(() => {});
+        return next;
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    getShell().updateMenuState({
+      posHighlight: writingAids.posHighlight ?? false,
+      posNoun: writingAids.posNoun ?? true,
+      posVerb: writingAids.posVerb ?? true,
+      posAdjective: writingAids.posAdjective ?? true,
+      posAdverb: writingAids.posAdverb ?? true,
+    });
+  }, [
+    writingAids.posHighlight,
+    writingAids.posNoun,
+    writingAids.posVerb,
+    writingAids.posAdjective,
+    writingAids.posAdverb,
+  ]);
+
+  // ── Native menu commands (Electron menu bar) ────────────────────────────────
+
+  const writingAidsRef = useRef(writingAids);
+  writingAidsRef.current = writingAids;
+
+  useEffect(() => {
+    const unsubscribe = getShell().onMenuCommand((cmd) => {
+      if (cmd === "open-preferences") {
+        setSettingsInitialSection("style");
+        setShowSettings(true);
+        return;
+      }
+      if (cmd.startsWith("format:")) {
+        dispatchEditorCommand(cmd);
+        return;
+      }
+      const aids = writingAidsRef.current;
+      if (cmd === "toggle-pos-highlight") {
+        updateWritingAids({ posHighlight: !(aids.posHighlight ?? false) });
+      } else if (cmd === "toggle-pos-noun") {
+        updateWritingAids({ posNoun: !(aids.posNoun ?? true) });
+      } else if (cmd === "toggle-pos-verb") {
+        updateWritingAids({ posVerb: !(aids.posVerb ?? true) });
+      } else if (cmd === "toggle-pos-adjective") {
+        updateWritingAids({ posAdjective: !(aids.posAdjective ?? true) });
+      } else if (cmd === "toggle-pos-adverb") {
+        updateWritingAids({ posAdverb: !(aids.posAdverb ?? true) });
+      }
+    });
+    return unsubscribe;
+  }, [dispatchEditorCommand, updateWritingAids]);
 
   // ── AI sidecar wrappers ─────────────────────────────────────────────────────
 
@@ -1066,6 +1142,7 @@ function App() {
             punctuationHighlight={punctuationHighlightOn}
             focusMode={focusModeOptions}
             styleCheck={styleCheckOptions}
+            command={editorCommand}
           />
 
           {/* Status bar */}

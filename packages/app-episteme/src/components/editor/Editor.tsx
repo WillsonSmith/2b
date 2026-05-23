@@ -91,6 +91,7 @@ interface EditorProps {
   punctuationHighlight?: boolean;
   focusMode?: FocusModeOptions;
   styleCheck?: StyleCheckOptions;
+  command?: { name: string; nonce: number } | null;
 }
 
 interface FindBarProps {
@@ -245,6 +246,7 @@ export function Editor({
   punctuationHighlight: punctuationHighlightProp,
   focusMode: focusModeProp,
   styleCheck: styleCheckProp,
+  command,
 }: EditorProps) {
   const ghostRef = useRef(ghostText);
   const lintRef = useRef<ResolvedIssue[]>([]);
@@ -736,6 +738,34 @@ export function Editor({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [editor, openLinkPicker]);
+
+  // ── External command dispatch (from menu bar) ───────────────────────────────
+
+  useEffect(() => {
+    if (!editor || !command) return;
+    const chain = editor.chain().focus();
+    switch (command.name) {
+      case "format:bold": chain.toggleBold().run(); break;
+      case "format:italic": chain.toggleItalic().run(); break;
+      case "format:strike": chain.toggleStrike().run(); break;
+      case "format:code": chain.toggleCode().run(); break;
+      case "format:heading1": chain.toggleHeading({ level: 1 }).run(); break;
+      case "format:heading2": chain.toggleHeading({ level: 2 }).run(); break;
+      case "format:heading3": chain.toggleHeading({ level: 3 }).run(); break;
+      case "format:paragraph": chain.setParagraph().run(); break;
+      case "format:bulletList": chain.toggleBulletList().run(); break;
+      case "format:orderedList": chain.toggleOrderedList().run(); break;
+      case "format:taskList": chain.toggleTaskList().run(); break;
+      case "format:blockquote": chain.toggleBlockquote().run(); break;
+      case "format:codeBlock": chain.toggleCodeBlock().run(); break;
+      case "format:horizontalRule": chain.setHorizontalRule().run(); break;
+      case "format:table":
+        chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+        break;
+      case "format:clear": chain.clearNodes().unsetAllMarks().run(); break;
+      case "format:link": openLinkPicker(); break;
+    }
+  }, [command, editor, openLinkPicker]);
 
   // ── Autocomplete ─────────────────────────────────────────────────────────────
 

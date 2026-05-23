@@ -1,4 +1,4 @@
-import type { IShell } from "./IShell.ts";
+import type { IShell, MenuState } from "./IShell.ts";
 
 export class ElectronShell implements IShell {
   openFolder(): Promise<string | null> {
@@ -18,6 +18,12 @@ export class ElectronShell implements IShell {
   }
   setPreference(key: string, value: string): Promise<void> {
     return (window as any).__electronShell.setPreference(key, value);
+  }
+  onMenuCommand(callback: (command: string) => void): () => void {
+    return (window as any).__electronShell.onMenuCommand(callback);
+  }
+  updateMenuState(state: MenuState): Promise<void> {
+    return (window as any).__electronShell.updateMenuState(state);
   }
   platform(): "electron" {
     return "electron";
