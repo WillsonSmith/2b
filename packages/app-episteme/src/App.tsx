@@ -778,6 +778,8 @@ function App() {
     filler: writingAids.styleFiller ?? true,
     cliche: writingAids.styleCliche ?? true,
     redundancy: writingAids.styleRedundancy ?? true,
+    strikethrough: writingAids.styleStrikethrough ?? false,
+    tintText: writingAids.styleTintText ?? false,
   }), [writingAids]);
   const punctuationHighlightOn = writingAids.punctuationHighlight ?? false;
 

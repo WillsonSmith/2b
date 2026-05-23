@@ -9,6 +9,8 @@ export interface StyleCheckOptions {
   filler: boolean;
   cliche: boolean;
   redundancy: boolean;
+  strikethrough: boolean;
+  tintText: boolean;
 }
 
 export const defaultStyleCheckOptions: StyleCheckOptions = {
@@ -16,6 +18,8 @@ export const defaultStyleCheckOptions: StyleCheckOptions = {
   filler: true,
   cliche: true,
   redundancy: true,
+  strikethrough: false,
+  tintText: false,
 };
 
 const styleKey = new PluginKey<DecorationSet>("style-check");
@@ -56,8 +60,12 @@ export function resolveStyleIssues(
   return resolved;
 }
 
-function categoryClass(c: StyleCategory): string {
-  return `style-issue style-issue--${c}`;
+function categoryClass(c: StyleCategory, strikethrough: boolean, tintText: boolean): string {
+  return (
+    `style-issue style-issue--${c}` +
+    (strikethrough ? " style-issue--strike" : "") +
+    (tintText ? " style-issue--tint" : "")
+  );
 }
 
 function buildDecorations(doc: ProseMirrorNode, options: StyleCheckOptions): DecorationSet {
@@ -66,7 +74,7 @@ function buildDecorations(doc: ProseMirrorNode, options: StyleCheckOptions): Dec
   if (issues.length === 0) return DecorationSet.empty;
   const decos = issues.map((issue) =>
     Decoration.inline(issue.pmFrom, issue.pmTo, {
-      class: categoryClass(issue.category),
+      class: categoryClass(issue.category, options.strikethrough, options.tintText),
       title: issue.message,
     }),
   );

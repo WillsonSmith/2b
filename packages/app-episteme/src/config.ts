@@ -57,6 +57,10 @@ export interface WritingAidsConfig {
   styleFiller?: boolean;
   styleCliche?: boolean;
   styleRedundancy?: boolean;
+  /** Render style-check matches as strikethrough instead of underline. */
+  styleStrikethrough?: boolean;
+  /** Tint the matched word itself with its category color. */
+  styleTintText?: boolean;
   /** User-picked highlight colors (hex). Lightness is auto-adjusted per theme. */
   colors?: WritingAidColors;
 }

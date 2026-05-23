@@ -30,6 +30,15 @@
 .style-issue--redundancy {
   text-decoration-color: var(--style-redundancy);
 }
+.style-issue--strike {
+  text-decoration-line: line-through;
+  text-decoration-style: solid;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0;
+}
+.style-issue--tint.style-issue--filler { color: var(--style-filler); }
+.style-issue--tint.style-issue--cliche { color: var(--style-cliche); }
+.style-issue--tint.style-issue--redundancy { color: var(--style-redundancy); }
 
 /* ── Lint decorations ────────────────────────────────────────────────── */
 .lint-clarity {

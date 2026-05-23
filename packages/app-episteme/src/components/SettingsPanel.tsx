@@ -716,6 +716,12 @@ function WritingAidsSection({ onChange }: WritingAidsSectionProps) {
           <Toggle name="Redundancies" desc='Pairs like "ATM machine", "free gift".'
             checked={aids.styleRedundancy ?? true}
             onCheck={(v) => update({ styleRedundancy: v })} indent colorKey="styleRedundancy" />
+          <Toggle name="Strikethrough" desc="Cross out matches instead of underlining them."
+            checked={aids.styleStrikethrough ?? false}
+            onCheck={(v) => update({ styleStrikethrough: v })} indent />
+          <Toggle name="Tint text" desc="Recolor the matched word itself, not just the line."
+            checked={aids.styleTintText ?? false}
+            onCheck={(v) => update({ styleTintText: v })} indent />
         </>
       )}
 
