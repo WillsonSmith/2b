@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo, memo } from "react";
 import { FileText, Plus, RotateCw, ChevronDown, ChevronRight } from "lucide-react";
 import { usePanelResize } from "../hooks/usePanelResize.ts";
 
@@ -112,7 +112,7 @@ function IndentGuides({ depth }: { depth: number }) {
   );
 }
 
-export function FileTree({
+export const FileTree = memo(function FileTree({
   files,
   folders = [],
   activeFile,
@@ -220,7 +220,10 @@ export function FileTree({
     setDragOverDir(null);
   }
 
-  const items = buildItems(files, folders, expandedDirs, creatingInDir, creatingFolderInDir);
+  const items = useMemo(
+    () => buildItems(files, folders, expandedDirs, creatingInDir, creatingFolderInDir),
+    [files, folders, expandedDirs, creatingInDir, creatingFolderInDir],
+  );
 
   // Focus inputs when they appear
   useEffect(() => { if (isCreating) newFileInputRef.current?.focus(); }, [isCreating]);
@@ -660,4 +663,4 @@ export function FileTree({
     </div>
     </div>
   );
-}
+});

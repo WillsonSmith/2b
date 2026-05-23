@@ -138,6 +138,14 @@ function App() {
   const planRef = useRef(planning.plan);
   useEffect(() => { planRef.current = planning.plan; }, [planning.plan]);
 
+  // Stable projection of the active plan — passed into AISidecar/MessageList,
+  // which is memo'd. A fresh object literal here would break the memo on every
+  // App render (e.g. every keystroke in the editor).
+  const activePlan = useMemo(
+    () => planning.plan ? { id: planning.plan.id, goal: planning.plan.goal } : null,
+    [planning.plan?.id, planning.plan?.goal],
+  );
+
   // Auto-open the plan panel when a plan is created or already active on connect
   useEffect(() => {
     if (planning.plan) setShowPlan(true);
@@ -1318,7 +1326,7 @@ function App() {
           activeFile={fileManager.activeFile}
           onPlanRequest={handleSidecarPlanRequest}
           onPlanRequestFromDocument={handleSidecarPlanRequestFromDocument}
-          activePlan={planning.plan ? { id: planning.plan.id, goal: planning.plan.goal } : null}
+          activePlan={activePlan}
           onPlanFollowUp={handleSidecarPlanFollowUp}
         />
       </div>
