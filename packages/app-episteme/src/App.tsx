@@ -6,6 +6,7 @@ import { TocPanel } from "./components/TocPanel.tsx";
 import { AISidecar, type SidecarMessage } from "./components/AISidecar.tsx";
 import type { EpistemePlanStepType } from "./planning/types.ts";
 import { SettingsPanel } from "./components/SettingsPanel.tsx";
+import { OnboardingModal } from "./components/OnboardingModal.tsx";
 import { PermissionDialog } from "./components/PermissionDialog.tsx";
 import { ResearchPanel } from "./components/ResearchPanel.tsx";
 import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
@@ -95,6 +96,8 @@ function pluginLabel(name: string): string {
 
 function App() {
   const [messages, setMessages] = useState<SidecarMessage[]>([]);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(true);
   const [sidecarCollapsed, setSidecarCollapsed] = useState(() => {
     try { return localStorage.getItem("episteme:sidecar-collapsed") === "1"; } catch { return false; }
   });
@@ -276,6 +279,24 @@ function App() {
       )
       .catch(() => {});
   }, [editorFeatures.setAutocompleteEnabled, fileManager.setAutosaveEnabled]);
+
+  // ── /api/health on mount ────────────────────────────────────────────────────
+  // The reconnect-driven fetch below only fires when the WebSocket goes
+  // disconnected → connected, which never happens for a workspace in
+  // onboarding mode or with AI disabled. Run once on mount so we can show the
+  // onboarding modal and decide whether to render AI UI.
+
+  useEffect(() => {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((data: { workspace?: string | null; onboarding?: { required?: boolean }; aiEnabled?: boolean }) => {
+        if (data.workspace) {
+          if (data.onboarding?.required) setNeedsOnboarding(true);
+          setAiEnabled(data.aiEnabled !== false);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // ── /api/health on each (re)connect ─────────────────────────────────────────
 
@@ -926,13 +947,15 @@ function App() {
           <kbd>⌘P</kbd>
         </button>
         <div className="app-header-actions">
-          <button
-            className={`header-research-btn${!sidecarCollapsed ? " active" : ""}`}
-            title={sidecarCollapsed ? "Show AI" : "Hide AI"}
-            onClick={() => setSidecarCollapsed((c) => !c)}
-          >
-            <Sparkles size={16} />
-          </button>
+          {aiEnabled && (
+            <button
+              className={`header-research-btn${!sidecarCollapsed ? " active" : ""}`}
+              title={sidecarCollapsed ? "Show AI" : "Hide AI"}
+              onClick={() => setSidecarCollapsed((c) => !c)}
+            >
+              <Sparkles size={16} />
+            </button>
+          )}
           <button
             className={`header-research-btn${isFocusMode ? " active" : ""}`}
             title={isFocusMode ? "Exit focus mode" : "Focus mode (hide side panels)"}
@@ -1003,8 +1026,8 @@ function App() {
         />
       )}
 
-      {/* Offline notice */}
-      {ws.agentState === "disconnected" && (
+      {/* Offline notice — only when AI is supposed to be running */}
+      {aiEnabled && ws.agentState === "disconnected" && (
         <div className="offline-banner">AI unavailable — reconnecting…</div>
       )}
 
@@ -1300,28 +1323,37 @@ function App() {
           });
           return <PanelGroup panels={panels} />;
         })()}
-        <AISidecar
-          messages={messages}
-          isThinking={ws.agentState === "thinking"}
-          agentState={ws.agentState}
-          collapsed={sidecarCollapsed}
-          onSend={sendToAgent}
-          onInterrupt={interrupt}
-          onNavigate={fileManager.openFile}
-          workspaceFiles={fileManager.workspaceFiles}
-          onRegenerate={handleRegenerate}
-          onSendToPlan={handleSendToPlan}
-          onDeleteMessage={onDeleteMessage}
-          onRemoveMention={onRemoveMention}
-          pendingInput={sidecarPendingInput}
-          onPendingInputConsumed={() => setSidecarPendingInput("")}
-          activeFile={fileManager.activeFile}
-          onPlanRequest={handleSidecarPlanRequest}
-          onPlanRequestFromDocument={handleSidecarPlanRequestFromDocument}
-          activePlan={activePlan}
-          onPlanFollowUp={handleSidecarPlanFollowUp}
-        />
+        {aiEnabled && (
+          <AISidecar
+            messages={messages}
+            isThinking={ws.agentState === "thinking"}
+            agentState={ws.agentState}
+            collapsed={sidecarCollapsed}
+            onSend={sendToAgent}
+            onInterrupt={interrupt}
+            onNavigate={fileManager.openFile}
+            workspaceFiles={fileManager.workspaceFiles}
+            onRegenerate={handleRegenerate}
+            onSendToPlan={handleSendToPlan}
+            onDeleteMessage={onDeleteMessage}
+            onRemoveMention={onRemoveMention}
+            pendingInput={sidecarPendingInput}
+            onPendingInputConsumed={() => setSidecarPendingInput("")}
+            activeFile={fileManager.activeFile}
+            onPlanRequest={handleSidecarPlanRequest}
+            onPlanRequestFromDocument={handleSidecarPlanRequestFromDocument}
+            activePlan={activePlan}
+            onPlanFollowUp={handleSidecarPlanFollowUp}
+          />
+        )}
       </div>
+      <OnboardingModal
+        open={needsOnboarding}
+        onComplete={({ aiEnabled: enabled }) => {
+          setAiEnabled(enabled);
+          setNeedsOnboarding(false);
+        }}
+      />
     </div>
   );
 }

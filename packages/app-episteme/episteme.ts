@@ -58,12 +58,21 @@ if (!workspaceArg) {
     try { rmSync(join(homedir(), ".config", "episteme", "last-workspace")); } catch {}
     await startEpistemStubServer(port);
   } else {
-    const config = await loadConfig(workspaceRoot);
+    const { config, isFirstLaunch } = await loadConfig(workspaceRoot);
     if (config.ollamaBaseUrl) {
       process.env.OLLAMA_URL = config.ollamaBaseUrl;
     }
+
+    // Don't start the agent if onboarding hasn't run yet, or if the user has
+    // opted into editor-only mode (aiEnabled === false). `undefined` means
+    // "back-compat" — existing workspaces created before this flag pre-date
+    // it, so we treat them as opted-in.
+    const aiEnabled = !isFirstLaunch && config.aiEnabled !== false;
     const bundle = createEpistemAgent(workspaceRoot, config);
 
-    await startEpistemServer(bundle, workspaceRoot, config, port);
+    await startEpistemServer(bundle, workspaceRoot, config, port, {
+      isFirstLaunch,
+      aiEnabled,
+    });
   }
 }

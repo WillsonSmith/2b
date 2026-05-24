@@ -228,21 +228,28 @@ function ModelsSection({
   const [modelConfig, setModelConfig] = useState<ModelConfig>({ default: "" });
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(false);
   const [autosaveEnabled, setAutosaveEnabled] = useState(true);
+  const [aiEnabled, setAiEnabled] = useState(true);
+  const [initialAiEnabled, setInitialAiEnabled] = useState(true);
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState("");
   const [initialOllamaBaseUrl, setInitialOllamaBaseUrl] = useState("");
   const [urlChangedNotice, setUrlChangedNotice] = useState(false);
+  const [restartRequiredNotice, setRestartRequiredNotice] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
     fetch("/api/config")
       .then((r) => r.json())
-      .then((data: { models?: ModelConfig; features?: { autocomplete?: boolean; autosave?: boolean }; ollamaBaseUrl?: string }) => {
+      .then((data: { models?: ModelConfig; features?: { autocomplete?: boolean; autosave?: boolean }; ollamaBaseUrl?: string; aiEnabled?: boolean }) => {
         if (data.models) setModelConfig(data.models);
         if (data.features?.autocomplete !== undefined) setAutocompleteEnabled(data.features.autocomplete);
         if (data.features?.autosave !== undefined) setAutosaveEnabled(data.features.autosave);
         const url = data.ollamaBaseUrl ?? "";
         setOllamaBaseUrl(url);
         setInitialOllamaBaseUrl(url);
+        const enabled = data.aiEnabled !== false;
+        setAiEnabled(enabled);
+        setInitialAiEnabled(enabled);
       })
       .catch(() => {});
 
@@ -258,6 +265,14 @@ function ModelsSection({
   }, []);
 
   const handleSave = useCallback(async () => {
+    // Enabling AI requires a default model — block save so the user sees the
+    // problem here, instead of after a restart with a broken agent.
+    if (aiEnabled && !modelConfig.default?.trim()) {
+      setValidationError("Pick a default model before enabling AI.");
+      setStatus("idle");
+      return;
+    }
+    setValidationError(null);
     setStatus("saving");
     try {
       const res = await fetch("/api/config", {
@@ -267,9 +282,11 @@ function ModelsSection({
           models: modelConfig,
           features: { autocomplete: autocompleteEnabled, autosave: autosaveEnabled },
           ollamaBaseUrl,
+          aiEnabled,
         }),
       });
       if (res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { restartRequired?: boolean };
         onAutocompleteEnabledChange?.(autocompleteEnabled);
         onAutosaveEnabledChange?.(autosaveEnabled);
         if (ollamaBaseUrl !== initialOllamaBaseUrl) {
@@ -284,6 +301,10 @@ function ModelsSection({
           setUrlChangedNotice(true);
           setInitialOllamaBaseUrl(ollamaBaseUrl);
         }
+        if (data.restartRequired || aiEnabled !== initialAiEnabled) {
+          setRestartRequiredNotice(true);
+          setInitialAiEnabled(aiEnabled);
+        }
         setStatus("saved");
       } else {
         setStatus("error");
@@ -291,7 +312,7 @@ function ModelsSection({
     } catch {
       setStatus("error");
     }
-  }, [modelConfig, autocompleteEnabled, autosaveEnabled, ollamaBaseUrl, initialOllamaBaseUrl, onAutocompleteEnabledChange, onAutosaveEnabledChange]);
+  }, [modelConfig, autocompleteEnabled, autosaveEnabled, ollamaBaseUrl, initialOllamaBaseUrl, aiEnabled, initialAiEnabled, onAutocompleteEnabledChange, onAutosaveEnabledChange]);
 
   return (
     <section className="settings-section">
@@ -299,6 +320,27 @@ function ModelsSection({
       <p className="modal-desc">
         Assign different Ollama models per feature. Leave a feature on "Default" to inherit the default model.
       </p>
+      <div className="model-config-row" style={{ marginBottom: 4 }}>
+        <div className="model-config-label">
+          <span className="model-config-name">Enable AI for this workspace</span>
+          <span className="model-config-desc">
+            Turn off to use Episteme as a plain Markdown editor. Changes take effect after restart.
+          </span>
+        </div>
+        <label className="settings-toggle">
+          <input
+            type="checkbox"
+            checked={aiEnabled}
+            onChange={(e) => {
+              setAiEnabled(e.target.checked);
+              setStatus("idle");
+              setValidationError(null);
+              setRestartRequiredNotice(false);
+            }}
+          />
+          <span className="settings-toggle-track" />
+        </label>
+      </div>
       <div className="model-config-row" style={{ marginBottom: 4 }}>
         <div className="model-config-label">
           <span className="model-config-name">Autosave</span>
@@ -389,10 +431,16 @@ function ModelsSection({
       </div>
       <div className="modal-footer">
         <div style={{ flex: 1 }} />
-        {urlChangedNotice && (
+        {validationError && <span className="modal-status-err">{validationError}</span>}
+        {!validationError && restartRequiredNotice && (
+          <span className="modal-status-ok">AI mode changed — restart Episteme to apply.</span>
+        )}
+        {!validationError && !restartRequiredNotice && urlChangedNotice && (
           <span className="modal-status-ok">URL updated. Restart to switch the main chat agent.</span>
         )}
-        {status === "saved" && !urlChangedNotice && <span className="modal-status-ok">Saved</span>}
+        {!validationError && status === "saved" && !urlChangedNotice && !restartRequiredNotice && (
+          <span className="modal-status-ok">Saved</span>
+        )}
         {status === "error" && <span className="modal-status-err">Save failed</span>}
         <button className="modal-btn-primary" onClick={handleSave} disabled={status === "saving"}>
           {status === "saving" ? "Saving…" : "Save"}

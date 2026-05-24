@@ -89,6 +89,12 @@ export interface EpistemeConfig {
   /** Override the Ollama HTTP endpoint. When set, replaces process.env.OLLAMA_URL. */
   ollamaBaseUrl?: string;
   /**
+   * Whether AI features are active for this workspace. `undefined` is treated
+   * as `true` for back-compat with workspaces created before this field existed.
+   * Set to `false` to run Episteme as a plain Markdown editor.
+   */
+  aiEnabled?: boolean;
+  /**
    * Per-tool approval mode. Tools not listed here fall back to whatever the
    * tool's `permission` annotation declares (a tool declared `"none"` is
    * never gated; a tool declared `"per_call"`/`"session"` defaults to "ask").
@@ -104,13 +110,19 @@ function defaultConfig(): EpistemeConfig {
   };
 }
 
-export async function loadConfig(workspaceRoot: string): Promise<EpistemeConfig> {
+export interface LoadedConfig {
+  config: EpistemeConfig;
+  /** True when no config file existed on disk — the workspace is brand new. */
+  isFirstLaunch: boolean;
+}
+
+export async function loadConfig(workspaceRoot: string): Promise<LoadedConfig> {
   const configPath = workspaceConfigPath(workspaceRoot);
   try {
     const raw = await Bun.file(configPath).text();
-    return JSON.parse(raw) as EpistemeConfig;
+    return { config: JSON.parse(raw) as EpistemeConfig, isFirstLaunch: false };
   } catch {
-    return defaultConfig();
+    return { config: defaultConfig(), isFirstLaunch: true };
   }
 }
 
