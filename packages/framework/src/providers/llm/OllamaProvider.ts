@@ -29,6 +29,7 @@ export interface OllamaProviderOptions {
 
 export class OllamaProvider implements LLMProvider {
   private client: Ollama;
+  private endpoint: string;
   private embeddingModel: string;
   private numCtx: number | undefined;
   private think: boolean | "high" | "medium" | "low";
@@ -38,10 +39,30 @@ export class OllamaProvider implements LLMProvider {
     endpoint: string = "http://127.0.0.1:11434",
     options: OllamaProviderOptions = {},
   ) {
+    this.endpoint = endpoint;
     this.client = new Ollama({ host: endpoint });
     this.embeddingModel = options.embeddingModel ?? "nomic-embed-text";
     this.numCtx = options.numCtx;
     this.think = options.think ?? true;
+  }
+
+  /**
+   * Lightweight reachability probe — pings `/api/tags` with a short timeout.
+   * Returns false on any failure (no Ollama daemon, network error, timeout).
+   */
+  async isReachable(timeoutMs: number = 1500): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch(`${this.endpoint}/api/tags`, {
+        method: "GET",
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   async chat(

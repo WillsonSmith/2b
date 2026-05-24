@@ -24,7 +24,7 @@ export function DiagramCommandExtension(
           const placeholderId = crypto.randomUUID();
           this.editor.chain()
             .deleteRange({ from: lineStart, to: from })
-            .insertContentAt(lineStart, { type: "diagramPlaceholder", attrs: { id: placeholderId } })
+            .insertContentAt(lineStart, { type: "diagramPlaceholder", attrs: { id: placeholderId, description } })
             .run();
           callbackRef.current(description, placeholderId);
           return true;

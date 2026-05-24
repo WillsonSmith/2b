@@ -36,6 +36,9 @@ export async function handleEditor(
 
     case "autocomplete_request": {
       if (!msg.context?.trim()) return;
+      // Autocomplete is high-frequency and noisy on backend errors —
+      // staying silent is fine; the global provider banner already covers
+      // the "Ollama is down" case for the user.
       autocomplete.suggest(msg.context).then((text) => {
         if (text.trim()) send(ws, { type: "autocomplete_suggestion", text: text.trim() });
       }).catch(() => {});
@@ -47,7 +50,10 @@ export async function handleEditor(
       if (!text?.trim()) return;
       transformTone(text, tone, config).then((result) => {
         send(ws, { type: "tone_result", text: result.trim(), from, to });
-      }).catch(() => {});
+      }).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : "Failed to transform tone.";
+        send(ws, { type: "error", message });
+      });
       return;
     }
 
@@ -56,7 +62,10 @@ export async function handleEditor(
       if (!text?.trim()) return;
       summarizeSection(text, config).then((result) => {
         send(ws, { type: "summarize_result", text: result.trim(), insertPos });
-      }).catch(() => {});
+      }).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : "Failed to summarize.";
+        send(ws, { type: "error", message });
+      });
       return;
     }
 
@@ -96,8 +105,12 @@ export async function handleEditor(
       const docContent = editorContext.activeContent ?? undefined;
       diagram.generate(description, docContent).then((code) => {
         send(ws, { type: "diagram_result", code, placeholderId });
-      }).catch(() => {
-        send(ws, { type: "error", message: "Failed to generate diagram." });
+      }).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : "Failed to generate diagram.";
+        // Send the failure to the placeholder owner so it can render an
+        // inline error + retry, rather than emitting a generic chat error
+        // that leaves the "Generating diagram…" spinner stuck forever.
+        send(ws, { type: "diagram_result", code: "", placeholderId, error: message });
       });
       return;
     }

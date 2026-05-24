@@ -28,6 +28,8 @@ interface AISidecarProps {
   messages: SidecarMessage[];
   isThinking: boolean;
   agentState: string;
+  /** LLM backend reachability — null until first probe completes. */
+  providerReachable?: boolean | null;
   collapsed: boolean;
   onSend: (text: string) => void;
   onInterrupt: () => void;
@@ -478,6 +480,7 @@ function insertMention(
 interface ChatInputProps {
   isThinking: boolean;
   agentState: string;
+  providerReachable?: boolean | null;
   onSend: (text: string) => void;
   onInterrupt: () => void;
   workspaceFiles?: string[];
@@ -490,7 +493,7 @@ interface ChatInputProps {
   onPlanFollowUp?: (goal: string, priorPlanId: string, approvalMode: "all" | "per_step") => void;
 }
 
-function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles = [], pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument, activePlan, onPlanFollowUp }: ChatInputProps) {
+function ChatInput({ isThinking, agentState, providerReachable, onSend, onInterrupt, workspaceFiles = [], pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument, activePlan, onPlanFollowUp }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -739,9 +742,26 @@ function ChatInput({ isThinking, agentState, onSend, onInterrupt, workspaceFiles
               <GitBranch size={14} />
             </button>
           )}
-          <span className={`sidecar-status${agentState === "thinking" ? " thinking" : agentState === "disconnected" ? " disconnected" : ""}`}>
+          <span
+            className={`sidecar-status${
+              agentState === "thinking"
+                ? " thinking"
+                : agentState === "disconnected" || providerReachable === false
+                  ? " disconnected"
+                  : ""
+            }`}
+            title={
+              agentState === "disconnected"
+                ? "WebSocket disconnected"
+                : providerReachable === false
+                  ? "Ollama backend is not responding"
+                  : undefined
+            }
+          >
             {agentState === "disconnected" ? (
               <span className="icon-inline"><Circle size={8} /> offline</span>
+            ) : providerReachable === false ? (
+              <span className="icon-inline"><Circle size={8} /> Ollama offline</span>
             ) : agentState === "thinking" ? (
               <span className="icon-inline"><CircleDashed size={8} /> thinking</span>
             ) : (
@@ -778,6 +798,7 @@ interface ChatModalProps {
   messages: SidecarMessage[];
   isThinking: boolean;
   agentState: string;
+  providerReachable?: boolean | null;
   onSend: (text: string) => void;
   onInterrupt: () => void;
   onClose: () => void;
@@ -798,7 +819,7 @@ interface ChatModalProps {
   onPlanFollowUpFromMenu?: (goal: string, priorPlanId: string) => void;
 }
 
-function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onRegenerate, onSendToPlan, onDeleteMessage, onRemoveMention, pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument, activePlan, onPlanFollowUp, onPlanRequestFromMenu, onPlanFollowUpFromMenu }: ChatModalProps) {
+function ChatModal({ messages, isThinking, agentState, providerReachable, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onRegenerate, onSendToPlan, onDeleteMessage, onRemoveMention, pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument, activePlan, onPlanFollowUp, onPlanRequestFromMenu, onPlanFollowUpFromMenu }: ChatModalProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -827,7 +848,7 @@ function ChatModal({ messages, isThinking, agentState, onSend, onInterrupt, onCl
             onPlanRequestFromMenu={onPlanRequestFromMenu}
           />
         </div>
-        <ChatInput isThinking={isThinking} agentState={agentState} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} activePlan={activePlan} onPlanFollowUp={onPlanFollowUp} />
+        <ChatInput isThinking={isThinking} agentState={agentState} providerReachable={providerReachable} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} activePlan={activePlan} onPlanFollowUp={onPlanFollowUp} />
       </div>
     </div>
   );
@@ -839,6 +860,7 @@ export function AISidecar({
   messages,
   isThinking,
   agentState,
+  providerReachable,
   collapsed,
   onSend,
   onInterrupt,
@@ -934,7 +956,7 @@ export function AISidecar({
             onPlanFollowUp={stablePlanFollowUpFromMenu}
             onPlanRequestFromMenu={stablePlanRequestFromMenu}
           />
-          <ChatInput isThinking={isThinking} agentState={agentState} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} activePlan={activePlan} onPlanFollowUp={onPlanFollowUp} />
+          <ChatInput isThinking={isThinking} agentState={agentState} providerReachable={providerReachable} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} activePlan={activePlan} onPlanFollowUp={onPlanFollowUp} />
         </div>
       </div>
 
@@ -943,6 +965,7 @@ export function AISidecar({
           messages={messages}
           isThinking={isThinking}
           agentState={agentState}
+          providerReachable={providerReachable}
           onSend={stableSend}
           onInterrupt={onInterrupt}
           onClose={() => setExpanded(false)}

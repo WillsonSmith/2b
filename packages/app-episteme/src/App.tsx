@@ -128,6 +128,12 @@ function App() {
   const [workspaceRoot, setWorkspaceRoot] = useState("");
   const [sidecarPendingInput, setSidecarPendingInput] = useState("");
   const [writingAids, setWritingAids] = useState<WritingAidsConfig>({});
+  // LLM provider (Ollama) reachability — distinct from WebSocket connection state.
+  // `null` means we haven't received an initial probe yet.
+  const [providerStatus, setProviderStatus] = useState<
+    { reachable: boolean; endpoint: string; reason?: string } | null
+  >(null);
+  const [providerBannerDismissed, setProviderBannerDismissed] = useState(false);
   const [editorCommand, setEditorCommand] = useState<{ name: string; nonce: number } | null>(null);
   const editorCommandNonce = useRef(0);
   const dispatchEditorCommand = useCallback((name: string) => {
@@ -746,16 +752,27 @@ function App() {
       fileManager.refreshFiles();
     });
     const unsubError = ws.subscribe("error", (msg) => {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", text: `[Error] ${msg.message}` },
-      ]);
+      // Coalesce: if the most recent assistant message is the same error,
+      // skip pushing a duplicate. Prevents the chat from filling up with
+      // identical "[Error] Unable to connect" messages while Ollama is down.
+      const text = `[Error] ${msg.message}`;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === "assistant" && last.text === text) return prev;
+        return [...prev, { role: "assistant", text }];
+      });
       editorFeatures.setIsGeneratingMetadata(false);
       editorFeatures.setIsTocGenerating(false);
       research.setIsSearching(false);
       research.setIsDetectingGaps(false);
       conflictsGraph.setIsScanning(false);
       conflictsGraph.setIsLoadingGraph(false);
+    });
+    const unsubProvider = ws.subscribe("provider_status", (msg) => {
+      setProviderStatus({ reachable: msg.reachable, endpoint: msg.endpoint, reason: msg.reason });
+      // When the provider comes back online, re-arm the banner so the next
+      // outage is visible again.
+      if (msg.reachable) setProviderBannerDismissed(false);
     });
     const unsubFileContent = ws.subscribe("file_content", () => {
       editorFeatures.setGhostText("");
@@ -841,6 +858,7 @@ function App() {
       unsubFormat();
       unsubIngest();
       unsubError();
+      unsubProvider();
       unsubFileContent();
       unsubFileCreated();
       unsubIndex();
@@ -1029,6 +1047,28 @@ function App() {
       {/* Offline notice — only when AI is supposed to be running */}
       {aiEnabled && ws.agentState === "disconnected" && (
         <div className="offline-banner">AI unavailable — reconnecting…</div>
+      )}
+
+      {/* LLM provider down — distinct from WebSocket disconnect. The server is
+          reachable but Ollama isn't, so chat/fill/diagram/etc. will all fail. */}
+      {aiEnabled
+        && ws.agentState !== "disconnected"
+        && providerStatus
+        && !providerStatus.reachable
+        && !providerBannerDismissed && (
+        <div className="provider-offline-banner">
+          <span>
+            <strong>Ollama unreachable</strong> at {providerStatus.endpoint} —
+            chat, AI fill, diagrams, and other AI features will not work until
+            it&rsquo;s running. Start it with <code>ollama serve</code>.
+          </span>
+          <button
+            className="large-file-banner-btn"
+            onClick={() => setProviderBannerDismissed(true)}
+          >
+            Dismiss
+          </button>
+        </div>
       )}
 
       {/* Body */}
@@ -1328,6 +1368,7 @@ function App() {
             messages={messages}
             isThinking={ws.agentState === "thinking"}
             agentState={ws.agentState}
+            providerReachable={providerStatus?.reachable ?? null}
             collapsed={sidecarCollapsed}
             onSend={sendToAgent}
             onInterrupt={interrupt}

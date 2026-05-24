@@ -99,7 +99,7 @@ export type ServerMsg =
   | { type: "metadata_result"; yaml: string }
   | { type: "toc_result"; entries: TocEntry[] }
   | { type: "toc_stored"; file: string; entries: TocEntry[] }
-  | { type: "diagram_result"; code: string; placeholderId: string }
+  | { type: "diagram_result"; code: string; placeholderId: string; error?: string }
   | { type: "ai_fill_result"; id: string; content: string; error?: string }
   | { type: "table_result"; text: string; insertPos: number }
   | { type: "search_result"; results: UnifiedSearchResponse }
@@ -115,6 +115,7 @@ export type ServerMsg =
   | { type: "file_externally_changed"; path: string; content: string }
   | { type: "backlinks_result"; path: string; items: BacklinkItem[] }
   | { type: "error"; message: string }
+  | { type: "provider_status"; reachable: boolean; endpoint: string; reason?: string }
   | { type: "plan_created"; plan: EpistemePlan }
   | { type: "plan_updated"; plan: EpistemePlan }
   | { type: "plan_step_started"; planId: string; stepId: string }

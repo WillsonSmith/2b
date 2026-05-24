@@ -19,6 +19,7 @@ import { getModelCapabilities } from "./modelCapabilities.ts";
 type ProviderWithModelControl = LLMProvider & {
   setModel?(model: string): void;
   getModel?(): string;
+  isReachable?(timeoutMs?: number): Promise<boolean>;
 };
 
 /**
@@ -56,6 +57,10 @@ export class ModelCapabilityProvider implements LLMProvider {
 
   getEmbedding(text: string): Promise<number[]> {
     return this.inner.getEmbedding(text);
+  }
+
+  async isReachable(timeoutMs?: number): Promise<boolean> {
+    return (await this.inner.isReachable?.(timeoutMs)) ?? true;
   }
 
   setModel(model: string): void {

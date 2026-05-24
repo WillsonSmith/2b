@@ -64,7 +64,7 @@ interface EditorProps {
   onMetadataRequest?: () => void;
   isGeneratingMetadata?: boolean;
   onDiagramRequest?: (description: string, placeholderId: string) => void;
-  diagramResult?: { code: string; placeholderId: string } | null;
+  diagramResult?: { code: string; placeholderId: string; error?: string } | null;
   onDiagramApplied?: () => void;
   onAIFillRequest?: (id: string, instruction: string) => void;
   aiFillResult?: { id: string; content: string; error?: string } | null;
@@ -317,7 +317,7 @@ export function Editor({
     extensions: [
       StarterKit.configure({ link: { openOnClick: false }, codeBlock: false }),
       MermaidCodeBlock,
-      DiagramPlaceholderExtension,
+      DiagramPlaceholderExtension(diagramCallbackRef),
       Markdown.configure({ transformPastedText: true }),
       Placeholder.configure({ placeholder: "Start writing… (type /diagram <description> to insert a diagram)" }),
       CharacterCount,
@@ -392,13 +392,22 @@ export function Editor({
 
   useEffect(() => {
     if (!editor || !diagramResult) return;
-    const { code, placeholderId } = diagramResult;
-    const replacement = "```mermaid\n" + code + "\n```";
+    const { code, placeholderId, error } = diagramResult;
     editor.state.doc.descendants((node, pos) => {
-      if (node.type.name === "diagramPlaceholder" && node.attrs.id === placeholderId) {
+      if (node.type.name !== "diagramPlaceholder" || node.attrs.id !== placeholderId) return undefined;
+      if (error) {
+        // Mark the placeholder as errored — the node view renders the message
+        // inline with retry / dismiss controls instead of staying spinning.
+        const tr = editor.state.tr.setNodeMarkup(pos, undefined, {
+          ...node.attrs,
+          error,
+        });
+        editor.view.dispatch(tr);
+      } else {
+        const replacement = "```mermaid\n" + code + "\n```";
         editor.chain().focus().insertContentAt({ from: pos, to: pos + node.nodeSize }, replacement).run();
-        return false;
       }
+      return false;
     });
     onDiagramApplied?.();
   }, [diagramResult]);
@@ -423,18 +432,18 @@ export function Editor({
     const { pos, size } = target as { pos: number; size: number };
     if (error || !content.trim()) {
       const node = editor.state.doc.nodeAt(pos);
+      const message = error ?? "AI fill returned empty content";
       const tr = editor.state.tr.setNodeMarkup(pos, undefined, {
         ...node?.attrs,
         generating: false,
+        error: message,
       });
       editor.view.dispatch(tr);
-      const message = error ?? "AI fill returned empty content";
       console.error("[ai-fill]", message);
       onAIFillApplied?.();
       advanceFillQueue();
       return;
     }
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const parser = (editor.storage as any).markdown?.parser;
     let inserted = false;
@@ -632,7 +641,7 @@ export function Editor({
     const placeholderId = crypto.randomUUID();
     editor.chain().focus().insertContentAt(diagramInsertPosRef.current, {
       type: "diagramPlaceholder",
-      attrs: { id: placeholderId },
+      attrs: { id: placeholderId, description },
     }).run();
     onDiagramRequest(description, placeholderId);
     setDiagramBarOpen(false);

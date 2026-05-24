@@ -385,7 +385,36 @@ export async function startEpistemServer(
   const tickMetrics = new TickMetricsAggregator(50);
   agent.on("tick_metrics", (m) => tickMetrics.record(m));
 
-  agent.on("error", (err: Error) => broadcast({ type: "error", message: err.message }));
+  // ── LLM provider health monitor ────────────────────────────────────────────
+  // Periodically probes the LLM backend (Ollama) and broadcasts state changes
+  // so the UI can render a banner / sidecar badge. Also probes immediately
+  // whenever the agent emits an error, so the UI updates without waiting for
+  // the next interval.
+  const providerEndpoint = process.env["OLLAMA_URL"] ?? "http://127.0.0.1:11434";
+  const healthProbe = createProvider(featureModel(config, "default"));
+  let lastProviderReachable: boolean | null = null;
+  async function probeProvider(reason?: string): Promise<boolean> {
+    const reachable = await healthProbe.isReachable(1500);
+    if (reachable !== lastProviderReachable) {
+      lastProviderReachable = reachable;
+      broadcast({
+        type: "provider_status",
+        reachable,
+        endpoint: providerEndpoint,
+        reason: reachable ? undefined : reason ?? "Backend is not responding",
+      });
+    }
+    return reachable;
+  }
+  // Initial probe + 10s heartbeat.
+  probeProvider();
+  setInterval(() => probeProvider(), 10_000);
+
+  agent.on("error", (err: Error) => {
+    broadcast({ type: "error", message: err.message });
+    // Connection-class errors → re-probe immediately so the UI flips to offline.
+    probeProvider(err.message);
+  });
   agent.on("speak", (text) => {
     workspaceDb.appendChatMessage("assistant", text);
     broadcast({ type: "speak", text });

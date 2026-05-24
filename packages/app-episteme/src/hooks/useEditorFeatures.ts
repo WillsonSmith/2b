@@ -23,7 +23,7 @@ export function useEditorFeatures(
   const [tocEntries, setTocEntries] = useState<TocEntry[]>([]);
   const [isTocGenerating, setIsTocGenerating] = useState(false);
 
-  const [diagramResult, setDiagramResult] = useState<{ code: string; placeholderId: string } | null>(null);
+  const [diagramResult, setDiagramResult] = useState<{ code: string; placeholderId: string; error?: string } | null>(null);
   const [aiFillResult, setAIFillResult] = useState<{ id: string; content: string; error?: string } | null>(null);
   const [tableResult, setTableResult] = useState<{ text: string; insertPos: number } | null>(null);
 
@@ -142,7 +142,7 @@ export function useEditorFeatures(
       setTocEntries(msg.entries);
     });
     const unsubDiagram = subscribe("diagram_result", (msg) =>
-      setDiagramResult({ code: msg.code, placeholderId: msg.placeholderId }),
+      setDiagramResult({ code: msg.code, placeholderId: msg.placeholderId, error: msg.error }),
     );
     const unsubAIFill = subscribe("ai_fill_result", (msg) =>
       setAIFillResult({ id: msg.id, content: msg.content, error: msg.error }),

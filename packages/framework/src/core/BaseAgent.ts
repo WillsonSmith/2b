@@ -26,6 +26,7 @@
  */
 import { EventEmitter } from "node:events";
 import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
+import { isConnectionError } from "../providers/llm/LLMProvider.ts";
 import type { AgentPlugin, ToolDefinition } from "./Plugin.ts";
 import type { InputSource } from "./InputSource.ts";
 import type { AgentConfig, AmbientOptions, Message, MemoryWriteRequest, TickMetrics } from "./types.ts";
@@ -363,9 +364,20 @@ export class BaseAgent extends EventEmitter {
       try {
         await this.act(direct, ambient);
       } catch (error) {
-        this.directQueue.unshift(...direct);
-        this.ambientQueue.unshift(...ambient);
         const err = error instanceof Error ? error : new Error(String(error));
+        // Connection-class errors must NOT be re-queued — the backend is down,
+        // so a retry on the next heartbeat just floods the user with duplicate
+        // "[Error] Unable to connect" messages indefinitely. Drop the input
+        // and surface a single error event; the user can re-send when ready.
+        if (!isConnectionError(err)) {
+          this.directQueue.unshift(...direct);
+          this.ambientQueue.unshift(...ambient);
+        } else {
+          logger.warn(
+            "BaseAgent",
+            `LLM unreachable — dropping ${direct.length} direct + ${ambient.length} ambient input(s) instead of retrying`,
+          );
+        }
         this.emit("error", err);
         for (const plugin of this.plugins) {
           try {

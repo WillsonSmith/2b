@@ -58,4 +58,25 @@ export interface LLMProvider {
    *   fails.
    */
   getEmbedding(text: string): Promise<number[]>;
+
+  /**
+   * Cheap, non-throwing probe of whether the backend is reachable.
+   * Implementations should perform a lightweight HEAD/GET against a known
+   * endpoint with a short timeout. Returns `true` when the backend responds,
+   * `false` on any failure (network unreachable, timeout, non-2xx response).
+   */
+  isReachable?(timeoutMs?: number): Promise<boolean>;
+}
+
+/** Connection-class errors that callers should not retry indefinitely. */
+export function isConnectionError(error: unknown): boolean {
+  if (!error) return false;
+  const e = error as { code?: string; cause?: { code?: string }; message?: string };
+  const code = e.code ?? e.cause?.code;
+  if (code === "ConnectionRefused" || code === "ECONNREFUSED" || code === "ENOTFOUND" ||
+      code === "ETIMEDOUT" || code === "EAI_AGAIN" || code === "ECONNRESET") {
+    return true;
+  }
+  const msg = String(e.message ?? error);
+  return /unable to connect|fetch failed|connection refused|network error/i.test(msg);
 }
