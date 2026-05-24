@@ -6,7 +6,6 @@ import { DEFAULT_HIGHLIGHT_COLORS, type HighlightColorKey } from "../features/th
 interface ModelConfig {
   default: string;
   autocomplete?: string;
-  linting?: string;
   research?: string;
   export?: string;
   embedding?: string;
@@ -28,7 +27,6 @@ interface SettingsPanelProps {
   onClose: () => void;
   onAutocompleteEnabledChange?: (enabled: boolean) => void;
   onAutosaveEnabledChange?: (enabled: boolean) => void;
-  onLintEnabledChange?: (enabled: boolean) => void;
   onWritingAidsChange?: (aids: WritingAidsConfig) => void;
   initialSection?: SettingsSection;
 }
@@ -55,7 +53,6 @@ const SHORTCUTS = [
 const FEATURE_LABELS: Array<{ key: keyof ModelConfig; label: string; desc: string }> = [
   { key: "default", label: "Default", desc: "General chat and structural tasks" },
   { key: "autocomplete", label: "Autocomplete", desc: "Inline ghost-text suggestions" },
-  { key: "linting", label: "Linting", desc: "AI writing quality checks (runs on save)" },
   { key: "research", label: "Research", desc: "Gap detection and deep research synthesis" },
   { key: "embedding", label: "Embedding", desc: "Semantic memory and search (must be an embedding model, e.g. nomic-embed-text)" },
 ];
@@ -76,7 +73,6 @@ export function SettingsPanel({
   onClose,
   onAutocompleteEnabledChange,
   onAutosaveEnabledChange,
-  onLintEnabledChange,
   onWritingAidsChange,
   initialSection,
 }: SettingsPanelProps) {
@@ -144,7 +140,6 @@ export function SettingsPanel({
             <ModelsSection
               onAutocompleteEnabledChange={onAutocompleteEnabledChange}
               onAutosaveEnabledChange={onAutosaveEnabledChange}
-              onLintEnabledChange={onLintEnabledChange}
             />
           )}
           {activeSection === "permissions" && <PermissionsSection />}
@@ -222,20 +217,17 @@ function StyleGuideSection() {
 interface ModelsSectionProps {
   onAutocompleteEnabledChange?: (enabled: boolean) => void;
   onAutosaveEnabledChange?: (enabled: boolean) => void;
-  onLintEnabledChange?: (enabled: boolean) => void;
 }
 
 function ModelsSection({
   onAutocompleteEnabledChange,
   onAutosaveEnabledChange,
-  onLintEnabledChange,
 }: ModelsSectionProps) {
   const [models, setModels] = useState<string[]>([]);
   const [embeddingModels, setEmbeddingModels] = useState<string[]>([]);
   const [modelConfig, setModelConfig] = useState<ModelConfig>({ default: "" });
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(false);
   const [autosaveEnabled, setAutosaveEnabled] = useState(true);
-  const [lintEnabled, setLintEnabled] = useState(true);
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState("");
   const [initialOllamaBaseUrl, setInitialOllamaBaseUrl] = useState("");
   const [urlChangedNotice, setUrlChangedNotice] = useState(false);
@@ -244,11 +236,10 @@ function ModelsSection({
   useEffect(() => {
     fetch("/api/config")
       .then((r) => r.json())
-      .then((data: { models?: ModelConfig; features?: { autocomplete?: boolean; autosave?: boolean; lint?: boolean }; ollamaBaseUrl?: string }) => {
+      .then((data: { models?: ModelConfig; features?: { autocomplete?: boolean; autosave?: boolean }; ollamaBaseUrl?: string }) => {
         if (data.models) setModelConfig(data.models);
         if (data.features?.autocomplete !== undefined) setAutocompleteEnabled(data.features.autocomplete);
         if (data.features?.autosave !== undefined) setAutosaveEnabled(data.features.autosave);
-        if (data.features?.lint !== undefined) setLintEnabled(data.features.lint);
         const url = data.ollamaBaseUrl ?? "";
         setOllamaBaseUrl(url);
         setInitialOllamaBaseUrl(url);
@@ -274,14 +265,13 @@ function ModelsSection({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           models: modelConfig,
-          features: { autocomplete: autocompleteEnabled, autosave: autosaveEnabled, lint: lintEnabled },
+          features: { autocomplete: autocompleteEnabled, autosave: autosaveEnabled },
           ollamaBaseUrl,
         }),
       });
       if (res.ok) {
         onAutocompleteEnabledChange?.(autocompleteEnabled);
         onAutosaveEnabledChange?.(autosaveEnabled);
-        onLintEnabledChange?.(lintEnabled);
         if (ollamaBaseUrl !== initialOllamaBaseUrl) {
           fetch("/api/models")
             .then((r) => r.json())
@@ -301,7 +291,7 @@ function ModelsSection({
     } catch {
       setStatus("error");
     }
-  }, [modelConfig, autocompleteEnabled, autosaveEnabled, lintEnabled, ollamaBaseUrl, initialOllamaBaseUrl, onAutocompleteEnabledChange, onAutosaveEnabledChange, onLintEnabledChange]);
+  }, [modelConfig, autocompleteEnabled, autosaveEnabled, ollamaBaseUrl, initialOllamaBaseUrl, onAutocompleteEnabledChange, onAutosaveEnabledChange]);
 
   return (
     <section className="settings-section">
@@ -333,20 +323,6 @@ function ModelsSection({
             type="checkbox"
             checked={autocompleteEnabled}
             onChange={(e) => { setAutocompleteEnabled(e.target.checked); setStatus("idle"); }}
-          />
-          <span className="settings-toggle-track" />
-        </label>
-      </div>
-      <div className="model-config-row" style={{ marginBottom: 8 }}>
-        <div className="model-config-label">
-          <span className="model-config-name">Linting</span>
-          <span className="model-config-desc">Run AI writing quality checks after 5s of inactivity</span>
-        </div>
-        <label className="settings-toggle">
-          <input
-            type="checkbox"
-            checked={lintEnabled}
-            onChange={(e) => { setLintEnabled(e.target.checked); setStatus("idle"); }}
           />
           <span className="settings-toggle-track" />
         </label>

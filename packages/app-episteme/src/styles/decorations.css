@@ -40,20 +40,6 @@
 .style-issue--tint.style-issue--cliche { color: var(--style-cliche); }
 .style-issue--tint.style-issue--redundancy { color: var(--style-redundancy); }
 
-/* ── Lint decorations ────────────────────────────────────────────────── */
-.lint-clarity {
-  border-bottom: 2px solid var(--accent);
-  cursor: help;
-}
-.lint-conciseness {
-  border-bottom: 2px solid var(--yellow);
-  cursor: help;
-}
-.lint-fluff {
-  border-bottom: 2px solid var(--red);
-  cursor: help;
-}
-
 /* ── Broken link decoration ──────────────────────────────────────────── */
 .link-broken {
   color: var(--text-muted);

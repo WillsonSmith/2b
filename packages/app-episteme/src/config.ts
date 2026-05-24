@@ -9,8 +9,6 @@ export interface EpistemModelConfig {
   autocomplete?: string;
   /** Powerful model for deep research synthesis and gap detection. */
   research?: string;
-  /** Fast model for AI linting and style checks (runs on a 5s idle debounce). */
-  linting?: string;
   /** Model for multi-format export rendering. */
   export?: string;
   /**
@@ -34,8 +32,6 @@ export interface EpistemeFeatures {
   autocomplete?: boolean;
   /** Whether the editor autosaves after a pause in typing. Default: true. */
   autosave?: boolean;
-  /** Whether AI linting runs on a 5s idle debounce. Default: true. */
-  lint?: boolean;
   /** Writing-aid visualization layers (iA Writer-style). All default off. */
   writingAids?: WritingAidsConfig;
 }

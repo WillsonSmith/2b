@@ -24,7 +24,6 @@ import { createProvider } from "@2b/framework/providers/llm/createProvider.ts";
 import { TickMetricsAggregator } from "@2b/framework/core/TickMetricsAggregator.ts";
 import { PlanningController } from "../planning/PlanningController.ts";
 import { AutocompleteRunner } from "../features/autocomplete.ts";
-import { LintRunner } from "../features/lint.ts";
 import { assertNever, type ClientMsg, type ServerMsg } from "../protocol.ts";
 import index from "../index.html";
 import type { WsContext } from "./context.ts";
@@ -181,7 +180,6 @@ async function dispatch(
     case "toc_request":
     case "diagram_request":
     case "table_request":
-    case "lint_request":
       return handleEditor(msg, ctx, ws);
 
     case "ai_fill_request":
@@ -256,7 +254,6 @@ export async function startEpistemServer(
   );
 
   const autocomplete = new AutocompleteRunner(config);
-  const linter = new LintRunner(config);
 
   const clients = new Set<ServerWebSocket<unknown>>();
 
@@ -316,7 +313,6 @@ export async function startEpistemServer(
     config,
     absRoot,
     autocomplete,
-    linter,
     broadcast,
     send,
     collectMarkdownFiles: () => collectMarkdownFiles(absRoot),

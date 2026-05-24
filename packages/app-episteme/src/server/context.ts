@@ -12,7 +12,6 @@ import type { StyleGuidePlugin } from "../plugins/StyleGuidePlugin.ts";
 import type { ContradictionPlugin } from "../plugins/ContradictionPlugin.ts";
 import type { PlanningController } from "../planning/PlanningController.ts";
 import type { AutocompleteRunner } from "../features/autocomplete.ts";
-import type { LintRunner } from "../features/lint.ts";
 import type { ServerMsg } from "../protocol.ts";
 import type { WebSocketPermissionManager } from "./WebSocketPermissionManager.ts";
 
@@ -36,7 +35,6 @@ export interface WsContext {
   config: EpistemeConfig;
   absRoot: string;
   autocomplete: AutocompleteRunner;
-  linter: LintRunner;
   broadcast: (msg: ServerMsg) => void;
   send: (ws: ServerWebSocket<unknown>, msg: ServerMsg) => void;
   collectMarkdownFiles: () => Promise<string[]>;

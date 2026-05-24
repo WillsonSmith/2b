@@ -76,7 +76,6 @@ export function useWebSocket(): UseWebSocketReturn {
       case "ingest_result":
       case "tone_result":
       case "summarize_result":
-      case "lint_result":
       case "metadata_result":
       case "toc_result":
       case "toc_stored":

@@ -172,7 +172,6 @@ function App() {
     ws.wsRef,
     ws.agentState,
     fileManager.activeFile,
-    fileManager.editorContent,
     fileManager.editorContentRef,
     fileManager.setEditorContent,
     ws.subscribe,
@@ -264,7 +263,6 @@ function App() {
           features?: {
             autocomplete?: boolean;
             autosave?: boolean;
-            lint?: boolean;
             writingAids?: WritingAidsConfig;
           };
         }) => {
@@ -272,8 +270,6 @@ function App() {
             editorFeatures.setAutocompleteEnabled(data.features.autocomplete);
           if (data.features?.autosave !== undefined)
             fileManager.setAutosaveEnabled(data.features.autosave);
-          if (data.features?.lint !== undefined)
-            editorFeatures.setLintEnabled(data.features.lint);
           if (data.features?.writingAids)
             setWritingAids(data.features.writingAids);
         },
@@ -742,12 +738,10 @@ function App() {
     });
     const unsubFileContent = ws.subscribe("file_content", () => {
       editorFeatures.setGhostText("");
-      editorFeatures.setLintIssues([]);
       setDismissedLargeFile(false);
     });
     const unsubFileCreated = ws.subscribe("file_created", () => {
       editorFeatures.setGhostText("");
-      editorFeatures.setLintIssues([]);
     });
     const unsubIndex = ws.subscribe("index_progress", (msg) => {
       if (msg.total === 0 || msg.indexed >= msg.total) setIndexProgress(null);
@@ -976,7 +970,6 @@ function App() {
           onClose={() => setShowSettings(false)}
           onAutocompleteEnabledChange={editorFeatures.setAutocompleteEnabled}
           onAutosaveEnabledChange={fileManager.setAutosaveEnabled}
-          onLintEnabledChange={editorFeatures.setLintEnabled}
           onWritingAidsChange={setWritingAids}
           initialSection={settingsInitialSection}
         />
@@ -1122,7 +1115,6 @@ function App() {
             summarizeResult={editorFeatures.summarizeResult}
             onToneApplied={() => editorFeatures.setToneReplacement(null)}
             onSummarizeApplied={() => editorFeatures.setSummarizeResult(null)}
-            lintIssues={editorFeatures.lintIssues}
             onMetadataRequest={editorFeatures.handleMetadataRequest}
             isGeneratingMetadata={editorFeatures.isGeneratingMetadata}
             metadataResult={editorFeatures.metadataResult}

@@ -11,7 +11,6 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { ChevronUp, ChevronDown, X } from "lucide-react";
-import type { LintIssue } from "../../features/lint.ts";
 import {
   isLocalLink,
   resolveLocalHref,
@@ -20,7 +19,6 @@ import {
 } from "../../features/links.ts";
 import type { LinkSuggestionItem } from "../../features/links.ts";
 import { GhostTextExtension } from "./extensions/ghostText.ts";
-import { LintExtension, resolveIssuePositions, type ResolvedIssue } from "./extensions/lint.ts";
 import { FindExtension, resolveFindMatches, type FindMatch, type FindState } from "./extensions/find.ts";
 import { MarkdownRevealExtension } from "./extensions/markdownReveal.ts";
 import {
@@ -63,7 +61,6 @@ interface EditorProps {
   summarizeResult?: { text: string; insertPos: number } | null;
   onToneApplied?: () => void;
   onSummarizeApplied?: () => void;
-  lintIssues?: LintIssue[];
   onMetadataRequest?: () => void;
   isGeneratingMetadata?: boolean;
   onDiagramRequest?: (description: string, placeholderId: string) => void;
@@ -218,7 +215,6 @@ export function Editor({
   summarizeResult,
   onToneApplied,
   onSummarizeApplied,
-  lintIssues = [],
   onMetadataRequest,
   isGeneratingMetadata,
   onDiagramRequest,
@@ -249,7 +245,6 @@ export function Editor({
   command,
 }: EditorProps) {
   const ghostRef = useRef(ghostText);
-  const lintRef = useRef<ResolvedIssue[]>([]);
   const localLinksRef = useRef<ResolvedLocalLink[]>([]);
   const filesRef = useRef<string[]>(workspaceFiles);
   filesRef.current = workspaceFiles;
@@ -333,7 +328,6 @@ export function Editor({
       TableHeader,
       TableCell,
       GhostTextExtension(ghostRef, handleAccept, handleDismiss),
-      LintExtension(lintRef),
       FindExtension(findStateRef),
       MarkdownRevealExtension,
       DiagramCommandExtension(diagramCallbackRef),
@@ -492,13 +486,6 @@ export function Editor({
     editor.chain().focus().insertContentAt(insertPos, "\n\n" + text + "\n\n").run();
     onTableApplied?.();
   }, [tableResult]);
-
-  useEffect(() => {
-    if (!editor) return;
-    lintRef.current = resolveIssuePositions(editor.state.doc, lintIssues);
-    const { tr } = editor.state;
-    editor.view.dispatch(tr.setMeta("lint-refresh", true));
-  }, [lintIssues, editor]);
 
   // Refresh writing-aid decorations when their toggles change.
   useEffect(() => {
