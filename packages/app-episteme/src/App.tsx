@@ -202,13 +202,11 @@ function AppBody({
   const activeFile = useSignalValue(file.activeFile);
   const editorContent = useSignalValue(file.editorContent);
   const workspaceFiles = useSignalValue(file.workspaceFiles);
-  const workspaceFolders = useSignalValue(file.workspaceFolders);
   const workspaceName = useSignalValue(file.workspaceName);
   const isDirty = useSignalValue(file.isDirty);
   const externalContent = useSignalValue(file.externalContent);
   const needsWorkspace = useSignalValue(file.needsWorkspace);
   const isPickingWorkspace = useSignalValue(file.isPickingWorkspace);
-  const workspaceRoot = useSignalValue(file.workspaceRoot);
   const expandedDirs = useSignalValue(file.expandedDirs);
   const focusSnapshot = useSignalValue(ui.focusSnapshot);
   const showSettings = useSignalValue(ui.showSettings);
@@ -844,23 +842,7 @@ function AppBody({
             </div>
           </nav>
         )}
-        <FileTree
-          files={workspaceFiles}
-          folders={workspaceFolders}
-          activeFile={activeFile}
-          onFileSelect={file.openFile}
-          onRefresh={file.refreshFiles}
-          onCreateFile={file.createFile}
-          onCreateFolder={file.createFolder}
-          onRenameFile={file.renameFile}
-          onRenameFolder={file.renameFolder}
-          onDeleteFile={file.deleteFile}
-          onOpenInFinder={file.openInFinder}
-          workspaceRoot={workspaceRoot}
-          initialExpandedDirs={expandedDirs}
-          onExpandedChange={file.setExpandedDirs}
-          collapsed={fileTreeCollapsed}
-        />
+        <FileTree />
 
         <div
           style={{
