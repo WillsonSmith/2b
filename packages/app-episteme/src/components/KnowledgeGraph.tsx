@@ -1,18 +1,10 @@
 import { useRef, useEffect, useCallback } from "react";
 import { FolderSync, RotateCw } from "lucide-react";
 import type { GraphData, GraphNode, GraphLink } from "../plugins/WorkspacePlugin.ts";
+import { useConflictsCtx } from "../state/ConflictsContext.tsx";
+import { useSignalValue } from "../state/signals.ts";
 
 export type { GraphData, GraphNode, GraphLink };
-
-interface KnowledgeGraphProps {
-  onRefresh: () => void;
-  onReindex: () => void;
-  onLoadMore?: () => void;
-  onNodeClick: (file: string) => void;
-  graphData: GraphData | null;
-  pagination?: { offset: number; limit: number; totalFiles: number } | null;
-  isLoading: boolean;
-}
 
 interface GraphPalette {
   bg: string;
@@ -33,15 +25,15 @@ function readPalette(): GraphPalette {
   };
 }
 
-export function KnowledgeGraph({
-  onRefresh,
-  onReindex,
-  onLoadMore,
-  onNodeClick,
-  graphData,
-  pagination,
-  isLoading,
-}: KnowledgeGraphProps) {
+export function KnowledgeGraph() {
+  const conflictsGraph = useConflictsCtx();
+  const graphData = useSignalValue(conflictsGraph.graphData);
+  const pagination = useSignalValue(conflictsGraph.graphPagination);
+  const isLoading = useSignalValue(conflictsGraph.isLoadingGraph);
+  const onRefresh = conflictsGraph.handleRefreshGraph;
+  const onReindex = conflictsGraph.handleReindex;
+  const onLoadMore = conflictsGraph.handleLoadMoreGraph;
+  const onNodeClick = conflictsGraph.handleGraphNodeClick;
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);

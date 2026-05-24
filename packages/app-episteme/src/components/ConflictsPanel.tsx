@@ -1,19 +1,15 @@
 import { RotateCw } from "lucide-react";
 import type { ContradictionRecord } from "../plugins/ContradictionPlugin.ts";
+import { useConflictsCtx } from "../state/ConflictsContext.tsx";
+import { useSignalValue } from "../state/signals.ts";
 
 export type { ContradictionRecord };
 
-interface ConflictsPanelProps {
-  onRefresh: () => void;
-  contradictions: ContradictionRecord[];
-  isLoading: boolean;
-}
-
-export function ConflictsPanel({
-  onRefresh,
-  contradictions,
-  isLoading,
-}: ConflictsPanelProps) {
+export function ConflictsPanel() {
+  const conflictsGraph = useConflictsCtx();
+  const contradictions = useSignalValue(conflictsGraph.contradictions);
+  const isLoading = useSignalValue(conflictsGraph.isScanning);
+  const onRefresh = conflictsGraph.handleContradictionScan;
   return (
     <div className="conflicts-panel">
       <div className="conflicts-panel-header">

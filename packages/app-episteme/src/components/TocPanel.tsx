@@ -1,14 +1,9 @@
 import { Loader2, Sparkles, Clock } from "lucide-react";
 import { useDebounce } from "../hooks/useDebounce.ts";
-import type { TocEntry } from "../features/toc.ts";
 import { sectionHash } from "../features/tocHash.ts";
-
-interface TocPanelProps {
-  content: string;
-  tocEntries: TocEntry[];
-  isAnnotating: boolean;
-  onAnnotate: () => void;
-}
+import { useFiles } from "../state/FileContext.tsx";
+import { useEditor } from "../state/EditorContext.tsx";
+import { useSignalValue } from "../state/signals.ts";
 
 interface HeadingData {
   level: number;
@@ -52,12 +47,14 @@ function scrollToHeading(text: string): void {
   }
 }
 
-export function TocPanel({
-  content,
-  tocEntries,
-  isAnnotating,
-  onAnnotate,
-}: TocPanelProps) {
+export function TocPanel() {
+  const file = useFiles();
+  const editor = useEditor();
+  const content = useSignalValue(file.editorContent);
+  const tocEntries = useSignalValue(editor.tocEntries);
+  const isAnnotating = useSignalValue(editor.isTocGenerating);
+  const onAnnotate = editor.handleGenerateToc;
+
   const debouncedContent = useDebounce(content, 600);
   const headings = extractHeadingData(debouncedContent);
 

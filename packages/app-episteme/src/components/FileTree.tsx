@@ -1,24 +1,9 @@
 import { useState, useRef, useEffect, useMemo, memo } from "react";
 import { FileText, Plus, RotateCw, ChevronDown, ChevronRight } from "lucide-react";
 import { usePanelResize } from "../hooks/usePanelResize.ts";
-
-interface FileTreeProps {
-  files: string[];
-  folders?: string[];
-  activeFile: string | null;
-  onFileSelect: (path: string) => void;
-  onRefresh: () => void;
-  onCreateFile: (path: string) => void;
-  onCreateFolder?: (path: string) => void;
-  onRenameFile: (oldPath: string, newPath: string) => void;
-  onRenameFolder?: (oldPath: string, newPath: string) => void;
-  onDeleteFile: (path: string) => void;
-  onOpenInFinder: (path: string) => void;
-  workspaceRoot: string;
-  initialExpandedDirs: string[];
-  onExpandedChange: (paths: string[]) => void;
-  collapsed?: boolean;
-}
+import { useFiles } from "../state/FileContext.tsx";
+import { useUI } from "../state/UIContext.tsx";
+import { useSignalValue } from "../state/signals.ts";
 
 function basename(path: string): string {
   return path.split("/").at(-1) ?? path;
@@ -112,23 +97,15 @@ function IndentGuides({ depth }: { depth: number }) {
   );
 }
 
-export const FileTree = memo(function FileTree({
-  files,
-  folders = [],
-  activeFile,
-  onFileSelect,
-  onRefresh,
-  onCreateFile,
-  onCreateFolder,
-  onRenameFile,
-  onRenameFolder,
-  onDeleteFile,
-  onOpenInFinder,
-  workspaceRoot,
-  initialExpandedDirs,
-  onExpandedChange,
-  collapsed = false,
-}: FileTreeProps) {
+export const FileTree = memo(function FileTree() {
+  const file = useFiles();
+  const ui = useUI();
+  const files = useSignalValue(file.workspaceFiles);
+  const folders = useSignalValue(file.workspaceFolders);
+  const activeFile = useSignalValue(file.activeFile);
+  const workspaceRoot = useSignalValue(file.workspaceRoot);
+  const initialExpandedDirs = useSignalValue(file.expandedDirs);
+  const collapsed = useSignalValue(ui.fileTreeCollapsed);
   const { width, handleMouseDown, isDragging } = usePanelResize(220, "file-tree", { direction: "right" });
 
   // New file creation state (root level)
@@ -179,7 +156,7 @@ export const FileTree = memo(function FileTree({
     setExpandedDirs((prev) => {
       const next = new Set(prev);
       next.has(dir) ? next.delete(dir) : next.add(dir);
-      onExpandedChange([...next]);
+      file.setExpandedDirs([...next]);
       return next;
     });
   }
@@ -189,7 +166,7 @@ export const FileTree = memo(function FileTree({
       if (prev.has(dir)) return prev;
       const next = new Set(prev);
       next.add(dir);
-      onExpandedChange([...next]);
+      file.setExpandedDirs([...next]);
       return next;
     });
   }
@@ -208,11 +185,11 @@ export const FileTree = memo(function FileTree({
       if (targetDir.startsWith(path + "/")) return; // can't drop into a child
       if (dirname(path) === targetDir) return; // already here
       const newPath = targetDir ? `${targetDir}/${basename(path)}` : basename(path);
-      onRenameFolder?.(path, newPath);
+      file.renameFolder(path, newPath);
     } else {
       if (dirname(path) === targetDir) return;
       const newPath = targetDir ? `${targetDir}/${basename(path)}` : basename(path);
-      onRenameFile(path, newPath);
+      file.renameFile(path, newPath);
       expandDir(targetDir);
     }
 
@@ -264,14 +241,14 @@ export const FileTree = memo(function FileTree({
 
   function commitCreate() {
     const name = newFileName.trim();
-    if (name) onCreateFile(name.endsWith(".md") ? name : `${name}.md`);
+    if (name) file.createFile(name.endsWith(".md") ? name : `${name}.md`);
     setIsCreating(false);
     setNewFileName("");
   }
 
   function commitCreateFolder() {
     const name = newFolderName.trim();
-    if (name) onCreateFolder?.(name);
+    if (name) file.createFolder(name);
     setIsCreatingFolder(false);
     setNewFolderName("");
   }
@@ -279,7 +256,7 @@ export const FileTree = memo(function FileTree({
   function commitCreateInDir() {
     if (creatingInDir === null) return;
     const name = newFileInDirName.trim();
-    if (name) onCreateFile(`${creatingInDir}/${name.endsWith(".md") ? name : `${name}.md`}`);
+    if (name) file.createFile(`${creatingInDir}/${name.endsWith(".md") ? name : `${name}.md`}`);
     setCreatingInDir(null);
     setNewFileInDirName("");
   }
@@ -287,7 +264,7 @@ export const FileTree = memo(function FileTree({
   function commitCreateFolderInDir() {
     if (creatingFolderInDir === null) return;
     const name = newFolderInDirName.trim();
-    if (name) onCreateFolder?.(`${creatingFolderInDir}/${name}`);
+    if (name) file.createFolder(`${creatingFolderInDir}/${name}`);
     setCreatingFolderInDir(null);
     setNewFolderInDirName("");
   }
@@ -300,7 +277,7 @@ export const FileTree = memo(function FileTree({
       const newPath = dir
         ? `${dir}/${newName.endsWith(".md") ? newName : `${newName}.md`}`
         : newName.endsWith(".md") ? newName : `${newName}.md`;
-      onRenameFile(renamingPath, newPath);
+      file.renameFile(renamingPath, newPath);
     }
     setRenamingPath(null);
     setRenameValue("");
@@ -323,7 +300,7 @@ export const FileTree = memo(function FileTree({
   }
 
   function confirmDelete() {
-    if (pendingDelete) onDeleteFile(pendingDelete);
+    if (pendingDelete) file.deleteFile(pendingDelete);
     setPendingDelete(null);
   }
 
@@ -353,7 +330,7 @@ export const FileTree = memo(function FileTree({
         <button className="header-icon-btn" onClick={() => setIsCreating(true)} title="New file">
           <Plus size={14} />
         </button>
-        <button className="header-icon-btn" onClick={onRefresh} title="Refresh file list">
+        <button className="header-icon-btn" onClick={file.refreshFiles} title="Refresh file list">
           <RotateCw size={13} />
         </button>
       </div>
@@ -534,7 +511,7 @@ export const FileTree = memo(function FileTree({
                 data-path={item.path}
                 className={`file-tree-item${item.path === activeFile ? " active" : ""}${draggingPath === item.path ? " dragging" : ""}`}
                 draggable
-                onClick={() => onFileSelect(item.path)}
+                onClick={() => file.openFile(item.path)}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -571,11 +548,9 @@ export const FileTree = memo(function FileTree({
               <button className="file-tree-context-item" onClick={() => { setContextMenu(null); setIsCreating(true); }}>
                 New file
               </button>
-              {onCreateFolder && (
-                <button className="file-tree-context-item" onClick={() => { setContextMenu(null); setIsCreatingFolder(true); }}>
-                  New folder
-                </button>
-              )}
+              <button className="file-tree-context-item" onClick={() => { setContextMenu(null); setIsCreatingFolder(true); }}>
+                New folder
+              </button>
             </>
           )}
 
@@ -584,11 +559,9 @@ export const FileTree = memo(function FileTree({
               <button className="file-tree-context-item" onClick={() => openNewFileInDir(contextMenu.path)}>
                 New file here
               </button>
-              {onCreateFolder && (
-                <button className="file-tree-context-item" onClick={() => openNewFolderInDir(contextMenu.path)}>
-                  New folder here
-                </button>
-              )}
+              <button className="file-tree-context-item" onClick={() => openNewFolderInDir(contextMenu.path)}>
+                New folder here
+              </button>
               <div className="file-tree-context-separator" />
               <button className="file-tree-context-item" onClick={() => copyToClipboard(basename(contextMenu.path))}>
                 Copy name
@@ -602,7 +575,7 @@ export const FileTree = memo(function FileTree({
                 </button>
               )}
               <div className="file-tree-context-separator" />
-              <button className="file-tree-context-item" onClick={() => { onOpenInFinder(contextMenu.path); setContextMenu(null); }}>
+              <button className="file-tree-context-item" onClick={() => { file.openInFinder(contextMenu.path); setContextMenu(null); }}>
                 Open in Finder
               </button>
             </>
@@ -630,7 +603,7 @@ export const FileTree = memo(function FileTree({
                 </button>
               )}
               <div className="file-tree-context-separator" />
-              <button className="file-tree-context-item" onClick={() => { onOpenInFinder(contextMenu.path); setContextMenu(null); }}>
+              <button className="file-tree-context-item" onClick={() => { file.openInFinder(contextMenu.path); setContextMenu(null); }}>
                 Open in Finder
               </button>
             </>

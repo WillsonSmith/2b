@@ -1,94 +1,108 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { getShell } from "../shell/index.ts";
-import { useDebounce } from "./useDebounce.ts";
 import type { AgentState, Subscribe } from "./useWebSocket.ts";
+import { computed, effect, signal, useConstant, type Signal } from "../state/signals.ts";
+
+export interface UseFileManagerReturn {
+  // Signals — stable identity; consumers read .value or subscribe.
+  activeFile: Signal<string | null>;
+  editorContent: Signal<string>;
+  savedContent: Signal<string>;
+  isDirty: Signal<boolean>;
+  workspaceFiles: Signal<string[]>;
+  workspaceFolders: Signal<string[]>;
+  workspaceName: Signal<string>;
+  needsWorkspace: Signal<boolean>;
+  isPickingWorkspace: Signal<boolean>;
+  autosaveEnabled: Signal<boolean>;
+  externalContent: Signal<string | null>;
+
+  // Stable ref kept in sync with editorContent — for useEditorFeatures, which
+  // reads `.current` from event handlers (autocomplete, metadata, etc.).
+  editorContentRef: React.MutableRefObject<string>;
+
+  // Stable callbacks — never re-created.
+  setEditorContent: (v: string | ((prev: string) => string)) => void;
+  setWorkspaceName: (v: string) => void;
+  setNeedsWorkspace: (v: boolean) => void;
+  setAutosaveEnabled: (v: boolean) => void;
+  openFile: (path: string) => void;
+  saveFile: () => void;
+  createFile: (path: string) => void;
+  createFolder: (path: string) => void;
+  renameFile: (oldPath: string, newPath: string) => void;
+  renameFolder: (oldPath: string, newPath: string) => void;
+  deleteFile: (path: string) => void;
+  refreshFiles: () => void;
+  openInFinder: (path: string) => void;
+  handleOpenWorkspace: () => void;
+  resolveExternalConflict: (choice: "reload" | "keep") => void;
+}
+
+const EDITOR_CONTEXT_DEBOUNCE_MS = 500;
+const AUTOSAVE_DEBOUNCE_MS = 2000;
 
 export function useFileManager(
   wsRef: React.MutableRefObject<WebSocket | null>,
   agentState: AgentState,
   subscribe: Subscribe,
-) {
-  const [activeFile, setActiveFile] = useState<string | null>(null);
-  const [editorContent, setEditorContent] = useState("");
-  const [savedContent, setSavedContent] = useState("");
-  const [isDirty, setIsDirty] = useState(false);
-
-  const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
-  const [workspaceFolders, setWorkspaceFolders] = useState<string[]>([]);
-  const [workspaceName, setWorkspaceName] = useState("workspace");
-  const [needsWorkspace, setNeedsWorkspace] = useState(false);
-  const [isPickingWorkspace, setIsPickingWorkspace] = useState(false);
-
-  const [autosaveEnabled, setAutosaveEnabled] = useState(true);
-  const [externalContent, setExternalContent] = useState<string | null>(null);
-
-  const editorContentRef = useRef(editorContent);
-  editorContentRef.current = editorContent;
-  const activeFileRef = useRef(activeFile);
-  activeFileRef.current = activeFile;
-  const isDirtyRef = useRef(isDirty);
-  isDirtyRef.current = isDirty;
-  const savedContentRef = useRef(savedContent);
-  savedContentRef.current = savedContent;
-
-  const debouncedContent = useDebounce(editorContent, 500);
-  const lastSentHashRef = useRef<string>("");
-
-  // Reset the dedupe hash whenever the active file changes so the next push
-  // for a freshly opened file always goes through.
-  useEffect(() => {
-    lastSentHashRef.current = "";
-  }, [activeFile]);
-
-  useEffect(() => {
-    if (!activeFile || !wsRef.current || agentState === "disconnected") return;
-    let cancelled = false;
-    (async () => {
-      const buf = await crypto.subtle.digest(
-        "SHA-256",
-        new TextEncoder().encode(debouncedContent),
-      );
-      const hash = Array.from(new Uint8Array(buf))
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .join("");
-      if (cancelled) return;
-      if (hash === lastSentHashRef.current) return;
-      lastSentHashRef.current = hash;
-      wsRef.current?.send(
-        JSON.stringify({
-          type: "editor_context",
-          file: activeFile,
-          content: debouncedContent,
-          cursor: 0,
-        }),
-      );
-    })();
-    return () => {
-      cancelled = true;
+): UseFileManagerReturn {
+  // ── State signals (stable identity for the hook's lifetime) ─────────────
+  const state = useConstant(() => {
+    const activeFile = signal<string | null>(null);
+    const editorContent = signal("");
+    const savedContent = signal("");
+    const isDirty = computed(() => editorContent.value !== savedContent.value);
+    const workspaceFiles = signal<string[]>([]);
+    const workspaceFolders = signal<string[]>([]);
+    const workspaceName = signal("workspace");
+    const needsWorkspace = signal(false);
+    const isPickingWorkspace = signal(false);
+    const autosaveEnabled = signal(true);
+    const externalContent = signal<string | null>(null);
+    return {
+      activeFile,
+      editorContent,
+      savedContent,
+      isDirty,
+      workspaceFiles,
+      workspaceFolders,
+      workspaceName,
+      needsWorkspace,
+      isPickingWorkspace,
+      autosaveEnabled,
+      externalContent,
     };
-  }, [debouncedContent, activeFile, agentState, wsRef]);
+  });
 
+  // Ref kept in sync with editorContent — useEditorFeatures consumes this from
+  // event handlers (it expects `.current`, not a signal).
+  const editorContentRef = useRef(state.editorContent.value);
   useEffect(() => {
-    setIsDirty(editorContent !== savedContent);
-  }, [editorContent, savedContent]);
+    return effect(() => {
+      editorContentRef.current = state.editorContent.value;
+    });
+  }, [state]);
+
+  // ── Stable callbacks (closures read signals via .value) ─────────────────
+  const setEditorContent = useCallback((v: string | ((prev: string) => string)) => {
+    state.editorContent.value = typeof v === "function" ? v(state.editorContent.value) : v;
+  }, [state]);
+  const setWorkspaceName = useCallback((v: string) => { state.workspaceName.value = v; }, [state]);
+  const setNeedsWorkspace = useCallback((v: boolean) => { state.needsWorkspace.value = v; }, [state]);
+  const setAutosaveEnabled = useCallback((v: boolean) => { state.autosaveEnabled.value = v; }, [state]);
 
   const openFile = useCallback((path: string) => {
-    setActiveFile(path);
+    state.activeFile.value = path;
     wsRef.current?.send(JSON.stringify({ type: "file_open", path }));
-  }, [wsRef]);
+  }, [state, wsRef]);
 
   const saveFile = useCallback(() => {
-    if (!activeFile || !wsRef.current || !isDirty) return;
+    if (!state.activeFile.value || !wsRef.current || !state.isDirty.value) return;
     wsRef.current.send(
-      JSON.stringify({ type: "file_save", path: activeFile, content: editorContentRef.current }),
+      JSON.stringify({ type: "file_save", path: state.activeFile.value, content: state.editorContent.value }),
     );
-  }, [activeFile, isDirty, wsRef]);
-
-  useEffect(() => {
-    if (!autosaveEnabled || !isDirty || !activeFile) return;
-    const id = setTimeout(saveFile, 2000);
-    return () => clearTimeout(id);
-  }, [autosaveEnabled, isDirty, activeFile, editorContent, saveFile]);
+  }, [state, wsRef]);
 
   const refreshFiles = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: "list_workspace" }));
@@ -119,14 +133,94 @@ export function useFileManager(
   }, [wsRef]);
 
   const resolveExternalConflict = useCallback((choice: "reload" | "keep") => {
-    if (choice === "reload" && externalContent !== null) {
-      setEditorContent(externalContent);
-      setSavedContent(externalContent);
-      setIsDirty(false);
+    if (choice === "reload" && state.externalContent.value !== null) {
+      state.editorContent.value = state.externalContent.value;
+      state.savedContent.value = state.externalContent.value;
     }
-    setExternalContent(null);
-  }, [externalContent]);
+    state.externalContent.value = null;
+  }, [state]);
 
+  const handleOpenWorkspace = useCallback(async () => {
+    state.isPickingWorkspace.value = true;
+    try {
+      const folderPath = await getShell().openFolder();
+      if (!folderPath) return;
+      const res = await fetch("/api/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: folderPath }),
+      });
+      if (res.ok) state.needsWorkspace.value = false;
+    } catch {
+      // ignore — user can retry
+    } finally {
+      state.isPickingWorkspace.value = false;
+    }
+  }, [state]);
+
+  // ── Debounced editor_context send (per active file) ─────────────────────
+  // Reset hash whenever active file changes; fresh hash for a freshly opened
+  // file always goes through.
+  const lastSentHashRef = useRef("");
+  useEffect(() => {
+    return state.activeFile.subscribe(() => { lastSentHashRef.current = ""; });
+  }, [state]);
+
+  // Debounced send: watches editorContent + activeFile; agentState comes in as
+  // a React-level prop so we re-run this effect on connect changes.
+  useEffect(() => {
+    if (agentState === "disconnected") return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    const dispose = effect(() => {
+      // Auto-track reads.
+      const content = state.editorContent.value;
+      const file = state.activeFile.value;
+      if (!file || !wsRef.current) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
+        const hash = Array.from(new Uint8Array(buf))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+        if (cancelled) return;
+        if (hash === lastSentHashRef.current) return;
+        lastSentHashRef.current = hash;
+        wsRef.current?.send(
+          JSON.stringify({ type: "editor_context", file, content, cursor: 0 }),
+        );
+      }, EDITOR_CONTEXT_DEBOUNCE_MS);
+    });
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      dispose();
+    };
+  }, [state, agentState, wsRef]);
+
+  // ── Autosave (debounced) ────────────────────────────────────────────────
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const dispose = effect(() => {
+      // Auto-track — re-fires on any of these changing.
+      const enabled = state.autosaveEnabled.value;
+      const dirty = state.isDirty.value;
+      const file = state.activeFile.value;
+      // Reading editorContent inside the effect ties the debounce timer reset
+      // to every keystroke even when isDirty stays true (the prior value
+      // matters for re-debouncing).
+      state.editorContent.value;
+      if (!enabled || !dirty || !file) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(saveFile, AUTOSAVE_DEBOUNCE_MS);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      dispose();
+    };
+  }, [state, saveFile]);
+
+  // ── Cmd+S to save ───────────────────────────────────────────────────────
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
@@ -138,50 +232,44 @@ export function useFileManager(
     return () => window.removeEventListener("keydown", handleKey);
   }, [saveFile]);
 
-  // Server → client subscriptions
+  // ── Server → client subscriptions ───────────────────────────────────────
   useEffect(() => {
     const unsubFiles = subscribe("workspace_files", (msg) => {
-      setWorkspaceFiles(msg.files);
-      setWorkspaceFolders(msg.folders ?? []);
+      state.workspaceFiles.value = msg.files;
+      state.workspaceFolders.value = msg.folders ?? [];
     });
     const unsubContent = subscribe("file_content", (msg) => {
-      setEditorContent(msg.content);
-      setSavedContent(msg.content);
-      setIsDirty(false);
-      setExternalContent(null);
+      state.editorContent.value = msg.content;
+      state.savedContent.value = msg.content;
+      state.externalContent.value = null;
     });
     const unsubCreated = subscribe("file_created", (msg) => {
-      setActiveFile(msg.path);
-      setEditorContent("");
-      setSavedContent("");
-      setIsDirty(false);
+      state.activeFile.value = msg.path;
+      state.editorContent.value = "";
+      state.savedContent.value = "";
     });
     const unsubRenamed = subscribe("file_renamed", (msg) => {
-      if (activeFileRef.current === msg.oldPath) setActiveFile(msg.newPath);
+      if (state.activeFile.value === msg.oldPath) state.activeFile.value = msg.newPath;
     });
     const unsubDeleted = subscribe("file_deleted", (msg) => {
-      if (activeFileRef.current === msg.path) {
-        setActiveFile(null);
-        setEditorContent("");
-        setSavedContent("");
-        setIsDirty(false);
+      if (state.activeFile.value === msg.path) {
+        state.activeFile.value = null;
+        state.editorContent.value = "";
+        state.savedContent.value = "";
       }
     });
     const unsubSaved = subscribe("file_saved", () => {
-      setSavedContent(editorContentRef.current);
-      setIsDirty(false);
+      state.savedContent.value = state.editorContent.value;
     });
     const unsubExternal = subscribe("file_externally_changed", (msg) => {
-      if (msg.path !== activeFileRef.current) return;
-      // Spurious watcher event (metadata change, iCloud sync, autosave timing)
-      // — content on disk matches what we last wrote, so nothing actually changed.
-      if (msg.content === savedContentRef.current) return;
-      if (!isDirtyRef.current) {
-        setEditorContent(msg.content);
-        setSavedContent(msg.content);
-        setIsDirty(false);
+      if (msg.path !== state.activeFile.value) return;
+      // Spurious watcher event — disk matches what we last wrote.
+      if (msg.content === state.savedContent.value) return;
+      if (!state.isDirty.value) {
+        state.editorContent.value = msg.content;
+        state.savedContent.value = msg.content;
       } else {
-        setExternalContent(msg.content);
+        state.externalContent.value = msg.content;
       }
     });
     return () => {
@@ -193,47 +281,12 @@ export function useFileManager(
       unsubSaved();
       unsubExternal();
     };
-  }, [subscribe]);
-
-  const handleOpenWorkspace = useCallback(async () => {
-    setIsPickingWorkspace(true);
-    try {
-      const shell = getShell();
-      const folderPath = await shell.openFolder();
-      if (!folderPath) return;
-      const res = await fetch("/api/workspace", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: folderPath }),
-      });
-      if (res.ok) {
-        setNeedsWorkspace(false);
-      }
-    } catch {
-      // ignore — user can retry
-    } finally {
-      setIsPickingWorkspace(false);
-    }
-  }, []);
+  }, [state, subscribe]);
 
   return {
-    activeFile,
-    editorContent,
-    savedContent,
-    isDirty,
-    workspaceFiles,
-    workspaceFolders,
-    workspaceName,
-    needsWorkspace,
-    isPickingWorkspace,
-    autosaveEnabled,
+    ...state,
     editorContentRef,
-    activeFileRef,
-    setActiveFile,
     setEditorContent,
-    setSavedContent,
-    setIsDirty,
-    setWorkspaceFiles,
     setWorkspaceName,
     setNeedsWorkspace,
     setAutosaveEnabled,
@@ -247,7 +300,6 @@ export function useFileManager(
     refreshFiles,
     openInFinder,
     handleOpenWorkspace,
-    externalContent,
     resolveExternalConflict,
   };
 }

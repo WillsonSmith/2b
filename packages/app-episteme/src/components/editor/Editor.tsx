@@ -1,4 +1,7 @@
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor as useTiptap, EditorContent } from "@tiptap/react";
+import { useEditor } from "../../state/EditorContext.tsx";
+import { useVoice } from "../../state/VoiceContext.tsx";
+import { useSignalValue } from "../../state/signals.ts";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -53,30 +56,7 @@ function getMarkdown(ed: any): string {
 interface EditorProps {
   content: string;
   onUpdate: (markdown: string) => void;
-  onAutocompleteRequest?: (context: string) => void;
-  ghostText?: string;
-  onGhostAccept?: (text: string) => void;
-  onGhostDismiss?: () => void;
-  toneReplacement?: { text: string; from: number; to: number } | null;
-  summarizeResult?: { text: string; insertPos: number } | null;
-  onToneApplied?: () => void;
-  onSummarizeApplied?: () => void;
-  onMetadataRequest?: () => void;
-  isGeneratingMetadata?: boolean;
-  onDiagramRequest?: (description: string, placeholderId: string) => void;
-  diagramResult?: { code: string; placeholderId: string; error?: string } | null;
-  onDiagramApplied?: () => void;
-  onAIFillRequest?: (id: string, instruction: string) => void;
-  aiFillResult?: { id: string; content: string; error?: string } | null;
-  onAIFillApplied?: () => void;
-  metadataResult?: string | null;
-  onMetadataApplied?: () => void;
-  tableResult?: { text: string; insertPos: number } | null;
-  onTableApplied?: () => void;
-  onImagePaste?: (base64: string, mimeType: string, filename: string) => void;
   onExplainCode?: (code: string, language: string) => void;
-  isRecording?: boolean;
-  onToggleRecording?: () => void;
   onSendToChat?: (selectionRef: string) => void;
   onNavigate?: (path: string) => void;
   onCreateFile?: (path: string) => void;
@@ -88,7 +68,9 @@ interface EditorProps {
   punctuationHighlight?: boolean;
   focusMode?: FocusModeOptions;
   styleCheck?: StyleCheckOptions;
-  command?: { name: string; nonce: number } | null;
+  // Each dispatch creates a fresh wrapper object; Editor's useEffect deps on
+  // `command` fire on identity change, so repeats of the same name still run.
+  command?: { name: string } | null;
 }
 
 interface FindBarProps {
@@ -207,30 +189,7 @@ function DiagramBar({ value, onChange, onSubmit, onClose, inputRef }: DiagramBar
 export function Editor({
   content,
   onUpdate,
-  onAutocompleteRequest,
-  ghostText = "",
-  onGhostAccept,
-  onGhostDismiss,
-  toneReplacement,
-  summarizeResult,
-  onToneApplied,
-  onSummarizeApplied,
-  onMetadataRequest,
-  isGeneratingMetadata,
-  onDiagramRequest,
-  diagramResult,
-  onDiagramApplied,
-  onAIFillRequest,
-  aiFillResult,
-  onAIFillApplied,
-  metadataResult,
-  onMetadataApplied,
-  tableResult,
-  onTableApplied,
-  onImagePaste,
   onExplainCode,
-  isRecording,
-  onToggleRecording,
   onSendToChat,
   onNavigate,
   onCreateFile,
@@ -244,6 +203,34 @@ export function Editor({
   styleCheck: styleCheckProp,
   command,
 }: EditorProps) {
+  // editor-feature state + handlers come from EditorContext; voice/mic from
+  // VoiceContext. Editor's existing internals still reference these names so
+  // we mirror them with locals.
+  const editorCtx = useEditor();
+  const voice = useVoice();
+  const isRecording = useSignalValue(voice.isRecording);
+  const onImagePaste = voice.handleImagePaste;
+  const onToggleRecording = voice.handleToggleRecording;
+  const ghostText = useSignalValue(editorCtx.ghostText);
+  const toneReplacement = useSignalValue(editorCtx.toneReplacement);
+  const summarizeResult = useSignalValue(editorCtx.summarizeResult);
+  const isGeneratingMetadata = useSignalValue(editorCtx.isGeneratingMetadata);
+  const metadataResult = useSignalValue(editorCtx.metadataResult);
+  const diagramResult = useSignalValue(editorCtx.diagramResult);
+  const aiFillResult = useSignalValue(editorCtx.aiFillResult);
+  const tableResult = useSignalValue(editorCtx.tableResult);
+  const onAutocompleteRequest = editorCtx.handleAutocompleteRequest;
+  const onGhostAccept = editorCtx.handleGhostAccept;
+  const onGhostDismiss = editorCtx.handleGhostDismiss;
+  const onMetadataRequest = editorCtx.handleMetadataRequest;
+  const onDiagramRequest = editorCtx.handleDiagramRequest;
+  const onAIFillRequest = editorCtx.handleAIFillRequest;
+  const onToneApplied = editorCtx.clearTone;
+  const onSummarizeApplied = editorCtx.clearSummarize;
+  const onMetadataApplied = editorCtx.clearMetadata;
+  const onDiagramApplied = editorCtx.clearDiagram;
+  const onAIFillApplied = editorCtx.clearAIFill;
+  const onTableApplied = editorCtx.clearTable;
   const ghostRef = useRef(ghostText);
   const localLinksRef = useRef<ResolvedLocalLink[]>([]);
   const filesRef = useRef<string[]>(workspaceFiles);
@@ -313,7 +300,7 @@ export function Editor({
   const handleAccept = useCallback((t: string) => acceptRef.current?.(t), []);
   const handleDismiss = useCallback(() => dismissRef.current?.(), []);
 
-  const editor = useEditor({
+  const editor = useTiptap({
     extensions: [
       StarterKit.configure({ link: { openOnClick: false }, codeBlock: false }),
       MermaidCodeBlock,

@@ -2,22 +2,13 @@ import { useState, useRef } from "react";
 import { ArrowRight, ExternalLink, Maximize2, X } from "lucide-react";
 import type { SearchResult, UnifiedSearchResponse } from "../plugins/ResearchPlugin.ts";
 import { MarkdownView } from "./MarkdownView.tsx";
+import { useResearchCtx } from "../state/ResearchContext.tsx";
+import { useAI } from "../state/AIContext.tsx";
+import { useSignalValue } from "../state/signals.ts";
 
 export type { SearchResult, UnifiedSearchResponse };
 
 type Tab = "all" | "arxiv" | "wikipedia" | "workspace";
-
-interface ResearchPanelProps {
-  onSearch: (query: string) => void;
-  onDetectGaps: (topic: string) => void;
-  onIngest: (url: string) => void;
-  onReindex: () => void;
-  onSendToAgent: (text: string) => void;
-  searchResults: UnifiedSearchResponse | null;
-  gapReport: string | null;
-  isSearching: boolean;
-  isDetectingGaps: boolean;
-}
 
 const SOURCE_COLORS: Record<SearchResult["source"], { bg: string; fg: string; label: string }> = {
   arxiv:     { bg: "#1a365d", fg: "#90cdf4", label: "arXiv" },
@@ -97,17 +88,21 @@ function GapReportModal({ gapReport, onClose, onSearch, onSendToAgent }: GapRepo
 
 // ── ResearchPanel ─────────────────────────────────────────────────────────────
 
-export function ResearchPanel({
-  onSearch,
-  onDetectGaps,
-  onIngest,
-  onReindex,
-  onSendToAgent,
-  searchResults,
-  gapReport,
-  isSearching,
-  isDetectingGaps,
-}: ResearchPanelProps) {
+export function ResearchPanel() {
+  const research = useResearchCtx();
+  const ai = useAI();
+  const searchResults = useSignalValue(research.searchResults);
+  const gapReport = useSignalValue(research.gapReport);
+  const isSearching = useSignalValue(research.isSearching);
+  const isDetectingGaps = useSignalValue(research.isDetectingGaps);
+  const onSearch = research.handleSearch;
+  const onDetectGaps = research.handleDetectGaps;
+  const onIngest = research.handleIngestFromSearch;
+  const onReindex = research.handleReindex;
+  const onSendToAgent = (text: string) => {
+    ai.sendToAgent(text);
+    ai.sidecarCollapsed.value = false;
+  };
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("all");
   const [view, setView] = useState<"search" | "gaps">("search");
