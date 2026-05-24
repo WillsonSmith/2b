@@ -4,6 +4,8 @@ import { MarkdownView } from "./MarkdownView.tsx";
 import { PlanModeOptions } from "./PlanModeOptions.tsx";
 import { usePanelResize } from "../hooks/usePanelResize.ts";
 import type { EpistemePlanStepType } from "../planning/types.ts";
+import { useAI } from "../state/AIContext.tsx";
+import { useSignalValue } from "../state/signals.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -25,27 +27,12 @@ export type SidecarMessage =
     };
 
 interface AISidecarProps {
-  messages: SidecarMessage[];
-  isThinking: boolean;
-  agentState: string;
-  /** LLM backend reachability — null until first probe completes. */
-  providerReachable?: boolean | null;
-  collapsed: boolean;
-  onSend: (text: string) => void;
-  onInterrupt: () => void;
-  onNavigate?: (path: string) => void;
+  /** Files for the @-mention dropdown. Will move to FileContext in Phase 3. */
   workspaceFiles?: string[];
-  onRegenerate?: (assistantIndex: number) => void;
-  onSendToPlan?: (text: string) => void;
-  onDeleteMessage?: (index: number) => void;
-  onRemoveMention?: (index: number, path: string) => void;
-  pendingInput?: string;
-  onPendingInputConsumed?: () => void;
+  /** Active file for plan-mode "use document" option. Phase 3 → FileContext. */
   activeFile?: string | null;
-  onPlanRequest?: (goal: string, approvalMode: "all" | "per_step") => void;
-  onPlanRequestFromDocument?: (path: string, goal: string, approvalMode: "all" | "per_step") => void;
-  activePlan?: { id: string; goal: string } | null;
-  onPlanFollowUp?: (goal: string, priorPlanId: string, approvalMode: "all" | "per_step") => void;
+  /** Open a file by path (for navigating mention links). Phase 3 → FileContext. */
+  onNavigate?: (path: string) => void;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -94,16 +81,12 @@ const PLAN_STEP_TYPE_ICONS: Record<EpistemePlanStepType, React.FC<{ size?: numbe
 interface AssistantMessageProps {
   message: Extract<SidecarMessage, { role: "assistant" }>;
   index: number;
-  onRegenerate: () => void;
-  onSendToPlan: (text: string) => void;
   onNavigate?: (path: string) => void;
-  onDeleteMessage?: (index: number) => void;
-  activePlan?: { id: string; goal: string } | null;
-  onPlanFollowUp?: (goal: string, priorPlanId: string) => void;
-  onPlanRequest?: (goal: string) => void;
 }
 
-function AssistantMessage({ message, index, onRegenerate, onSendToPlan, onNavigate, onDeleteMessage, activePlan, onPlanFollowUp, onPlanRequest }: AssistantMessageProps) {
+function AssistantMessage({ message, index, onNavigate }: AssistantMessageProps) {
+  const ai = useAI();
+  const activePlan = useSignalValue(ai.activePlan);
   const [menuOpen, setMenuOpen] = useState(false);
   const [followUpOpen, setFollowUpOpen] = useState(false);
   const [followUpGoal, setFollowUpGoal] = useState("");
@@ -123,10 +106,10 @@ function AssistantMessage({ message, index, onRegenerate, onSendToPlan, onNaviga
   const submitFollowUp = () => {
     const goal = followUpGoal.trim();
     if (!goal) return;
-    if (activePlan && onPlanFollowUp) {
-      onPlanFollowUp(goal, activePlan.id);
-    } else if (onPlanRequest) {
-      onPlanRequest(goal);
+    if (activePlan) {
+      ai.planFollowUp(goal, activePlan.id, "per_step");
+    } else {
+      ai.planRequest(goal, "per_step");
     }
     setFollowUpGoal("");
     setFollowUpOpen(false);
@@ -154,7 +137,7 @@ function AssistantMessage({ message, index, onRegenerate, onSendToPlan, onNaviga
               <div className="sidecar-msg-dropdown">
                 <button
                   className="sidecar-dropdown-item"
-                  onClick={() => { setMenuOpen(false); onRegenerate(); }}
+                  onClick={() => { setMenuOpen(false); ai.regenerate(index); }}
                 >
                   Regenerate
                 </button>
@@ -169,30 +152,26 @@ function AssistantMessage({ message, index, onRegenerate, onSendToPlan, onNaviga
                 </button>
                 <button
                   className="sidecar-dropdown-item"
-                  onClick={() => { setMenuOpen(false); onSendToPlan(message.text); }}
+                  onClick={() => { setMenuOpen(false); ai.sendToPlan(message.text); }}
                 >
                   Send to Plan
                 </button>
-                {(onPlanFollowUp || onPlanRequest) && (
-                  <button
-                    className="sidecar-dropdown-item"
-                    onClick={() => { setMenuOpen(false); setFollowUpOpen(true); }}
-                  >
-                    Follow up plan…
-                  </button>
-                )}
+                <button
+                  className="sidecar-dropdown-item"
+                  onClick={() => { setMenuOpen(false); setFollowUpOpen(true); }}
+                >
+                  Follow up plan…
+                </button>
               </div>
             )}
           </div>
-          {onDeleteMessage && (
-            <button
-              className="sidecar-delete-btn"
-              onClick={() => onDeleteMessage(index)}
-              title="Delete message"
-            >
-              <Trash2 size={11} />
-            </button>
-          )}
+          <button
+            className="sidecar-delete-btn"
+            onClick={() => ai.deleteMessage(index)}
+            title="Delete message"
+          >
+            <Trash2 size={11} />
+          </button>
         </div>
       </div>
       <MarkdownView content={message.text} className="sidecar-msg-markdown" onNavigate={onNavigate} />
@@ -289,20 +268,16 @@ function FileMentionChip({ path, onRemove }: FileMentionChipProps) {
 // ── MessageList ───────────────────────────────────────────────────────────────
 
 interface MessageListProps {
-  messages: SidecarMessage[];
-  isThinking: boolean;
   endRef: React.MutableRefObject<HTMLDivElement | null>;
   onNavigate?: (path: string) => void;
-  onRegenerate?: (assistantIndex: number) => void;
-  onSendToPlan?: (text: string) => void;
-  onDeleteMessage?: (index: number) => void;
-  onRemoveMention?: (index: number, path: string) => void;
-  activePlan?: { id: string; goal: string } | null;
-  onPlanFollowUp?: (goal: string, priorPlanId: string) => void;
-  onPlanRequestFromMenu?: (goal: string) => void;
 }
 
-const MessageList = memo(function MessageList({ messages, isThinking, endRef, onNavigate, onRegenerate, onSendToPlan, onDeleteMessage, onRemoveMention, activePlan, onPlanFollowUp, onPlanRequestFromMenu }: MessageListProps) {
+const MessageList = memo(function MessageList({ endRef, onNavigate }: MessageListProps) {
+  const ai = useAI();
+  const messages = useSignalValue(ai.messages);
+  const agentState = useSignalValue(ai.agentState);
+  const isThinking = agentState === "thinking";
+
   return (
     <div className="sidecar-messages">
       {messages.length === 0 && (
@@ -402,13 +377,7 @@ const MessageList = memo(function MessageList({ messages, isThinking, endRef, on
               key={i}
               message={m}
               index={i}
-              onRegenerate={() => onRegenerate?.(i)}
-              onSendToPlan={onSendToPlan ?? (() => {})}
               onNavigate={onNavigate}
-              onDeleteMessage={onDeleteMessage}
-              activePlan={activePlan}
-              onPlanFollowUp={onPlanFollowUp}
-              onPlanRequest={onPlanRequestFromMenu}
             />
           );
         }
@@ -418,17 +387,15 @@ const MessageList = memo(function MessageList({ messages, isThinking, endRef, on
           <div key={i} className="sidecar-msg user">
             <div className="sidecar-msg-header">
               <span className="sidecar-msg-role">You</span>
-              {onDeleteMessage && (
-                <div className="sidecar-msg-header-actions">
-                  <button
-                    className="sidecar-delete-btn"
-                    onClick={() => onDeleteMessage(i)}
-                    title="Delete message"
-                  >
-                    <Trash2 size={11} />
-                  </button>
-                </div>
-              )}
+              <div className="sidecar-msg-header-actions">
+                <button
+                  className="sidecar-delete-btn"
+                  onClick={() => ai.deleteMessage(i)}
+                  title="Delete message"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
             </div>
             <div className="sidecar-msg-user-text">{m.text}</div>
             {mentions.length > 0 && (
@@ -437,7 +404,7 @@ const MessageList = memo(function MessageList({ messages, isThinking, endRef, on
                   <FileMentionChip
                     key={p}
                     path={p}
-                    onRemove={onRemoveMention ? () => onRemoveMention(i, p) : undefined}
+                    onRemove={() => ai.removeMention(i, p)}
                   />
                 ))}
               </div>
@@ -478,22 +445,19 @@ function insertMention(
 // ── ChatInput ─────────────────────────────────────────────────────────────────
 
 interface ChatInputProps {
-  isThinking: boolean;
-  agentState: string;
-  providerReachable?: boolean | null;
-  onSend: (text: string) => void;
-  onInterrupt: () => void;
-  workspaceFiles?: string[];
-  pendingInput?: string;
-  onPendingInputConsumed?: () => void;
+  workspaceFiles: string[];
   activeFile?: string | null;
-  onPlanRequest?: (goal: string, approvalMode: "all" | "per_step") => void;
-  onPlanRequestFromDocument?: (path: string, goal: string, approvalMode: "all" | "per_step") => void;
-  activePlan?: { id: string; goal: string } | null;
-  onPlanFollowUp?: (goal: string, priorPlanId: string, approvalMode: "all" | "per_step") => void;
 }
 
-function ChatInput({ isThinking, agentState, providerReachable, onSend, onInterrupt, workspaceFiles = [], pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument, activePlan, onPlanFollowUp }: ChatInputProps) {
+function ChatInput({ workspaceFiles, activeFile }: ChatInputProps) {
+  const ai = useAI();
+  const agentState = useSignalValue(ai.agentState);
+  const providerStatus = useSignalValue(ai.providerStatus);
+  const providerReachable = providerStatus?.reachable ?? null;
+  const pendingInput = useSignalValue(ai.sidecarPendingInput);
+  const activePlan = useSignalValue(ai.activePlan);
+  const isThinking = agentState === "thinking";
+
   const [input, setInput] = useState("");
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -557,32 +521,32 @@ function ChatInput({ isThinking, agentState, providerReachable, onSend, onInterr
     const text = input.trim();
     if (!text || isThinking) return;
 
-    if (followUpMode && activePlan && onPlanFollowUp) {
-      onPlanFollowUp(text, activePlan.id, approvalMode);
+    if (followUpMode && activePlan) {
+      ai.planFollowUp(text, activePlan.id, approvalMode);
       setInput("");
       setFollowUpMode(false);
-      onPendingInputConsumed?.();
+      ai.sidecarPendingInput.value = "";
       closeMention();
       return;
     }
 
     if (planMode) {
-      if (useDocument && activeFile && onPlanRequestFromDocument) {
-        onPlanRequestFromDocument(activeFile, text, approvalMode);
-      } else if (onPlanRequest) {
-        onPlanRequest(text, approvalMode);
+      if (useDocument && activeFile) {
+        ai.planRequestFromDocument(activeFile, text, approvalMode);
+      } else {
+        ai.planRequest(text, approvalMode);
       }
       setInput("");
       setPlanMode(false);
       setUseDocument(false);
-      onPendingInputConsumed?.();
+      ai.sidecarPendingInput.value = "";
       closeMention();
       return;
     }
 
-    onSend(text);
+    ai.sendToAgent(text);
     setInput("");
-    onPendingInputConsumed?.();
+    ai.sidecarPendingInput.value = "";
     closeMention();
   }
 
@@ -726,22 +690,20 @@ function ChatInput({ isThinking, agentState, providerReachable, onSend, onInterr
           >
             <ClipboardList size={14} />
           </button>
-          {onPlanFollowUp && (
-            <button
-              className={`sidecar-quick-toggle${followUpMode ? " active" : ""}`}
-              onClick={() => { setFollowUpMode((v) => !v); if (planMode) setPlanMode(false); }}
-              title={
-                !activePlan
-                  ? "Follow up plan — disabled (no active plan)"
-                  : followUpMode
-                    ? "Exit follow-up mode"
-                    : `Follow up active plan: ${activePlan.goal}`
-              }
-              disabled={isThinking || !activePlan}
-            >
-              <GitBranch size={14} />
-            </button>
-          )}
+          <button
+            className={`sidecar-quick-toggle${followUpMode ? " active" : ""}`}
+            onClick={() => { setFollowUpMode((v) => !v); if (planMode) setPlanMode(false); }}
+            title={
+              !activePlan
+                ? "Follow up plan — disabled (no active plan)"
+                : followUpMode
+                  ? "Exit follow-up mode"
+                  : `Follow up active plan: ${activePlan.goal}`
+            }
+            disabled={isThinking || !activePlan}
+          >
+            <GitBranch size={14} />
+          </button>
           <span
             className={`sidecar-status${
               agentState === "thinking"
@@ -771,7 +733,7 @@ function ChatInput({ isThinking, agentState, providerReachable, onSend, onInterr
           {isThinking ? (
             <button
               className="sidecar-interrupt"
-              onClick={onInterrupt}
+              onClick={() => ai.interrupt()}
               title="Stop"
             >
               <Square size={12} fill="currentColor" />
@@ -795,31 +757,17 @@ function ChatInput({ isThinking, agentState, providerReachable, onSend, onInterr
 // ── ChatModal (expanded view) ─────────────────────────────────────────────────
 
 interface ChatModalProps {
-  messages: SidecarMessage[];
-  isThinking: boolean;
-  agentState: string;
-  providerReachable?: boolean | null;
-  onSend: (text: string) => void;
-  onInterrupt: () => void;
-  onClose: () => void;
-  onNavigate?: (path: string) => void;
-  workspaceFiles?: string[];
-  onRegenerate?: (assistantIndex: number) => void;
-  onSendToPlan?: (text: string) => void;
-  onDeleteMessage?: (index: number) => void;
-  onRemoveMention?: (index: number, path: string) => void;
-  pendingInput?: string;
-  onPendingInputConsumed?: () => void;
+  workspaceFiles: string[];
   activeFile?: string | null;
-  onPlanRequest?: (goal: string, approvalMode: "all" | "per_step") => void;
-  onPlanRequestFromDocument?: (path: string, goal: string, approvalMode: "all" | "per_step") => void;
-  activePlan?: { id: string; goal: string } | null;
-  onPlanFollowUp?: (goal: string, priorPlanId: string, approvalMode: "all" | "per_step") => void;
-  onPlanRequestFromMenu?: (goal: string) => void;
-  onPlanFollowUpFromMenu?: (goal: string, priorPlanId: string) => void;
+  onNavigate?: (path: string) => void;
+  onClose: () => void;
 }
 
-function ChatModal({ messages, isThinking, agentState, providerReachable, onSend, onInterrupt, onClose, onNavigate, workspaceFiles, onRegenerate, onSendToPlan, onDeleteMessage, onRemoveMention, pendingInput, onPendingInputConsumed, activeFile, onPlanRequest, onPlanRequestFromDocument, activePlan, onPlanFollowUp, onPlanRequestFromMenu, onPlanFollowUpFromMenu }: ChatModalProps) {
+function ChatModal({ workspaceFiles, activeFile, onNavigate, onClose }: ChatModalProps) {
+  const ai = useAI();
+  const messages = useSignalValue(ai.messages);
+  const agentState = useSignalValue(ai.agentState);
+  const isThinking = agentState === "thinking";
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -834,21 +782,9 @@ function ChatModal({ messages, isThinking, agentState, providerReachable, onSend
           <button className="modal-close" onClick={onClose} title="Close"><X size={14} /></button>
         </div>
         <div className="chat-modal-body">
-          <MessageList
-            messages={messages}
-            isThinking={isThinking}
-            endRef={endRef}
-            onNavigate={onNavigate}
-            onRegenerate={onRegenerate}
-            onSendToPlan={onSendToPlan}
-            onDeleteMessage={onDeleteMessage}
-            onRemoveMention={onRemoveMention}
-            activePlan={activePlan}
-            onPlanFollowUp={onPlanFollowUpFromMenu}
-            onPlanRequestFromMenu={onPlanRequestFromMenu}
-          />
+          <MessageList endRef={endRef} onNavigate={onNavigate} />
         </div>
-        <ChatInput isThinking={isThinking} agentState={agentState} providerReachable={providerReachable} onSend={onSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} activePlan={activePlan} onPlanFollowUp={onPlanFollowUp} />
+        <ChatInput workspaceFiles={workspaceFiles} activeFile={activeFile} />
       </div>
     </div>
   );
@@ -856,70 +792,16 @@ function ChatModal({ messages, isThinking, agentState, providerReachable, onSend
 
 // ── AISidecar ─────────────────────────────────────────────────────────────────
 
-export function AISidecar({
-  messages,
-  isThinking,
-  agentState,
-  providerReachable,
-  collapsed,
-  onSend,
-  onInterrupt,
-  onNavigate,
-  workspaceFiles,
-  onRegenerate,
-  onSendToPlan,
-  onDeleteMessage,
-  onRemoveMention,
-  pendingInput,
-  onPendingInputConsumed,
-  activeFile,
-  onPlanRequest,
-  onPlanRequestFromDocument,
-  activePlan,
-  onPlanFollowUp,
-}: AISidecarProps) {
+export function AISidecar({ workspaceFiles = [], activeFile, onNavigate }: AISidecarProps) {
+  const ai = useAI();
+  const collapsed = useSignalValue(ai.sidecarCollapsed);
+  const messages = useSignalValue(ai.messages);
+  const agentState = useSignalValue(ai.agentState);
+  const isThinking = agentState === "thinking";
+
   const [expanded, setExpanded] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
   const { width, handleMouseDown, isDragging } = usePanelResize(300, "ai-sidecar");
-
-  // Keep latest callbacks in refs so MessageList (which is memo'd) never re-renders
-  // just because App re-renders and produces new function references.
-  const onSendRef = useRef(onSend);
-  onSendRef.current = onSend;
-  const onRegenerateRef = useRef(onRegenerate);
-  onRegenerateRef.current = onRegenerate;
-  const onSendToPlanRef = useRef(onSendToPlan);
-  onSendToPlanRef.current = onSendToPlan;
-  const onDeleteMessageRef = useRef(onDeleteMessage);
-  onDeleteMessageRef.current = onDeleteMessage;
-  const onRemoveMentionRef = useRef(onRemoveMention);
-  onRemoveMentionRef.current = onRemoveMention;
-  const onNavigateRef = useRef(onNavigate);
-  onNavigateRef.current = onNavigate;
-  const onPlanRequestRef = useRef(onPlanRequest);
-  onPlanRequestRef.current = onPlanRequest;
-  const onPlanFollowUpRef = useRef(onPlanFollowUp);
-  onPlanFollowUpRef.current = onPlanFollowUp;
-
-  const stableSend = useCallback((text: string) => onSendRef.current(text), []);
-  const stableRegenerate = useCallback((idx: number) => onRegenerateRef.current?.(idx), []);
-  const stableSendToPlan = useCallback((text: string) => onSendToPlanRef.current?.(text), []);
-  const stableDeleteMessage = useCallback((idx: number) => onDeleteMessageRef.current?.(idx), []);
-  const stableRemoveMention = useCallback(
-    (idx: number, path: string) => onRemoveMentionRef.current?.(idx, path),
-    [],
-  );
-  const stableNavigate = useCallback((path: string) => onNavigateRef.current?.(path), []);
-  // Per-message menu callbacks: drop the approvalMode argument and use "per_step" by default.
-  // The chat-input button still routes through the full callback with approvalMode.
-  const stablePlanRequestFromMenu = useCallback(
-    (goal: string) => onPlanRequestRef.current?.(goal, "per_step"),
-    [],
-  );
-  const stablePlanFollowUpFromMenu = useCallback(
-    (goal: string, priorPlanId: string) => onPlanFollowUpRef.current?.(goal, priorPlanId, "per_step"),
-    [],
-  );
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -943,47 +825,17 @@ export function AISidecar({
               <Maximize2 size={13} />
             </button>
           </div>
-          <MessageList
-            messages={messages}
-            isThinking={isThinking}
-            endRef={endRef}
-            onNavigate={stableNavigate}
-            onRegenerate={stableRegenerate}
-            onSendToPlan={stableSendToPlan}
-            onDeleteMessage={stableDeleteMessage}
-            onRemoveMention={stableRemoveMention}
-            activePlan={activePlan}
-            onPlanFollowUp={stablePlanFollowUpFromMenu}
-            onPlanRequestFromMenu={stablePlanRequestFromMenu}
-          />
-          <ChatInput isThinking={isThinking} agentState={agentState} providerReachable={providerReachable} onSend={stableSend} onInterrupt={onInterrupt} workspaceFiles={workspaceFiles} pendingInput={pendingInput} onPendingInputConsumed={onPendingInputConsumed} activeFile={activeFile} onPlanRequest={onPlanRequest} onPlanRequestFromDocument={onPlanRequestFromDocument} activePlan={activePlan} onPlanFollowUp={onPlanFollowUp} />
+          <MessageList endRef={endRef} onNavigate={onNavigate} />
+          <ChatInput workspaceFiles={workspaceFiles} activeFile={activeFile} />
         </div>
       </div>
 
       {expanded && (
         <ChatModal
-          messages={messages}
-          isThinking={isThinking}
-          agentState={agentState}
-          providerReachable={providerReachable}
-          onSend={stableSend}
-          onInterrupt={onInterrupt}
-          onClose={() => setExpanded(false)}
-          onNavigate={stableNavigate}
           workspaceFiles={workspaceFiles}
-          onRegenerate={stableRegenerate}
-          onSendToPlan={stableSendToPlan}
-          onDeleteMessage={stableDeleteMessage}
-          onRemoveMention={stableRemoveMention}
-          pendingInput={pendingInput}
-          onPendingInputConsumed={onPendingInputConsumed}
           activeFile={activeFile}
-          onPlanRequest={onPlanRequest}
-          onPlanRequestFromDocument={onPlanRequestFromDocument}
-          activePlan={activePlan}
-          onPlanFollowUp={onPlanFollowUp}
-          onPlanRequestFromMenu={stablePlanRequestFromMenu}
-          onPlanFollowUpFromMenu={stablePlanFollowUpFromMenu}
+          onNavigate={onNavigate}
+          onClose={() => setExpanded(false)}
         />
       )}
     </>

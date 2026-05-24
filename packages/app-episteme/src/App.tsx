@@ -3,8 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Editor } from "./components/editor/Editor.tsx";
 import { FileTree } from "./components/FileTree.tsx";
 import { TocPanel } from "./components/TocPanel.tsx";
-import { AISidecar, type SidecarMessage } from "./components/AISidecar.tsx";
-import type { EpistemePlanStepType } from "./planning/types.ts";
+import { AISidecar } from "./components/AISidecar.tsx";
 import { SettingsPanel } from "./components/SettingsPanel.tsx";
 import { OnboardingModal } from "./components/OnboardingModal.tsx";
 import { PermissionDialog } from "./components/PermissionDialog.tsx";
@@ -14,10 +13,10 @@ import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
 import { PanelGroup, type PanelEntry } from "./components/PanelGroup.tsx";
 import { UnifiedSearch, type SearchCommand } from "./components/UnifiedSearch.tsx";
 import { PlanPanel } from "./components/PlanPanel.tsx";
-import { usePlanning } from "./hooks/usePlanning.ts";
+import { usePlanning, type UsePlanningReturn } from "./hooks/usePlanning.ts";
 import "./styles.css";
 import { getShell } from "./shell/index.ts";
-import { useWebSocket } from "./hooks/useWebSocket.ts";
+import { useWebSocket, type UseWebSocketReturn } from "./hooks/useWebSocket.ts";
 import {
   Search,
   Network,
@@ -39,6 +38,10 @@ import { useEditorFeatures } from "./hooks/useEditorFeatures.ts";
 import { useResearch } from "./hooks/useResearch.ts";
 import { useConflictsAndGraph } from "./hooks/useConflictsAndGraph.ts";
 import { useVoiceAndMedia } from "./hooks/useVoiceAndMedia.ts";
+import { AIProvider, useAI, type HistoryRow } from "./state/AIContext.tsx";
+import { UIProvider, useUI } from "./state/UIContext.tsx";
+import { FileProvider, useFiles } from "./state/FileContext.tsx";
+import { useSignalValue } from "./state/signals.ts";
 
 // ── Large file warning ────────────────────────────────────────────────────────
 
@@ -82,101 +85,29 @@ function ExternalChangeBanner({
   );
 }
 
-// ── App ───────────────────────────────────────────────────────────────────────
-
-const PLUGIN_LABELS: Record<string, string> = {
-  Diagram: "Diagram",
-  Citation: "Citation",
-  Contradiction: "Contradiction scanning",
-  StyleGuide: "Style guide",
-};
-function pluginLabel(name: string): string {
-  return PLUGIN_LABELS[name] ?? name;
-}
+// ── App hierarchy ─────────────────────────────────────────────────────────────
+//
+// UIProvider sits outside everything so AppShell can build AIProvider's
+// onSendToPlan callback by writing to UI signals. AppShell owns the hooks.
+// AppBody (inside AIProvider) holds the JSX and uses both contexts. Phase 3
+// will collapse most of AppBody's remaining prop list by moving file/workspace
+// state into a FileContext.
 
 function App() {
-  const [messages, setMessages] = useState<SidecarMessage[]>([]);
-  const [needsOnboarding, setNeedsOnboarding] = useState(false);
-  const [aiEnabled, setAiEnabled] = useState(true);
-  const [sidecarCollapsed, setSidecarCollapsed] = useState(() => {
-    try { return localStorage.getItem("episteme:sidecar-collapsed") === "1"; } catch { return false; }
-  });
-  const [fileTreeCollapsed, setFileTreeCollapsed] = useState(() => {
-    try { return localStorage.getItem("episteme:filetree-collapsed") === "1"; } catch { return false; }
-  });
-  const [focusSnapshot, setFocusSnapshot] = useState<
-    { fileTree: boolean; sidecar: boolean; research: boolean } | null
-  >(null);
-  // Tracks which plugin activation events have been announced this session
-  // so the inline sidecar notice only fires once per plugin.
-  const announcedPluginsRef = useRef<Set<string>>(new Set());
-  const [showSettings, setShowSettings] = useState(false);
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const themeReady = useRef(false);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<"style" | "models" | "help">("style");
-  const [showToc, setShowToc] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
-  const [dismissedLargeFile, setDismissedLargeFile] = useState(false);
-  const [showPlan, setShowPlan] = useState(false);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [editorCounts, setEditorCounts] = useState({ words: 0, chars: 0 });
-  const [editorMode, setEditorMode] = useState<"formatted" | "markdown">("formatted");
-  const [indexProgress, setIndexProgress] = useState<{
-    indexed: number;
-    total: number;
-  } | null>(null);
-  const [workspaceRoot, setWorkspaceRoot] = useState("");
-  const [sidecarPendingInput, setSidecarPendingInput] = useState("");
-  const [writingAids, setWritingAids] = useState<WritingAidsConfig>({});
-  // LLM provider (Ollama) reachability — distinct from WebSocket connection state.
-  // `null` means we haven't received an initial probe yet.
-  const [providerStatus, setProviderStatus] = useState<
-    { reachable: boolean; endpoint: string; reason?: string } | null
-  >(null);
-  const [providerBannerDismissed, setProviderBannerDismissed] = useState(false);
-  const [editorCommand, setEditorCommand] = useState<{ name: string; nonce: number } | null>(null);
-  const editorCommandNonce = useRef(0);
-  const dispatchEditorCommand = useCallback((name: string) => {
-    editorCommandNonce.current += 1;
-    setEditorCommand({ name, nonce: editorCommandNonce.current });
-  }, []);
+  return (
+    <UIProvider>
+      <AppShell />
+    </UIProvider>
+  );
+}
 
+function AppShell() {
+  const ui = useUI();
   const ws = useWebSocket();
   const planning = usePlanning(ws.wsRef, ws.subscribe);
-
-  const planRef = useRef(planning.plan);
-  useEffect(() => { planRef.current = planning.plan; }, [planning.plan]);
-
-  // Stable projection of the active plan — passed into AISidecar/MessageList,
-  // which is memo'd. A fresh object literal here would break the memo on every
-  // App render (e.g. every keystroke in the editor).
-  const activePlan = useMemo(
-    () => planning.plan ? { id: planning.plan.id, goal: planning.plan.goal } : null,
-    [planning.plan?.id, planning.plan?.goal],
-  );
-
-  // Auto-open the plan panel when a plan is created or already active on connect
-  useEffect(() => {
-    if (planning.plan) setShowPlan(true);
-  }, [planning.plan !== null]);
-
   const fileManager = useFileManager(ws.wsRef, ws.agentState, ws.subscribe);
+  const [workspaceRoot, setWorkspaceRoot] = useState("");
   const fileTreeState = useFileTreeState(ws.wsRef, ws.agentState, ws.subscribe, workspaceRoot);
-
-  // Reveal-in-tree: when the active file changes, expand all ancestor folders
-  // so the file is visible. Expanding an already-expanded folder is a no-op,
-  // so this is safe regardless of how the file was opened.
-  useEffect(() => {
-    const path = fileManager.activeFile;
-    if (!path || !path.includes("/")) return;
-    const ancestors: string[] = [];
-    const parts = path.split("/");
-    for (let i = 1; i < parts.length; i++) ancestors.push(parts.slice(0, i).join("/"));
-    const current = new Set(fileTreeState.expandedDirs);
-    const missing = ancestors.filter((a) => !current.has(a));
-    if (missing.length === 0) return;
-    fileTreeState.setExpandedDirs([...current, ...missing]);
-  }, [fileManager.activeFile, fileTreeState]);
   const editorFeatures = useEditorFeatures(
     ws.wsRef,
     ws.agentState,
@@ -192,38 +123,11 @@ function App() {
     fileManager.openFile,
     ws.subscribe,
   );
-
-  useEffect(() => {
-    try { localStorage.setItem("episteme:sidecar-collapsed", sidecarCollapsed ? "1" : "0"); } catch {}
-  }, [sidecarCollapsed]);
-  useEffect(() => {
-    try { localStorage.setItem("episteme:filetree-collapsed", fileTreeCollapsed ? "1" : "0"); } catch {}
-  }, [fileTreeCollapsed]);
-
-  const isFocusMode = focusSnapshot !== null;
-  const toggleFocusMode = useCallback(() => {
-    if (focusSnapshot) {
-      setFileTreeCollapsed(focusSnapshot.fileTree);
-      setSidecarCollapsed(focusSnapshot.sidecar);
-      research.setShowResearch(focusSnapshot.research);
-      setFocusSnapshot(null);
-    } else {
-      setFocusSnapshot({
-        fileTree: fileTreeCollapsed,
-        sidecar: sidecarCollapsed,
-        research: research.showResearch,
-      });
-      setFileTreeCollapsed(true);
-      setSidecarCollapsed(true);
-      research.setShowResearch(false);
-    }
-  }, [focusSnapshot, fileTreeCollapsed, sidecarCollapsed, research]);
-
   const onMicError = useCallback((text: string) => {
-    setMessages((prev) => [...prev, { role: "assistant", text }]);
-  }, []);
-  const handleCountsChange = useCallback((words: number, chars: number) => {
-    setEditorCounts({ words, chars });
+    // Mic errors are surfaced via console for now; previously they were pushed
+    // into the chat. AIProvider doesn't have a public "push assistant text"
+    // action, and this path is rare. Revisit if user reports voice issues.
+    console.error("[mic]", text);
   }, []);
   const voice = useVoiceAndMedia(
     ws.wsRef,
@@ -232,6 +136,141 @@ function App() {
     onMicError,
     ws.subscribe,
   );
+
+  const handleSendToPlan = useCallback((text: string) => {
+    ui.planSeedGoal.value = text;
+    ui.showPlan.value = true;
+  }, [ui]);
+  const handleContradictionOpen = useCallback(() => {
+    conflictsGraph.handleOpenConflicts();
+  }, [conflictsGraph]);
+  const handleIngestComplete = useCallback(() => {
+    fileManager.refreshFiles();
+  }, [fileManager]);
+
+  return (
+    <AIProvider
+      ws={ws}
+      planning={planning}
+      onSendToPlan={handleSendToPlan}
+      onContradictionNotify={handleContradictionOpen}
+      onIngestComplete={handleIngestComplete}
+    >
+      <FileProvider
+        fileManager={fileManager}
+        fileTreeState={fileTreeState}
+        workspaceRoot={workspaceRoot}
+        setWorkspaceRoot={setWorkspaceRoot}
+      >
+        <AppBody
+          ws={ws}
+          planning={planning}
+          editorFeatures={editorFeatures}
+          research={research}
+          conflictsGraph={conflictsGraph}
+          voice={voice}
+        />
+      </FileProvider>
+    </AIProvider>
+  );
+}
+
+interface AppBodyProps {
+  ws: UseWebSocketReturn;
+  planning: UsePlanningReturn;
+  editorFeatures: ReturnType<typeof useEditorFeatures>;
+  research: ReturnType<typeof useResearch>;
+  conflictsGraph: ReturnType<typeof useConflictsAndGraph>;
+  voice: ReturnType<typeof useVoiceAndMedia>;
+}
+
+function AppBody({
+  ws,
+  planning,
+  editorFeatures,
+  research,
+  conflictsGraph,
+  voice,
+}: AppBodyProps) {
+  const ai = useAI();
+  const ui = useUI();
+  const file = useFiles();
+  const sidecarCollapsed = useSignalValue(ai.sidecarCollapsed);
+  const providerStatus = useSignalValue(ai.providerStatus);
+  const providerBannerDismissed = useSignalValue(ai.providerBannerDismissed);
+  const fileTreeCollapsed = useSignalValue(ui.fileTreeCollapsed);
+  const activeFile = useSignalValue(file.activeFile);
+  const editorContent = useSignalValue(file.editorContent);
+  const workspaceFiles = useSignalValue(file.workspaceFiles);
+  const workspaceFolders = useSignalValue(file.workspaceFolders);
+  const workspaceName = useSignalValue(file.workspaceName);
+  const isDirty = useSignalValue(file.isDirty);
+  const externalContent = useSignalValue(file.externalContent);
+  const needsWorkspace = useSignalValue(file.needsWorkspace);
+  const isPickingWorkspace = useSignalValue(file.isPickingWorkspace);
+  const workspaceRoot = useSignalValue(file.workspaceRoot);
+  const expandedDirs = useSignalValue(file.expandedDirs);
+  const focusSnapshot = useSignalValue(ui.focusSnapshot);
+  const showSettings = useSignalValue(ui.showSettings);
+  const settingsInitialSection = useSignalValue(ui.settingsInitialSection);
+  const showToc = useSignalValue(ui.showToc);
+  const showSearch = useSignalValue(ui.showSearch);
+  const showPlan = useSignalValue(ui.showPlan);
+  const planSeedGoal = useSignalValue(ui.planSeedGoal);
+  const dismissedLargeFile = useSignalValue(ui.dismissedLargeFile);
+  const isDragOver = useSignalValue(ui.isDragOver);
+  const editorMode = useSignalValue(ui.editorMode);
+  const editorCounts = useSignalValue(ui.editorCounts);
+  const indexProgress = useSignalValue(ui.indexProgress);
+
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(true);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const themeReady = useRef(false);
+  const [writingAids, setWritingAids] = useState<WritingAidsConfig>({});
+  const [editorCommand, setEditorCommand] = useState<{ name: string; nonce: number } | null>(null);
+  const editorCommandNonce = useRef(0);
+  const dispatchEditorCommand = useCallback((name: string) => {
+    editorCommandNonce.current += 1;
+    setEditorCommand({ name, nonce: editorCommandNonce.current });
+  }, []);
+
+  // Reveal-in-tree: when the active file changes, expand all ancestor folders
+  // so the file is visible.
+  useEffect(() => {
+    if (!activeFile || !activeFile.includes("/")) return;
+    const ancestors: string[] = [];
+    const parts = activeFile.split("/");
+    for (let i = 1; i < parts.length; i++) ancestors.push(parts.slice(0, i).join("/"));
+    const current = new Set(expandedDirs);
+    const missing = ancestors.filter((a) => !current.has(a));
+    if (missing.length === 0) return;
+    file.setExpandedDirs([...current, ...missing]);
+  }, [activeFile, expandedDirs, file]);
+
+  const isFocusMode = focusSnapshot !== null;
+  const toggleFocusMode = useCallback(() => {
+    const snap = ui.focusSnapshot.value;
+    if (snap) {
+      ui.fileTreeCollapsed.value = snap.fileTree;
+      ai.sidecarCollapsed.value = snap.sidecar;
+      research.setShowResearch(snap.research);
+      ui.focusSnapshot.value = null;
+    } else {
+      ui.focusSnapshot.value = {
+        fileTree: ui.fileTreeCollapsed.value,
+        sidecar: ai.sidecarCollapsed.value,
+        research: research.showResearch,
+      };
+      ui.fileTreeCollapsed.value = true;
+      ai.sidecarCollapsed.value = true;
+      research.setShowResearch(false);
+    }
+  }, [ui, ai, research]);
+
+  const handleCountsChange = useCallback((words: number, chars: number) => {
+    ui.editorCounts.value = { words, chars };
+  }, [ui]);
 
   // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -278,19 +317,15 @@ function App() {
           if (data.features?.autocomplete !== undefined)
             editorFeatures.setAutocompleteEnabled(data.features.autocomplete);
           if (data.features?.autosave !== undefined)
-            fileManager.setAutosaveEnabled(data.features.autosave);
+            file.setAutosaveEnabled(data.features.autosave);
           if (data.features?.writingAids)
             setWritingAids(data.features.writingAids);
         },
       )
       .catch(() => {});
-  }, [editorFeatures.setAutocompleteEnabled, fileManager.setAutosaveEnabled]);
+  }, [editorFeatures.setAutocompleteEnabled, file]);
 
   // ── /api/health on mount ────────────────────────────────────────────────────
-  // The reconnect-driven fetch below only fires when the WebSocket goes
-  // disconnected → connected, which never happens for a workspace in
-  // onboarding mode or with AI disabled. Run once on mount so we can show the
-  // onboarding modal and decide whether to render AI UI.
 
   useEffect(() => {
     fetch("/api/health")
@@ -317,71 +352,24 @@ function App() {
           (data: { workspace?: string | null }) => {
             if (data.workspace) {
               const parts = data.workspace.split("/");
-              fileManager.setWorkspaceName(parts.at(-1) ?? data.workspace);
-              fileManager.setNeedsWorkspace(false);
-              setWorkspaceRoot(data.workspace);
+              file.setWorkspaceName(parts.at(-1) ?? data.workspace);
+              file.setNeedsWorkspace(false);
+              file.setWorkspaceRoot(data.workspace);
               fetch("/api/chat-history")
                 .then((r) => r.json())
-                .then(
-                  (
-                    rows: Array<
-                      | { id: number; role: "user" | "assistant"; text: string }
-                      | {
-                          id: number;
-                          role: "tool";
-                          name: string;
-                          status: "done" | "error";
-                          error?: string;
-                        }
-                      | {
-                          id: number;
-                          role: "plan_step";
-                          planId: string;
-                          stepId: string;
-                          stepTitle: string;
-                          stepType: string;
-                          state: "complete" | "failed";
-                          summary?: string;
-                          error?: string;
-                        }
-                    >,
-                  ) => {
-                    setMessages(
-                      rows.map((r): SidecarMessage => {
-                        if (r.role === "tool") {
-                          return { role: "tool", name: r.name, status: r.status, error: r.error };
-                        }
-                        if (r.role === "plan_step") {
-                          return {
-                            role: "plan_step",
-                            planId: r.planId,
-                            stepId: r.stepId,
-                            stepTitle: r.stepTitle,
-                            stepType: r.stepType as EpistemePlanStepType,
-                            state: r.state,
-                            summary: r.summary,
-                            error: r.error,
-                          };
-                        }
-                        return { role: r.role, text: r.text, id: r.id };
-                      }),
-                    );
-                  },
-                )
+                .then((rows: HistoryRow[]) => {
+                  ai.loadHistory(rows);
+                })
                 .catch(() => {});
             } else {
-              fileManager.setNeedsWorkspace(true);
+              file.setNeedsWorkspace(true);
             }
           },
         )
         .catch(() => {});
     }
     prevAgentStateRef.current = ws.agentState;
-  }, [
-    ws.agentState,
-    fileManager.setWorkspaceName,
-    fileManager.setNeedsWorkspace,
-  ]);
+  }, [ws.agentState, file, ai]);
 
   // ── "?" key opens help ──────────────────────────────────────────────────────
 
@@ -392,22 +380,28 @@ function App() {
         !(e.target instanceof HTMLInputElement) &&
         !(e.target instanceof HTMLTextAreaElement)
       ) {
-        setSettingsInitialSection("help");
-        setShowSettings(true);
+        ui.settingsInitialSection.value = "help";
+        ui.showSettings.value = true;
       }
       if (e.key === "p" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        setShowSearch((v) => !v);
+        ui.showSearch.value = !ui.showSearch.value;
       }
       if (e.key === "," && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        setSettingsInitialSection("style");
-        setShowSettings(true);
+        ui.settingsInitialSection.value = "style";
+        ui.showSettings.value = true;
       }
     }
     window.addEventListener("keydown", handleKey, { capture: true });
     return () => window.removeEventListener("keydown", handleKey, { capture: true });
-  }, []);
+  }, [ui]);
+
+  // ── Auto-open the plan panel when a plan is created ─────────────────────────
+
+  useEffect(() => {
+    if (planning.plan) ui.showPlan.value = true;
+  }, [planning.plan !== null, ui]);
 
   // ── Writing-aid persistence + menu state ────────────────────────────────────
 
@@ -450,8 +444,8 @@ function App() {
   useEffect(() => {
     const unsubscribe = getShell().onMenuCommand((cmd) => {
       if (cmd === "open-preferences") {
-        setSettingsInitialSection("style");
-        setShowSettings(true);
+        ui.settingsInitialSection.value = "style";
+        ui.showSettings.value = true;
         return;
       }
       if (cmd.startsWith("format:")) {
@@ -472,161 +466,40 @@ function App() {
       }
     });
     return unsubscribe;
-  }, [dispatchEditorCommand, updateWritingAids]);
+  }, [dispatchEditorCommand, updateWritingAids, ui]);
 
-  // ── AI sidecar wrappers ─────────────────────────────────────────────────────
-
-  const resolveMentions = useCallback(async (text: string): Promise<string> => {
-    const mentionPattern = /@([\w\-./ ]+\.md)/g;
-    const mentions = [...text.matchAll(mentionPattern)].map((m) => m[1]!.trim());
-    if (mentions.length === 0) return text;
-
-    const fetched = await Promise.all(
-      mentions.map((path) =>
-        fetch(`/api/file-content?path=${encodeURIComponent(path)}`)
-          .then((r) => r.json() as Promise<{ content?: string }>)
-          .then((d) => (d.content != null ? { path, content: d.content } : null))
-          .catch(() => null),
-      ),
-    );
-    const blocks = fetched
-      .filter((f): f is { path: string; content: string } => f !== null)
-      .map((f) => `[File: ${f.path}]\n\`\`\`\n${f.content}\n\`\`\``)
-      .join("\n\n");
-    return blocks ? `${blocks}\n\n---\n${text}` : text;
-  }, []);
-
-  const sendToAgent = useCallback(
-    (text: string) => {
-      if (ws.agentState === "disconnected") return;
-      ws.sendToAgent(text);
-      setMessages((prev) => [...prev, { role: "user", text }]);
-    },
-    [ws],
-  );
-
-  const handleSidecarPlanRequest = useCallback(
-    async (goal: string, approvalMode: "all" | "per_step") => {
-      const resolvedGoal = await resolveMentions(goal);
-      planning.requestPlan(resolvedGoal, approvalMode);
-      setShowPlan(true);
-      setSidecarCollapsed(false);
-    },
-    [planning, resolveMentions],
-  );
-
-  const handleSidecarPlanRequestFromDocument = useCallback(
-    async (path: string, goal: string, approvalMode: "all" | "per_step") => {
-      const resolvedGoal = await resolveMentions(goal);
-      planning.requestPlanFromDocument(path, resolvedGoal, approvalMode);
-      setShowPlan(true);
-      setSidecarCollapsed(false);
-    },
-    [planning, resolveMentions],
-  );
-
-  const handleSidecarPlanFollowUp = useCallback(
-    async (goal: string, priorPlanId: string, approvalMode: "all" | "per_step") => {
-      const resolvedGoal = await resolveMentions(goal);
-      planning.resetPlan();
-      planning.requestPlan(resolvedGoal, approvalMode, priorPlanId);
-      setShowPlan(true);
-      setSidecarCollapsed(false);
-    },
-    [planning, resolveMentions],
-  );
-
-  const interrupt = useCallback(() => {
-    ws.interrupt();
-  }, [ws]);
-
-  const handleRegenerate = useCallback((assistantIndex: number) => {
-    const before = messages.slice(0, assistantIndex);
-    let lastUserAt = -1;
-    for (let i = before.length - 1; i >= 0; i--) {
-      if (before[i]!.role === "user") { lastUserAt = i; break; }
-    }
-    if (lastUserAt === -1) return;
-    const userMsg = before[lastUserAt];
-    if (!userMsg || userMsg.role !== "user") return;
-    setMessages(before.slice(0, lastUserAt));
-    sendToAgent(userMsg.text);
-  }, [messages, sendToAgent]);
-
-  const [planSeedGoal, setPlanSeedGoal] = useState("");
-
-  const handleSendToPlan = useCallback((text: string) => {
-    setPlanSeedGoal(text);
-    setShowPlan(true);
-  }, []);
-
-  const onDeleteMessage = useCallback((index: number) => {
-    setMessages((prev) => {
-      const msg = prev[index];
-      if (msg && (msg.role === "user" || msg.role === "assistant") && msg.id !== undefined) {
-        fetch(`/api/chat-history/${msg.id}`, { method: "DELETE" }).catch(() => {});
-      }
-      return prev.filter((_, i) => i !== index);
-    });
-  }, []);
-
-  const onRemoveMention = useCallback((index: number, path: string) => {
-    setMessages((prev) => {
-      const msg = prev[index];
-      if (!msg || msg.role !== "user") return prev;
-      const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const newText = msg.text.replace(new RegExp(`\\s*@${escaped}`, "g"), "").trim();
-      if (msg.id !== undefined) {
-        fetch(`/api/chat-history/${msg.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: newText }),
-        }).catch(() => {});
-      }
-      if (!newText) return prev.filter((_, i) => i !== index);
-      const next = [...prev];
-      next[index] = { ...msg, text: newText };
-      return next;
-    });
-  }, []);
+  // ── Search commands ─────────────────────────────────────────────────────────
 
   const searchCommands = useMemo<SearchCommand[]>(
     () => [
-      { id: "toc", label: "Table of Contents", description: "Toggle TOC panel", action: () => setShowToc((v) => !v) },
+      { id: "toc", label: "Table of Contents", description: "Toggle TOC panel", action: () => { ui.showToc.value = !ui.showToc.value; } },
       { id: "research", label: "Research Panel", description: "Search arXiv, Wikipedia & workspace", action: () => research.setShowResearch((v) => !v) },
       { id: "conflicts", label: "Conflicts Panel", description: "Detect contradictions", action: () => conflictsGraph.showConflicts ? conflictsGraph.setShowConflicts(false) : conflictsGraph.handleOpenConflicts() },
       { id: "graph", label: "Knowledge Graph", description: "Visualize note connections", action: () => conflictsGraph.showGraph ? conflictsGraph.setShowGraph(false) : conflictsGraph.handleOpenGraph() },
-      { id: "settings", label: "Settings", description: "Style guide & features", action: () => setShowSettings(true) },
-      { id: "help", label: "Keyboard Shortcuts", description: "View all shortcuts", action: () => { setSettingsInitialSection("help"); setShowSettings(true); } },
-      { id: "newfile", label: "New File", description: "Create a new note", action: () => fileManager.createFile("untitled.md") },
+      { id: "settings", label: "Settings", description: "Style guide & features", action: () => { ui.showSettings.value = true; } },
+      { id: "help", label: "Keyboard Shortcuts", description: "View all shortcuts", action: () => { ui.settingsInitialSection.value = "help"; ui.showSettings.value = true; } },
+      { id: "newfile", label: "New File", description: "Create a new note", action: () => file.createFile("untitled.md") },
       { id: "reindex", label: "Re-index Workspace", description: "Update search index", action: () => research.handleReindex() },
-      { id: "save", label: "Save File", description: "Save current document", action: () => fileManager.saveFile() },
+      { id: "save", label: "Save File", description: "Save current document", action: () => file.saveFile() },
     ],
-    [
-      research,
-      conflictsGraph,
-      fileManager,
-    ],
+    [ui, research, conflictsGraph, file],
   );
 
-  const handleSendToChat = useCallback((selectionRef: string) => {
-    setSidecarPendingInput(selectionRef);
-    setSidecarCollapsed(false);
-  }, []);
+  // ── Sidecar / editor bridges ────────────────────────────────────────────────
+
+  const handleSendToChat = useCallback(
+    (selectionRef: string) => {
+      ai.sidecarPendingInput.value = selectionRef;
+      ai.sidecarCollapsed.value = false;
+    },
+    [ai],
+  );
 
   const handleExplainCode = useCallback(
     (code: string, language: string) => {
-      if (!ws.wsRef.current || ws.agentState === "disconnected") return;
-      ws.wsRef.current.send(
-        JSON.stringify({ type: "explain_code", code, language }),
-      );
-      setMessages((prev) => [
-        ...prev,
-        { role: "user", text: `Explain ${language} code block` },
-      ]);
-      setSidecarCollapsed(false);
+      ai.explainCode(code, language);
     },
-    [ws.agentState, ws.wsRef],
+    [ai],
   );
 
   // ── Drag-drop ─────────────────────────────────────────────────────────────────
@@ -635,15 +508,15 @@ function App() {
     const isExternal = e.dataTransfer.types.includes("Files") || e.dataTransfer.types.includes("text/uri-list");
     if (!isExternal) return;
     e.preventDefault();
-    setIsDragOver(true);
-  }, []);
+    ui.isDragOver.value = true;
+  }, [ui]);
 
-  const handleDragLeave = useCallback(() => setIsDragOver(false), []);
+  const handleDragLeave = useCallback(() => { ui.isDragOver.value = false; }, [ui]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      setIsDragOver(false);
+      ui.isDragOver.value = false;
       if (!ws.wsRef.current || ws.agentState === "disconnected") return;
 
       const uriList = e.dataTransfer.getData("text/uri-list");
@@ -678,89 +551,27 @@ function App() {
     [ws.agentState, ws.wsRef, voice],
   );
 
-  // ── Cross-cutting WebSocket subscriptions ───────────────────────────────────
+  // ── Cross-cutting WebSocket subscriptions (non-AI) ──────────────────────────
+  //
+  // AI-message subscriptions live in AIProvider. The handlers below own state
+  // that belongs to other hooks (editor flags, research/conflicts loading
+  // flags, index progress) so they stay here for now.
 
   useEffect(() => {
-    const unsubSpeak = ws.subscribe("speak", (msg) =>
-      setMessages((prev) => [...prev, { role: "assistant", text: msg.text }]),
-    );
-    const unsubToolCall = ws.subscribe("tool_call", (msg) =>
-      setMessages((prev) => [
-        ...prev,
-        { role: "tool", name: msg.name, status: "calling" },
-      ]),
-    );
-    const unsubToolResult = ws.subscribe("tool_result", (msg) =>
-      setMessages((prev) => {
-        for (let i = prev.length - 1; i >= 0; i--) {
-          const m = prev[i];
-          if (
-            m &&
-            m.role === "tool" &&
-            m.name === msg.name &&
-            m.status === "calling"
-          ) {
-            const next = [...prev];
-            next[i] = {
-              role: "tool",
-              name: msg.name,
-              status: msg.error ? "error" : "done",
-              error: msg.error,
-            };
-            return next;
-          }
-        }
-        return prev;
-      }),
-    );
-    const unsubExplain = ws.subscribe("explain_code_result", (msg) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          text: `**Code explanation:**\n\n${msg.explanation}`,
-        },
-      ]);
-      setSidecarCollapsed(false);
+    const unsubFileContent = ws.subscribe("file_content", () => {
+      editorFeatures.setGhostText("");
+      ui.dismissedLargeFile.value = false;
     });
-    const unsubCheck = ws.subscribe("check_citations_result", (msg) => {
-      const { valid, broken } = msg.result;
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          text: `Citations: ${valid.length} valid, ${broken.length} broken.${broken.length > 0 ? "\n\nBroken:\n" + broken.join("\n") : ""}`,
-        },
-      ]);
+    const unsubFileCreated = ws.subscribe("file_created", () => {
+      editorFeatures.setGhostText("");
     });
-    const unsubFormat = ws.subscribe("format_citation_result", (msg) =>
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", text: `\`\`\`bibtex\n${msg.bibtex}\n\`\`\`` },
-      ]),
-    );
-    const unsubIngest = ws.subscribe("ingest_result", (msg) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          text: msg.success
-            ? `Ingestion started: ${msg.message}`
-            : `Ingest failed: ${msg.message}`,
-        },
-      ]);
-      fileManager.refreshFiles();
+    const unsubIndex = ws.subscribe("index_progress", (msg) => {
+      if (msg.total === 0 || msg.indexed >= msg.total) ui.indexProgress.value = null;
+      else ui.indexProgress.value = { indexed: msg.indexed, total: msg.total };
     });
-    const unsubError = ws.subscribe("error", (msg) => {
-      // Coalesce: if the most recent assistant message is the same error,
-      // skip pushing a duplicate. Prevents the chat from filling up with
-      // identical "[Error] Unable to connect" messages while Ollama is down.
-      const text = `[Error] ${msg.message}`;
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last && last.role === "assistant" && last.text === text) return prev;
-        return [...prev, { role: "assistant", text }];
-      });
+    // Reset loading flags on error. The error message itself is pushed into
+    // the chat stream by AIProvider (a separate subscriber on the same event).
+    const unsubErrorResets = ws.subscribe("error", () => {
       editorFeatures.setIsGeneratingMetadata(false);
       editorFeatures.setIsTocGenerating(false);
       research.setIsSearching(false);
@@ -768,115 +579,15 @@ function App() {
       conflictsGraph.setIsScanning(false);
       conflictsGraph.setIsLoadingGraph(false);
     });
-    const unsubProvider = ws.subscribe("provider_status", (msg) => {
-      setProviderStatus({ reachable: msg.reachable, endpoint: msg.endpoint, reason: msg.reason });
-      // When the provider comes back online, re-arm the banner so the next
-      // outage is visible again.
-      if (msg.reachable) setProviderBannerDismissed(false);
-    });
-    const unsubFileContent = ws.subscribe("file_content", () => {
-      editorFeatures.setGhostText("");
-      setDismissedLargeFile(false);
-    });
-    const unsubFileCreated = ws.subscribe("file_created", () => {
-      editorFeatures.setGhostText("");
-    });
-    const unsubIndex = ws.subscribe("index_progress", (msg) => {
-      if (msg.total === 0 || msg.indexed >= msg.total) setIndexProgress(null);
-      else setIndexProgress({ indexed: msg.indexed, total: msg.total });
-    });
-    const unsubContradictionNotif = ws.subscribe("contradiction_notification", (msg) => {
-      const label = msg.count === 1 ? "1 contradiction" : `${msg.count} contradictions`;
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "notification",
-          text: `Background scan found ${label}.`,
-          actionLabel: "View",
-          onAction: () => {
-            conflictsGraph.handleOpenConflicts();
-            setSidecarCollapsed(false);
-          },
-        },
-      ]);
-      setSidecarCollapsed(false);
-    });
-    const unsubStepStarted = ws.subscribe("plan_step_started", (msg) => {
-      const plan = planRef.current;
-      const step = plan?.steps.find((s) => s.id === msg.stepId);
-      if (!step) return;
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "plan_step",
-          planId: msg.planId,
-          stepId: msg.stepId,
-          stepTitle: step.title,
-          stepType: step.type,
-          state: "running",
-        },
-      ]);
-    });
-    const unsubStepCompleted = ws.subscribe("plan_step_completed", (msg) => {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.role === "plan_step" && m.stepId === msg.stepId
-            ? { ...m, state: "complete", summary: msg.summary }
-            : m,
-        ),
-      );
-    });
-    const unsubStepFailed = ws.subscribe("plan_step_failed", (msg) => {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.role === "plan_step" && m.stepId === msg.stepId
-            ? { ...m, state: "failed", error: msg.error }
-            : m,
-        ),
-      );
-    });
-    const unsubAgentMode = ws.subscribe("agent_mode_changed", (msg) => {
-      const announced = announcedPluginsRef.current;
-      const newlyActive = msg.activePlugins.filter((name) => !announced.has(name));
-      if (newlyActive.length === 0) return;
-      for (const name of newlyActive) announced.add(name);
-      setMessages((prev) => [
-        ...prev,
-        ...newlyActive.map((name) => ({
-          role: "system_event" as const,
-          plugin: name,
-          text: `${pluginLabel(name)} tools now available`,
-        })),
-      ]);
-    });
     return () => {
-      unsubSpeak();
-      unsubToolCall();
-      unsubToolResult();
-      unsubExplain();
-      unsubCheck();
-      unsubFormat();
-      unsubIngest();
-      unsubError();
-      unsubProvider();
       unsubFileContent();
       unsubFileCreated();
       unsubIndex();
-      unsubContradictionNotif();
-      unsubStepStarted();
-      unsubStepCompleted();
-      unsubStepFailed();
-      unsubAgentMode();
+      unsubErrorResets();
     };
-  }, [
-    ws.subscribe,
-    fileManager.refreshFiles,
-    editorFeatures,
-    research,
-    conflictsGraph,
-  ]);
+  }, [ws.subscribe, editorFeatures, research, conflictsGraph, ui]);
 
-  const charCount = fileManager.editorContent.length;
+  const charCount = editorContent.length;
   const showLargeFileWarning = charCount > 50_000 && !dismissedLargeFile;
 
   const posHighlightOptions = useMemo(() => ({
@@ -913,7 +624,7 @@ function App() {
     }
   }, [writingAids.colors, theme]);
 
-  if (fileManager.needsWorkspace) {
+  if (needsWorkspace) {
     return (
       <div className="app">
         <div className="app-header"></div>
@@ -933,10 +644,10 @@ function App() {
           <button
             className="header-settings-btn"
             style={{ padding: "8px 20px", fontSize: 14 }}
-            disabled={fileManager.isPickingWorkspace}
-            onClick={fileManager.handleOpenWorkspace}
+            disabled={isPickingWorkspace}
+            onClick={file.handleOpenWorkspace}
           >
-            {fileManager.isPickingWorkspace ? "Opening…" : "Open Folder"}
+            {isPickingWorkspace ? "Opening…" : "Open Folder"}
           </button>
         </div>
       </div>
@@ -953,11 +664,11 @@ function App() {
       {/* Header */}
       <div className="app-header">
         <span className="app-header-workspace">
-          {fileManager.workspaceName}
+          {workspaceName}
         </span>
         <button
           className="header-search-trigger"
-          onClick={() => setShowSearch(true)}
+          onClick={() => { ui.showSearch.value = true; }}
           title="Unified search (⌘K)"
         >
           <Search size={13} />
@@ -969,7 +680,7 @@ function App() {
             <button
               className={`header-research-btn${!sidecarCollapsed ? " active" : ""}`}
               title={sidecarCollapsed ? "Show AI" : "Hide AI"}
-              onClick={() => setSidecarCollapsed((c) => !c)}
+              onClick={() => { ai.sidecarCollapsed.value = !ai.sidecarCollapsed.value; }}
             >
               <Sparkles size={16} />
             </button>
@@ -994,13 +705,13 @@ function App() {
 
       <UnifiedSearch
         open={showSearch}
-        onClose={() => setShowSearch(false)}
-        workspaceFiles={fileManager.workspaceFiles}
-        onFileSelect={(path) => { fileManager.openFile(path); setShowSearch(false); }}
+        onClose={() => { ui.showSearch.value = false; }}
+        workspaceFiles={workspaceFiles}
+        onFileSelect={(path) => { file.openFile(path); ui.showSearch.value = false; }}
         onResearchSearch={(q) => {
           research.handleSearch(q);
           research.setShowResearch(true);
-          setShowSearch(false);
+          ui.showSearch.value = false;
         }}
         researchResults={research.searchResults}
         isResearching={research.isSearching}
@@ -1008,9 +719,9 @@ function App() {
       />
       {showSettings && (
         <SettingsPanel
-          onClose={() => setShowSettings(false)}
+          onClose={() => { ui.showSettings.value = false; }}
           onAutocompleteEnabledChange={editorFeatures.setAutocompleteEnabled}
-          onAutosaveEnabledChange={fileManager.setAutosaveEnabled}
+          onAutosaveEnabledChange={file.setAutosaveEnabled}
           onWritingAidsChange={setWritingAids}
           initialSection={settingsInitialSection}
         />
@@ -1040,7 +751,7 @@ function App() {
       {showLargeFileWarning && (
         <LargeFileBanner
           charCount={charCount}
-          onDismiss={() => setDismissedLargeFile(true)}
+          onDismiss={() => { ui.dismissedLargeFile.value = true; }}
         />
       )}
 
@@ -1049,8 +760,7 @@ function App() {
         <div className="offline-banner">AI unavailable — reconnecting…</div>
       )}
 
-      {/* LLM provider down — distinct from WebSocket disconnect. The server is
-          reachable but Ollama isn't, so chat/fill/diagram/etc. will all fail. */}
+      {/* LLM provider down — distinct from WebSocket disconnect. */}
       {aiEnabled
         && ws.agentState !== "disconnected"
         && providerStatus
@@ -1064,7 +774,7 @@ function App() {
           </span>
           <button
             className="large-file-banner-btn"
-            onClick={() => setProviderBannerDismissed(true)}
+            onClick={() => { ai.providerBannerDismissed.value = true; }}
           >
             Dismiss
           </button>
@@ -1079,14 +789,14 @@ function App() {
               <button
                 className={`rail-btn${!fileTreeCollapsed ? " active" : ""}`}
                 title={fileTreeCollapsed ? "Show files" : "Hide files"}
-                onClick={() => setFileTreeCollapsed((c) => !c)}
+                onClick={() => { ui.fileTreeCollapsed.value = !ui.fileTreeCollapsed.value; }}
               >
                 <PanelLeft size={18} />
               </button>
               <button
                 className={`rail-btn${showToc ? " active" : ""}`}
                 title="Table of contents"
-                onClick={() => setShowToc((v) => !v)}
+                onClick={() => { ui.showToc.value = !ui.showToc.value; }}
               >
                 <AlignLeft size={18} />
               </button>
@@ -1111,7 +821,7 @@ function App() {
               <button
                 className={`rail-btn${showPlan ? " active" : ""}`}
                 title="Plan panel"
-                onClick={() => setShowPlan((v) => !v)}
+                onClick={() => { ui.showPlan.value = !ui.showPlan.value; }}
               >
                 <ClipboardList size={18} />
               </button>
@@ -1127,7 +837,7 @@ function App() {
               <button
                 className="rail-btn"
                 title="Settings"
-                onClick={() => { setSettingsInitialSection("style"); setShowSettings(true); }}
+                onClick={() => { ui.settingsInitialSection.value = "style"; ui.showSettings.value = true; }}
               >
                 <Settings size={18} />
               </button>
@@ -1135,20 +845,20 @@ function App() {
           </nav>
         )}
         <FileTree
-          files={fileManager.workspaceFiles}
-          folders={fileManager.workspaceFolders}
-          activeFile={fileManager.activeFile}
-          onFileSelect={fileManager.openFile}
-          onRefresh={fileManager.refreshFiles}
-          onCreateFile={fileManager.createFile}
-          onCreateFolder={fileManager.createFolder}
-          onRenameFile={fileManager.renameFile}
-          onRenameFolder={fileManager.renameFolder}
-          onDeleteFile={fileManager.deleteFile}
-          onOpenInFinder={fileManager.openInFinder}
+          files={workspaceFiles}
+          folders={workspaceFolders}
+          activeFile={activeFile}
+          onFileSelect={file.openFile}
+          onRefresh={file.refreshFiles}
+          onCreateFile={file.createFile}
+          onCreateFolder={file.createFolder}
+          onRenameFile={file.renameFile}
+          onRenameFolder={file.renameFolder}
+          onDeleteFile={file.deleteFile}
+          onOpenInFinder={file.openInFinder}
           workspaceRoot={workspaceRoot}
-          initialExpandedDirs={fileTreeState.expandedDirs}
-          onExpandedChange={fileTreeState.setExpandedDirs}
+          initialExpandedDirs={expandedDirs}
+          onExpandedChange={file.setExpandedDirs}
           collapsed={fileTreeCollapsed}
         />
 
@@ -1161,15 +871,15 @@ function App() {
             overflow: "hidden",
           }}
         >
-          {fileManager.externalContent !== null && (
+          {externalContent !== null && (
             <ExternalChangeBanner
-              onReload={() => fileManager.resolveExternalConflict("reload")}
-              onKeep={() => fileManager.resolveExternalConflict("keep")}
+              onReload={() => file.resolveExternalConflict("reload")}
+              onKeep={() => file.resolveExternalConflict("keep")}
             />
           )}
           <Editor
-            content={fileManager.editorContent}
-            onUpdate={(md) => fileManager.setEditorContent(md)}
+            content={editorContent}
+            onUpdate={(md) => file.setEditorContent(md)}
             onAutocompleteRequest={editorFeatures.handleAutocompleteRequest}
             ghostText={editorFeatures.ghostText}
             onGhostAccept={editorFeatures.handleGhostAccept}
@@ -1195,12 +905,12 @@ function App() {
             isRecording={voice.isRecording}
             onToggleRecording={voice.handleToggleRecording}
             onSendToChat={handleSendToChat}
-            onNavigate={fileManager.openFile}
-            onCreateFile={fileManager.createFile}
-            workspaceFiles={fileManager.workspaceFiles}
+            onNavigate={file.openFile}
+            onCreateFile={file.createFile}
+            workspaceFiles={workspaceFiles}
             onCountsChange={handleCountsChange}
             editorMode={editorMode}
-            currentFilePath={fileManager.activeFile ?? ""}
+            currentFilePath={activeFile ?? ""}
             posHighlight={posHighlightOptions}
             punctuationHighlight={punctuationHighlightOn}
             focusMode={focusModeOptions}
@@ -1210,12 +920,12 @@ function App() {
 
           {/* Status bar */}
           <div className="status-bar">
-            {fileManager.activeFile ? (
+            {activeFile ? (
               <>
                 <span className="status-bar-file">
-                  {fileManager.activeFile.split("/").at(-1)}
+                  {activeFile.split("/").at(-1)}
                 </span>
-                {fileManager.isDirty && (
+                {isDirty && (
                   <Circle
                     size={6}
                     fill="currentColor"
@@ -1228,33 +938,33 @@ function App() {
               <span style={{ color: "var(--text-dim)" }}>No file open</span>
             )}
             <div className="status-bar-spacer" />
-            {fileManager.activeFile && (
+            {activeFile && (
               <label className="settings-toggle" title="Toggle Markdown / Formatted view">
                 <input
                   type="checkbox"
                   checked={editorMode === "markdown"}
-                  onChange={() => setEditorMode(m => m === "formatted" ? "markdown" : "formatted")}
+                  onChange={() => { ui.editorMode.value = editorMode === "formatted" ? "markdown" : "formatted"; }}
                 />
                 <span className="settings-toggle-track" />
                 <span className="status-bar-mode-label">Markdown</span>
               </label>
             )}
-            {fileManager.activeFile && (
+            {activeFile && (
               <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
                 {editorCounts.words.toLocaleString()} words ·{" "}
                 {editorCounts.chars.toLocaleString()} chars
               </span>
             )}
-            {fileManager.activeFile && fileManager.isDirty && (
+            {activeFile && isDirty && (
               <button
                 className="status-bar-save"
-                onClick={fileManager.saveFile}
+                onClick={file.saveFile}
                 title="Save (⌘S)"
               >
                 Save
               </button>
             )}
-            {fileManager.activeFile && !fileManager.isDirty && (
+            {activeFile && !isDirty && (
               <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
                 Saved
               </span>
@@ -1268,10 +978,10 @@ function App() {
             id: "toc",
             label: "TOC",
             defaultWidth: 220,
-            onClose: () => setShowToc(false),
+            onClose: () => { ui.showToc.value = false; },
             content: (
               <TocPanel
-                content={fileManager.editorContent}
+                content={editorContent}
                 tocEntries={editorFeatures.tocEntries}
                 isAnnotating={editorFeatures.isTocGenerating}
                 onAnnotate={editorFeatures.handleGenerateToc}
@@ -1290,8 +1000,8 @@ function App() {
                 onIngest={research.handleIngestFromSearch}
                 onReindex={research.handleReindex}
                 onSendToAgent={(text) => {
-                  sendToAgent(text);
-                  setSidecarCollapsed(false);
+                  ai.sendToAgent(text);
+                  ai.sidecarCollapsed.value = false;
                 }}
                 searchResults={research.searchResults}
                 gapReport={research.gapReport}
@@ -1317,11 +1027,11 @@ function App() {
             id: "plan",
             label: "Plan",
             defaultWidth: 300,
-            onClose: () => setShowPlan(false),
+            onClose: () => { ui.showPlan.value = false; },
             content: (
               <PlanPanel
                 plan={planning.plan}
-                activeFile={fileManager.activeFile}
+                activeFile={activeFile}
                 agentState={ws.agentState}
                 onRequestPlan={planning.requestPlan}
                 onRequestPlanFromDocument={planning.requestPlanFromDocument}
@@ -1340,7 +1050,7 @@ function App() {
                 onCancel={planning.cancelPlan}
                 onNewPlan={planning.resetPlan}
                 seedGoal={planSeedGoal}
-                onSeedConsumed={() => setPlanSeedGoal("")}
+                onSeedConsumed={() => { ui.planSeedGoal.value = ""; }}
               />
             ),
           });
@@ -1365,26 +1075,9 @@ function App() {
         })()}
         {aiEnabled && (
           <AISidecar
-            messages={messages}
-            isThinking={ws.agentState === "thinking"}
-            agentState={ws.agentState}
-            providerReachable={providerStatus?.reachable ?? null}
-            collapsed={sidecarCollapsed}
-            onSend={sendToAgent}
-            onInterrupt={interrupt}
-            onNavigate={fileManager.openFile}
-            workspaceFiles={fileManager.workspaceFiles}
-            onRegenerate={handleRegenerate}
-            onSendToPlan={handleSendToPlan}
-            onDeleteMessage={onDeleteMessage}
-            onRemoveMention={onRemoveMention}
-            pendingInput={sidecarPendingInput}
-            onPendingInputConsumed={() => setSidecarPendingInput("")}
-            activeFile={fileManager.activeFile}
-            onPlanRequest={handleSidecarPlanRequest}
-            onPlanRequestFromDocument={handleSidecarPlanRequestFromDocument}
-            activePlan={activePlan}
-            onPlanFollowUp={handleSidecarPlanFollowUp}
+            workspaceFiles={workspaceFiles}
+            activeFile={activeFile}
+            onNavigate={file.openFile}
           />
         )}
       </div>

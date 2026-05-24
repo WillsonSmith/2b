@@ -9,6 +9,7 @@
   "dependencies": {
     "@2b/framework": "workspace:*",
     "@mozilla/readability": "^0.6.0",
+    "@preact/signals-core": "^1.14.2",
     "@tiptap/core": "^3.22.5",
     "@tiptap/extension-character-count": "^3.22.5",
     "@tiptap/extension-code-block": "^3.22.5",
