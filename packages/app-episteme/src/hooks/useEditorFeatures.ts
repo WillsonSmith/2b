@@ -117,6 +117,13 @@ export function useEditorFeatures(
     [agentState, wsRef],
   );
 
+  const clearTone = useCallback(() => setToneReplacement(null), []);
+  const clearSummarize = useCallback(() => setSummarizeResult(null), []);
+  const clearMetadata = useCallback(() => setMetadataResult(null), []);
+  const clearDiagram = useCallback(() => setDiagramResult(null), []);
+  const clearAIFill = useCallback(() => setAIFillResult(null), []);
+  const clearTable = useCallback(() => setTableResult(null), []);
+
   // Server → client subscriptions
   useEffect(() => {
     const unsubAuto = subscribe("autocomplete_suggestion", (msg) => setGhostText(msg.text));
@@ -178,15 +185,14 @@ export function useEditorFeatures(
     tableResult,
     setGhostText,
     setAutocompleteEnabled,
-    setToneReplacement,
-    setSummarizeResult,
     setIsGeneratingMetadata,
-    setMetadataResult,
-    setTocEntries,
     setIsTocGenerating,
-    setDiagramResult,
-    setAIFillResult,
-    setTableResult,
+    clearTone,
+    clearSummarize,
+    clearMetadata,
+    clearDiagram,
+    clearAIFill,
+    clearTable,
     handleAutocompleteRequest,
     handleGhostAccept,
     handleGhostDismiss,

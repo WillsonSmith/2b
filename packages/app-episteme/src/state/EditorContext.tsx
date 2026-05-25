@@ -116,12 +116,12 @@ export function EditorProvider({ editorFeatures, children }: EditorProviderProps
     value.setAutocompleteEnabled = (v) => efRef.current.setAutocompleteEnabled(v);
     value.setIsGeneratingMetadata = (v) => efRef.current.setIsGeneratingMetadata(v);
     value.setIsTocGenerating = (v) => efRef.current.setIsTocGenerating(v);
-    value.clearTone = () => efRef.current.setToneReplacement(null);
-    value.clearSummarize = () => efRef.current.setSummarizeResult(null);
-    value.clearMetadata = () => efRef.current.setMetadataResult(null);
-    value.clearDiagram = () => efRef.current.setDiagramResult(null);
-    value.clearAIFill = () => efRef.current.setAIFillResult(null);
-    value.clearTable = () => efRef.current.setTableResult(null);
+    value.clearTone = () => efRef.current.clearTone();
+    value.clearSummarize = () => efRef.current.clearSummarize();
+    value.clearMetadata = () => efRef.current.clearMetadata();
+    value.clearDiagram = () => efRef.current.clearDiagram();
+    value.clearAIFill = () => efRef.current.clearAIFill();
+    value.clearTable = () => efRef.current.clearTable();
     value.handleAutocompleteRequest = (ctx) => efRef.current.handleAutocompleteRequest(ctx);
     value.handleGhostAccept = (_text) => efRef.current.handleGhostAccept();
     value.handleGhostDismiss = () => efRef.current.handleGhostDismiss();
