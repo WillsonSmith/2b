@@ -17,15 +17,12 @@ export interface UseFileManagerReturn {
   autosaveEnabled: Signal<boolean>;
   externalContent: Signal<string | null>;
 
-  // Stable refs — for legacy consumers (useEditorFeatures, useVoiceAndMedia)
-  // that want a `.current` interface. Always reflect the latest signal value.
+  // Stable ref kept in sync with editorContent — for useEditorFeatures, which
+  // reads `.current` from event handlers (autocomplete, metadata, etc.).
   editorContentRef: React.MutableRefObject<string>;
-  activeFileRef: React.MutableRefObject<string | null>;
 
   // Stable callbacks — never re-created.
   setEditorContent: (v: string | ((prev: string) => string)) => void;
-  setActiveFile: (v: string | null) => void;
-  setSavedContent: (v: string) => void;
   setWorkspaceName: (v: string) => void;
   setNeedsWorkspace: (v: boolean) => void;
   setAutosaveEnabled: (v: boolean) => void;
@@ -78,21 +75,12 @@ export function useFileManager(
     };
   });
 
-  // Refs kept in sync with signals so legacy consumers (useEditorFeatures,
-  // useVoiceAndMedia) that read `.current` still see fresh values without
-  // refactoring their signatures.
+  // Ref kept in sync with editorContent — useEditorFeatures consumes this from
+  // event handlers (it expects `.current`, not a signal).
   const editorContentRef = useRef(state.editorContent.value);
-  const activeFileRef = useRef(state.activeFile.value);
-  const savedContentRef = useRef(state.savedContent.value);
-  const isDirtyRef = useRef(state.isDirty.value);
-
   useEffect(() => {
-    // Single signals effect: auto-tracks reads and updates every ref on change.
     return effect(() => {
       editorContentRef.current = state.editorContent.value;
-      activeFileRef.current = state.activeFile.value;
-      savedContentRef.current = state.savedContent.value;
-      isDirtyRef.current = state.isDirty.value;
     });
   }, [state]);
 
@@ -100,8 +88,6 @@ export function useFileManager(
   const setEditorContent = useCallback((v: string | ((prev: string) => string)) => {
     state.editorContent.value = typeof v === "function" ? v(state.editorContent.value) : v;
   }, [state]);
-  const setActiveFile = useCallback((v: string | null) => { state.activeFile.value = v; }, [state]);
-  const setSavedContent = useCallback((v: string) => { state.savedContent.value = v; }, [state]);
   const setWorkspaceName = useCallback((v: string) => { state.workspaceName.value = v; }, [state]);
   const setNeedsWorkspace = useCallback((v: boolean) => { state.needsWorkspace.value = v; }, [state]);
   const setAutosaveEnabled = useCallback((v: boolean) => { state.autosaveEnabled.value = v; }, [state]);
@@ -300,10 +286,7 @@ export function useFileManager(
   return {
     ...state,
     editorContentRef,
-    activeFileRef,
     setEditorContent,
-    setActiveFile,
-    setSavedContent,
     setWorkspaceName,
     setNeedsWorkspace,
     setAutosaveEnabled,
