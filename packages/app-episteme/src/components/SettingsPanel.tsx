@@ -45,7 +45,6 @@ const SHORTCUTS = [
   { key: "Enter after /fill …", desc: "Insert AI fill block" },
   { key: "Shift+Enter in fill block", desc: "Generate AI fill content" },
   { key: "F1", desc: "Show keyboard shortcuts" },
-  { key: "Select text → bubble menu", desc: "Tone rewrite, TL;DR, Table" },
   { key: "Paste/drop image", desc: "Insert image with AI alt text" },
   { key: "Hover code block", desc: "Explain code with AI" },
 ];

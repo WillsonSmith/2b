@@ -1,10 +1,7 @@
 import type { ServerWebSocket } from "bun";
 import type { ClientMsg } from "../../protocol.ts";
-import { transformTone } from "../../features/tone.ts";
-import { summarizeSection } from "../../features/summarize.ts";
 import { generateFrontmatter } from "../../features/metadata.ts";
 import { generateNarrativeToc, extractSectionsFromMarkdown } from "../../features/toc.ts";
-import { generateTable } from "../../features/table.ts";
 import type { WsContext } from "../context.ts";
 
 export type EditorMsg = Extract<
@@ -13,12 +10,9 @@ export type EditorMsg = Extract<
     type:
       | "editor_context"
       | "autocomplete_request"
-      | "tone_transform"
-      | "summarize_request"
       | "metadata_request"
       | "toc_request"
-      | "diagram_request"
-      | "table_request";
+      | "diagram_request";
   }
 >;
 
@@ -42,30 +36,6 @@ export async function handleEditor(
       autocomplete.suggest(msg.context).then((text) => {
         if (text.trim()) send(ws, { type: "autocomplete_suggestion", text: text.trim() });
       }).catch(() => {});
-      return;
-    }
-
-    case "tone_transform": {
-      const { text, tone, from, to } = msg;
-      if (!text?.trim()) return;
-      transformTone(text, tone, config).then((result) => {
-        send(ws, { type: "tone_result", text: result.trim(), from, to });
-      }).catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : "Failed to transform tone.";
-        send(ws, { type: "error", message });
-      });
-      return;
-    }
-
-    case "summarize_request": {
-      const { text, insertPos } = msg;
-      if (!text?.trim()) return;
-      summarizeSection(text, config).then((result) => {
-        send(ws, { type: "summarize_result", text: result.trim(), insertPos });
-      }).catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : "Failed to summarize.";
-        send(ws, { type: "error", message });
-      });
       return;
     }
 
@@ -111,17 +81,6 @@ export async function handleEditor(
         // inline error + retry, rather than emitting a generic chat error
         // that leaves the "Generating diagram…" spinner stuck forever.
         send(ws, { type: "diagram_result", code: "", placeholderId, error: message });
-      });
-      return;
-    }
-
-    case "table_request": {
-      const { text, insertPos } = msg;
-      if (!text?.trim()) return;
-      generateTable(text, config).then((result) => {
-        send(ws, { type: "table_result", text: result.trim(), insertPos });
-      }).catch(() => {
-        send(ws, { type: "error", message: "Failed to generate table." });
       });
       return;
     }

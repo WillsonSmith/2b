@@ -197,12 +197,9 @@ async function dispatch(
 
     case "editor_context":
     case "autocomplete_request":
-    case "tone_transform":
-    case "summarize_request":
     case "metadata_request":
     case "toc_request":
     case "diagram_request":
-    case "table_request":
       return handleEditor(msg, ctx, ws);
 
     case "ai_fill_request":

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Tone } from "../features/tone.ts";
 import type { TocEntry } from "../features/toc.ts";
 import type { AgentState, Subscribe } from "./useWebSocket.ts";
 
@@ -14,9 +13,6 @@ export function useEditorFeatures(
   const [ghostText, setGhostText] = useState("");
   const [autocompleteEnabled, setAutocompleteEnabled] = useState(false);
 
-  const [toneReplacement, setToneReplacement] = useState<{ text: string; from: number; to: number } | null>(null);
-  const [summarizeResult, setSummarizeResult] = useState<{ text: string; insertPos: number } | null>(null);
-
   const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false);
   const [metadataResult, setMetadataResult] = useState<string | null>(null);
 
@@ -25,7 +21,6 @@ export function useEditorFeatures(
 
   const [diagramResult, setDiagramResult] = useState<{ code: string; placeholderId: string; error?: string } | null>(null);
   const [aiFillResult, setAIFillResult] = useState<{ id: string; content: string; error?: string } | null>(null);
-  const [tableResult, setTableResult] = useState<{ text: string; insertPos: number } | null>(null);
 
   const handleAutocompleteRequest = useCallback((context: string) => {
     if (!autocompleteEnabled || !wsRef.current || agentState === "disconnected") return;
@@ -35,22 +30,6 @@ export function useEditorFeatures(
 
   const handleGhostAccept = useCallback(() => setGhostText(""), []);
   const handleGhostDismiss = useCallback(() => setGhostText(""), []);
-
-  const handleToneRequest = useCallback(
-    (text: string, tone: Tone, from: number, to: number) => {
-      if (!wsRef.current || agentState === "disconnected") return;
-      wsRef.current.send(JSON.stringify({ type: "tone_transform", text, tone, from, to }));
-    },
-    [agentState, wsRef],
-  );
-
-  const handleSummarizeRequest = useCallback(
-    (text: string, insertPos: number) => {
-      if (!wsRef.current || agentState === "disconnected") return;
-      wsRef.current.send(JSON.stringify({ type: "summarize_request", text, insertPos }));
-    },
-    [agentState, wsRef],
-  );
 
   const handleMetadataRequest = useCallback(() => {
     if (!wsRef.current || agentState === "disconnected" || isGeneratingMetadata) return;
@@ -109,30 +88,13 @@ export function useEditorFeatures(
     [agentState, wsRef, editorContentRef],
   );
 
-  const handleTableRequest = useCallback(
-    (text: string, insertPos: number) => {
-      if (!wsRef.current || agentState === "disconnected") return;
-      wsRef.current.send(JSON.stringify({ type: "table_request", text, insertPos }));
-    },
-    [agentState, wsRef],
-  );
-
-  const clearTone = useCallback(() => setToneReplacement(null), []);
-  const clearSummarize = useCallback(() => setSummarizeResult(null), []);
   const clearMetadata = useCallback(() => setMetadataResult(null), []);
   const clearDiagram = useCallback(() => setDiagramResult(null), []);
   const clearAIFill = useCallback(() => setAIFillResult(null), []);
-  const clearTable = useCallback(() => setTableResult(null), []);
 
   // Server → client subscriptions
   useEffect(() => {
     const unsubAuto = subscribe("autocomplete_suggestion", (msg) => setGhostText(msg.text));
-    const unsubTone = subscribe("tone_result", (msg) =>
-      setToneReplacement({ text: msg.text, from: msg.from, to: msg.to }),
-    );
-    const unsubSummarize = subscribe("summarize_result", (msg) =>
-      setSummarizeResult({ text: msg.text, insertPos: msg.insertPos }),
-    );
     const unsubMetadata = subscribe("metadata_result", (msg) => {
       setMetadataResult(msg.yaml);
       setIsGeneratingMetadata(false);
@@ -154,54 +116,39 @@ export function useEditorFeatures(
     const unsubAIFill = subscribe("ai_fill_result", (msg) =>
       setAIFillResult({ id: msg.id, content: msg.content, error: msg.error }),
     );
-    const unsubTable = subscribe("table_result", (msg) =>
-      setTableResult({ text: msg.text, insertPos: msg.insertPos }),
-    );
     return () => {
       unsubAuto();
-      unsubTone();
-      unsubSummarize();
       unsubMetadata();
       unsubFileContentToc();
       unsubToc();
       unsubTocStored();
       unsubDiagram();
       unsubAIFill();
-      unsubTable();
     };
   }, [subscribe, setEditorContent]);
 
   return {
     ghostText,
     autocompleteEnabled,
-    toneReplacement,
-    summarizeResult,
     isGeneratingMetadata,
     metadataResult,
     tocEntries,
     isTocGenerating,
     diagramResult,
     aiFillResult,
-    tableResult,
     setGhostText,
     setAutocompleteEnabled,
     setIsGeneratingMetadata,
     setIsTocGenerating,
-    clearTone,
-    clearSummarize,
     clearMetadata,
     clearDiagram,
     clearAIFill,
-    clearTable,
     handleAutocompleteRequest,
     handleGhostAccept,
     handleGhostDismiss,
-    handleToneRequest,
-    handleSummarizeRequest,
     handleMetadataRequest,
     handleGenerateToc,
     handleDiagramRequest,
     handleAIFillRequest,
-    handleTableRequest,
   };
 }

@@ -212,25 +212,19 @@ export function Editor({
   const onImagePaste = voice.handleImagePaste;
   const onToggleRecording = voice.handleToggleRecording;
   const ghostText = useSignalValue(editorCtx.ghostText);
-  const toneReplacement = useSignalValue(editorCtx.toneReplacement);
-  const summarizeResult = useSignalValue(editorCtx.summarizeResult);
   const isGeneratingMetadata = useSignalValue(editorCtx.isGeneratingMetadata);
   const metadataResult = useSignalValue(editorCtx.metadataResult);
   const diagramResult = useSignalValue(editorCtx.diagramResult);
   const aiFillResult = useSignalValue(editorCtx.aiFillResult);
-  const tableResult = useSignalValue(editorCtx.tableResult);
   const onAutocompleteRequest = editorCtx.handleAutocompleteRequest;
   const onGhostAccept = editorCtx.handleGhostAccept;
   const onGhostDismiss = editorCtx.handleGhostDismiss;
   const onMetadataRequest = editorCtx.handleMetadataRequest;
   const onDiagramRequest = editorCtx.handleDiagramRequest;
   const onAIFillRequest = editorCtx.handleAIFillRequest;
-  const onToneApplied = editorCtx.clearTone;
-  const onSummarizeApplied = editorCtx.clearSummarize;
   const onMetadataApplied = editorCtx.clearMetadata;
   const onDiagramApplied = editorCtx.clearDiagram;
   const onAIFillApplied = editorCtx.clearAIFill;
-  const onTableApplied = editorCtx.clearTable;
   const ghostRef = useRef(ghostText);
   const localLinksRef = useRef<ResolvedLocalLink[]>([]);
   const filesRef = useRef<string[]>(workspaceFiles);
@@ -361,23 +355,6 @@ export function Editor({
   }, [content]);
 
   useEffect(() => {
-    if (!editor || !toneReplacement) return;
-    const { from, to, text } = toneReplacement;
-    editor.chain().focus().insertContentAt({ from, to }, text).run();
-    onToneApplied?.();
-  }, [toneReplacement]);
-
-  useEffect(() => {
-    if (!editor || !summarizeResult) return;
-    const { insertPos, text } = summarizeResult;
-    editor.chain().focus().insertContentAt(insertPos, {
-      type: "blockquote",
-      content: [{ type: "paragraph", content: [{ type: "text", text: `[TL;DR]: ${text}` }] }],
-    }).run();
-    onSummarizeApplied?.();
-  }, [summarizeResult]);
-
-  useEffect(() => {
     if (!editor || !diagramResult) return;
     const { code, placeholderId, error } = diagramResult;
     editor.state.doc.descendants((node, pos) => {
@@ -475,13 +452,6 @@ export function Editor({
     },
     [editor, onUpdate],
   );
-
-  useEffect(() => {
-    if (!editor || !tableResult) return;
-    const { insertPos, text } = tableResult;
-    editor.chain().focus().insertContentAt(insertPos, "\n\n" + text + "\n\n").run();
-    onTableApplied?.();
-  }, [tableResult]);
 
   // Refresh writing-aid decorations when their toggles change.
   useEffect(() => {

@@ -6,7 +6,6 @@
  * statements will fail to compile until both sides handle it.
  */
 
-import type { Tone } from "./features/tone.ts";
 import type { BacklinkItem } from "./features/links.ts";
 import type { TocEntry } from "./features/toc.ts";
 import type { UnifiedSearchResponse } from "./plugins/ResearchPlugin.ts";
@@ -42,13 +41,10 @@ export type ClientMsg =
   | { type: "autocomplete_request"; context: string }
   | { type: "ingest_url"; url: string }
   | { type: "ingest_pdf"; path: string }
-  | { type: "tone_transform"; text: string; tone: Tone; from: number; to: number }
-  | { type: "summarize_request"; text: string; insertPos: number }
   | { type: "metadata_request"; title: string; preview: string }
   | { type: "toc_request"; markdown: string; file?: string }
   | { type: "diagram_request"; description: string; placeholderId: string }
   | { type: "ai_fill_request"; id: string; instruction: string; document: string; mentions: Array<{ path: string; content: string }> }
-  | { type: "table_request"; text: string; insertPos: number }
   | { type: "search_request"; query: string }
   | { type: "detect_gaps_request"; topic: string }
   | { type: "contradictions_request" }
@@ -94,14 +90,11 @@ export type ServerMsg =
   | { type: "filetree_expanded"; paths: string[] }
   | { type: "autocomplete_suggestion"; text: string }
   | { type: "ingest_result"; success: boolean; message: string }
-  | { type: "tone_result"; text: string; from: number; to: number }
-  | { type: "summarize_result"; text: string; insertPos: number }
   | { type: "metadata_result"; yaml: string }
   | { type: "toc_result"; entries: TocEntry[] }
   | { type: "toc_stored"; file: string; entries: TocEntry[] }
   | { type: "diagram_result"; code: string; placeholderId: string; error?: string }
   | { type: "ai_fill_result"; id: string; content: string; error?: string }
-  | { type: "table_result"; text: string; insertPos: number }
   | { type: "search_result"; results: UnifiedSearchResponse }
   | { type: "detect_gaps_result"; markdown: string }
   | { type: "contradictions_data"; contradictions: ContradictionRecord[] }

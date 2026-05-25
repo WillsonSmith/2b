@@ -5,37 +5,28 @@ import type { TocEntry } from "../features/toc.ts";
 
 type EditorFeaturesReturn = ReturnType<typeof useEditorFeatures>;
 
-interface ToneReplacement { text: string; from: number; to: number }
-interface SummarizeResult { text: string; insertPos: number }
 interface DiagramResult { code: string; placeholderId: string; error?: string }
 interface AIFillResult { id: string; content: string; error?: string }
-interface TableResult { text: string; insertPos: number }
 
 export interface EditorContextValue {
   // ── State signals (mirrored from useEditorFeatures) ─────────────────────
   ghostText: Signal<string>;
   autocompleteEnabled: Signal<boolean>;
-  toneReplacement: Signal<ToneReplacement | null>;
-  summarizeResult: Signal<SummarizeResult | null>;
   isGeneratingMetadata: Signal<boolean>;
   metadataResult: Signal<string | null>;
   tocEntries: Signal<TocEntry[]>;
   isTocGenerating: Signal<boolean>;
   diagramResult: Signal<DiagramResult | null>;
   aiFillResult: Signal<AIFillResult | null>;
-  tableResult: Signal<TableResult | null>;
 
   // ── Actions ─────────────────────────────────────────────────────────────
   setGhostText: (text: string) => void;
   setAutocompleteEnabled: (v: boolean) => void;
   setIsGeneratingMetadata: (v: boolean) => void;
   setIsTocGenerating: (v: boolean) => void;
-  clearTone: () => void;
-  clearSummarize: () => void;
   clearMetadata: () => void;
   clearDiagram: () => void;
   clearAIFill: () => void;
-  clearTable: () => void;
   handleAutocompleteRequest: (context: string) => void;
   /** Accept the ghost suggestion; Editor passes the accepted text but the
    *  current implementation just clears the ghost — text param is informational. */
@@ -67,40 +58,31 @@ export function EditorProvider({ editorFeatures, children }: EditorProviderProps
   const value = useConstant<EditorContextValue>(() => {
     const ghostText = signal("");
     const autocompleteEnabled = signal(false);
-    const toneReplacement = signal<ToneReplacement | null>(null);
-    const summarizeResult = signal<SummarizeResult | null>(null);
     const isGeneratingMetadata = signal(false);
     const metadataResult = signal<string | null>(null);
     const tocEntries = signal<TocEntry[]>([]);
     const isTocGenerating = signal(false);
     const diagramResult = signal<DiagramResult | null>(null);
     const aiFillResult = signal<AIFillResult | null>(null);
-    const tableResult = signal<TableResult | null>(null);
 
     return {
       ghostText,
       autocompleteEnabled,
-      toneReplacement,
-      summarizeResult,
       isGeneratingMetadata,
       metadataResult,
       tocEntries,
       isTocGenerating,
       diagramResult,
       aiFillResult,
-      tableResult,
 
       // Stubs — bound below.
       setGhostText: () => {},
       setAutocompleteEnabled: () => {},
       setIsGeneratingMetadata: () => {},
       setIsTocGenerating: () => {},
-      clearTone: () => {},
-      clearSummarize: () => {},
       clearMetadata: () => {},
       clearDiagram: () => {},
       clearAIFill: () => {},
-      clearTable: () => {},
       handleAutocompleteRequest: () => {},
       handleGhostAccept: () => {},
       handleGhostDismiss: () => {},
@@ -116,12 +98,9 @@ export function EditorProvider({ editorFeatures, children }: EditorProviderProps
     value.setAutocompleteEnabled = (v) => efRef.current.setAutocompleteEnabled(v);
     value.setIsGeneratingMetadata = (v) => efRef.current.setIsGeneratingMetadata(v);
     value.setIsTocGenerating = (v) => efRef.current.setIsTocGenerating(v);
-    value.clearTone = () => efRef.current.clearTone();
-    value.clearSummarize = () => efRef.current.clearSummarize();
     value.clearMetadata = () => efRef.current.clearMetadata();
     value.clearDiagram = () => efRef.current.clearDiagram();
     value.clearAIFill = () => efRef.current.clearAIFill();
-    value.clearTable = () => efRef.current.clearTable();
     value.handleAutocompleteRequest = (ctx) => efRef.current.handleAutocompleteRequest(ctx);
     value.handleGhostAccept = (_text) => efRef.current.handleGhostAccept();
     value.handleGhostDismiss = () => efRef.current.handleGhostDismiss();
@@ -134,15 +113,12 @@ export function EditorProvider({ editorFeatures, children }: EditorProviderProps
   useEffect(() => {
     value.ghostText.value = editorFeatures.ghostText;
     value.autocompleteEnabled.value = editorFeatures.autocompleteEnabled;
-    value.toneReplacement.value = editorFeatures.toneReplacement;
-    value.summarizeResult.value = editorFeatures.summarizeResult;
     value.isGeneratingMetadata.value = editorFeatures.isGeneratingMetadata;
     value.metadataResult.value = editorFeatures.metadataResult;
     value.tocEntries.value = editorFeatures.tocEntries;
     value.isTocGenerating.value = editorFeatures.isTocGenerating;
     value.diagramResult.value = editorFeatures.diagramResult;
     value.aiFillResult.value = editorFeatures.aiFillResult;
-    value.tableResult.value = editorFeatures.tableResult;
   });
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

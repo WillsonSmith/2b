@@ -74,14 +74,11 @@ export function useWebSocket(): UseWebSocketReturn {
       case "filetree_expanded":
       case "autocomplete_suggestion":
       case "ingest_result":
-      case "tone_result":
-      case "summarize_result":
       case "metadata_result":
       case "toc_result":
       case "toc_stored":
       case "diagram_result":
       case "ai_fill_result":
-      case "table_result":
       case "search_result":
       case "detect_gaps_result":
       case "contradictions_data":
