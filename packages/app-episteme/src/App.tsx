@@ -46,7 +46,7 @@ import { PlanningProvider, usePlanningCtx } from "./state/PlanningContext.tsx";
 import { ResearchProvider, useResearchCtx } from "./state/ResearchContext.tsx";
 import { ConflictsProvider, useConflictsCtx } from "./state/ConflictsContext.tsx";
 import { VoiceProvider, useVoice } from "./state/VoiceContext.tsx";
-import { useSignalValue } from "./state/signals.ts";
+import { signal, useComputed, useConstant, useSignalValue } from "./state/signals.ts";
 
 // ── Large file warning ────────────────────────────────────────────────────────
 
@@ -231,13 +231,19 @@ function AppBody({ ws }: AppBodyProps) {
   const [aiEnabled, setAiEnabled] = useState(true);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const themeReady = useRef(false);
-  const [writingAids, setWritingAids] = useState<WritingAidsConfig>({});
-  const [editorCommand, setEditorCommand] = useState<{ name: string; nonce: number } | null>(null);
-  const editorCommandNonce = useRef(0);
+  // Signal-backed: read .value anywhere (no stale-closure refs), write triggers
+  // subscribers. editorCommand uses object identity for dispatch — every call
+  // creates a fresh wrapper, so repeats of the same command still fire.
+  const writingAidsSig = useConstant(() => signal<WritingAidsConfig>({}));
+  const editorCommandSig = useConstant(() => signal<{ name: string } | null>(null));
+  const writingAids = useSignalValue(writingAidsSig);
+  const editorCommand = useSignalValue(editorCommandSig);
   const dispatchEditorCommand = useCallback((name: string) => {
-    editorCommandNonce.current += 1;
-    setEditorCommand({ name, nonce: editorCommandNonce.current });
-  }, []);
+    editorCommandSig.value = { name };
+  }, [editorCommandSig]);
+  const setWritingAids = useCallback((v: WritingAidsConfig) => {
+    writingAidsSig.value = v;
+  }, [writingAidsSig]);
 
   // Reveal-in-tree: when the active file changes, expand all ancestor folders
   // so the file is visible.
@@ -345,35 +351,37 @@ function AppBody({ ws }: AppBodyProps) {
 
   // ── /api/health on each (re)connect ─────────────────────────────────────────
 
-  const prevAgentStateRef = useRef<typeof ws.agentState>("disconnected");
   useEffect(() => {
-    const wasDisconnected = prevAgentStateRef.current === "disconnected";
-    const isConnected = ws.agentState !== "disconnected";
-    if (wasDisconnected && isConnected) {
-      fetch("/api/health")
-        .then((r) => r.json())
-        .then(
-          (data: { workspace?: string | null }) => {
-            if (data.workspace) {
-              const parts = data.workspace.split("/");
-              file.setWorkspaceName(parts.at(-1) ?? data.workspace);
-              file.setNeedsWorkspace(false);
-              file.setWorkspaceRoot(data.workspace);
-              fetch("/api/chat-history")
-                .then((r) => r.json())
-                .then((rows: HistoryRow[]) => {
-                  ai.loadHistory(rows);
-                })
-                .catch(() => {});
-            } else {
-              file.setNeedsWorkspace(true);
-            }
-          },
-        )
-        .catch(() => {});
-    }
-    prevAgentStateRef.current = ws.agentState;
-  }, [ws.agentState, file, ai]);
+    // Subscribe directly to the agentState signal; the closure captures the
+    // previous value across notifications, so no ref-stash is needed.
+    let prev: string = ai.agentState.value;
+    return ai.agentState.subscribe((curr) => {
+      if (prev === "disconnected" && curr !== "disconnected") {
+        fetch("/api/health")
+          .then((r) => r.json())
+          .then(
+            (data: { workspace?: string | null }) => {
+              if (data.workspace) {
+                const parts = data.workspace.split("/");
+                file.setWorkspaceName(parts.at(-1) ?? data.workspace);
+                file.setNeedsWorkspace(false);
+                file.setWorkspaceRoot(data.workspace);
+                fetch("/api/chat-history")
+                  .then((r) => r.json())
+                  .then((rows: HistoryRow[]) => {
+                    ai.loadHistory(rows);
+                  })
+                  .catch(() => {});
+              } else {
+                file.setNeedsWorkspace(true);
+              }
+            },
+          )
+          .catch(() => {});
+      }
+      prev = curr;
+    });
+  }, [ai, file]);
 
   // ── "?" key opens help ──────────────────────────────────────────────────────
 
@@ -411,17 +419,15 @@ function AppBody({ ws }: AppBodyProps) {
 
   const updateWritingAids = useCallback(
     (patch: Partial<WritingAidsConfig>) => {
-      setWritingAids((prev) => {
-        const next = { ...prev, ...patch };
-        fetch("/api/config", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ features: { writingAids: next } }),
-        }).catch(() => {});
-        return next;
-      });
+      const next = { ...writingAidsSig.value, ...patch };
+      writingAidsSig.value = next;
+      fetch("/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ features: { writingAids: next } }),
+      }).catch(() => {});
     },
-    [],
+    [writingAidsSig],
   );
 
   useEffect(() => {
@@ -442,9 +448,6 @@ function AppBody({ ws }: AppBodyProps) {
 
   // ── Native menu commands (Electron menu bar) ────────────────────────────────
 
-  const writingAidsRef = useRef(writingAids);
-  writingAidsRef.current = writingAids;
-
   useEffect(() => {
     const unsubscribe = getShell().onMenuCommand((cmd) => {
       if (cmd === "open-preferences") {
@@ -456,7 +459,8 @@ function AppBody({ ws }: AppBodyProps) {
         dispatchEditorCommand(cmd);
         return;
       }
-      const aids = writingAidsRef.current;
+      // Signal reads always return latest — no need for a ref-stash workaround.
+      const aids = writingAidsSig.value;
       if (cmd === "toggle-pos-highlight") {
         updateWritingAids({ posHighlight: !(aids.posHighlight ?? false) });
       } else if (cmd === "toggle-pos-noun") {
@@ -470,7 +474,7 @@ function AppBody({ ws }: AppBodyProps) {
       }
     });
     return unsubscribe;
-  }, [dispatchEditorCommand, updateWritingAids, ui]);
+  }, [dispatchEditorCommand, updateWritingAids, ui, writingAidsSig]);
 
   // ── Search commands ─────────────────────────────────────────────────────────
 
@@ -594,26 +598,37 @@ function AppBody({ ws }: AppBodyProps) {
   const charCount = editorContent.length;
   const showLargeFileWarning = charCount > 50_000 && !dismissedLargeFile;
 
-  const posHighlightOptions = useMemo(() => ({
-    enabled: writingAids.posHighlight ?? false,
-    noun: writingAids.posNoun ?? true,
-    verb: writingAids.posVerb ?? true,
-    adjective: writingAids.posAdjective ?? true,
-    adverb: writingAids.posAdverb ?? true,
-  }), [writingAids]);
-  const focusModeOptions = useMemo(() => ({
-    enabled: writingAids.focusMode ?? false,
-    level: writingAids.focusLevel ?? "sentence" as const,
-  }), [writingAids]);
-  const styleCheckOptions = useMemo(() => ({
-    enabled: writingAids.styleCheck ?? false,
-    filler: writingAids.styleFiller ?? true,
-    cliche: writingAids.styleCliche ?? true,
-    redundancy: writingAids.styleRedundancy ?? true,
-    strikethrough: writingAids.styleStrikethrough ?? false,
-    tintText: writingAids.styleTintText ?? false,
-  }), [writingAids]);
-  const punctuationHighlightOn = writingAids.punctuationHighlight ?? false;
+  // Derived option bags — computed signals recompute only when their inputs
+  // change, no useMemo dependency arrays to maintain.
+  const posHighlightOptions = useComputed(() => {
+    const w = writingAidsSig.value;
+    return {
+      enabled: w.posHighlight ?? false,
+      noun: w.posNoun ?? true,
+      verb: w.posVerb ?? true,
+      adjective: w.posAdjective ?? true,
+      adverb: w.posAdverb ?? true,
+    };
+  });
+  const focusModeOptions = useComputed(() => {
+    const w = writingAidsSig.value;
+    return {
+      enabled: w.focusMode ?? false,
+      level: w.focusLevel ?? "sentence" as const,
+    };
+  });
+  const styleCheckOptions = useComputed(() => {
+    const w = writingAidsSig.value;
+    return {
+      enabled: w.styleCheck ?? false,
+      filler: w.styleFiller ?? true,
+      cliche: w.styleCliche ?? true,
+      redundancy: w.styleRedundancy ?? true,
+      strikethrough: w.styleStrikethrough ?? false,
+      tintText: w.styleTintText ?? false,
+    };
+  });
+  const punctuationHighlightOn = useComputed(() => writingAidsSig.value.punctuationHighlight ?? false);
 
   // Apply user-picked highlight colors as CSS variables, clamped per theme so
   // the chosen hue stays legible on both backgrounds.

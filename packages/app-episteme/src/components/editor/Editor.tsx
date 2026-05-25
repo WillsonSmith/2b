@@ -68,7 +68,9 @@ interface EditorProps {
   punctuationHighlight?: boolean;
   focusMode?: FocusModeOptions;
   styleCheck?: StyleCheckOptions;
-  command?: { name: string; nonce: number } | null;
+  // Each dispatch creates a fresh wrapper object; Editor's useEffect deps on
+  // `command` fire on identity change, so repeats of the same name still run.
+  command?: { name: string } | null;
 }
 
 interface FindBarProps {

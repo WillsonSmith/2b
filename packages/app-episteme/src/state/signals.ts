@@ -27,6 +27,16 @@ export function useConstant<T>(init: () => T): T {
   return ref.current.value;
 }
 
+/**
+ * Derive a value from signals and subscribe the component to changes. The
+ * factory is called once; it must only read signals (closures over React
+ * state will go stale).
+ */
+export function useComputed<T>(fn: () => T): T {
+  const sig = useConstant(() => computed(fn));
+  return useSignalValue(sig);
+}
+
 interface PersistedOptions<T> {
   serialize?: (value: T) => string;
   deserialize?: (raw: string) => T;
