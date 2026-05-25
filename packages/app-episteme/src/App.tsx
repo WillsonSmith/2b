@@ -13,7 +13,7 @@ import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
 import { PanelGroup, type PanelEntry } from "./components/PanelGroup.tsx";
 import { UnifiedSearch, type SearchCommand } from "./components/UnifiedSearch.tsx";
 import { PlanPanel } from "./components/PlanPanel.tsx";
-import { usePlanning, type UsePlanningReturn } from "./hooks/usePlanning.ts";
+import { usePlanning } from "./hooks/usePlanning.ts";
 import "./styles.css";
 import { getShell } from "./shell/index.ts";
 import { useWebSocket, type UseWebSocketReturn } from "./hooks/useWebSocket.ts";
@@ -42,6 +42,7 @@ import { AIProvider, useAI, type HistoryRow } from "./state/AIContext.tsx";
 import { UIProvider, useUI } from "./state/UIContext.tsx";
 import { FileProvider, useFiles } from "./state/FileContext.tsx";
 import { EditorProvider, useEditor } from "./state/EditorContext.tsx";
+import { PlanningProvider, usePlanningCtx } from "./state/PlanningContext.tsx";
 import { useSignalValue } from "./state/signals.ts";
 
 // ── Large file warning ────────────────────────────────────────────────────────
@@ -164,13 +165,14 @@ function AppShell() {
         setWorkspaceRoot={setWorkspaceRoot}
       >
         <EditorProvider editorFeatures={editorFeatures}>
-          <AppBody
-            ws={ws}
-            planning={planning}
-            research={research}
-            conflictsGraph={conflictsGraph}
-            voice={voice}
-          />
+          <PlanningProvider planning={planning}>
+            <AppBody
+              ws={ws}
+              research={research}
+              conflictsGraph={conflictsGraph}
+              voice={voice}
+            />
+          </PlanningProvider>
         </EditorProvider>
       </FileProvider>
     </AIProvider>
@@ -179,7 +181,6 @@ function AppShell() {
 
 interface AppBodyProps {
   ws: UseWebSocketReturn;
-  planning: UsePlanningReturn;
   research: ReturnType<typeof useResearch>;
   conflictsGraph: ReturnType<typeof useConflictsAndGraph>;
   voice: ReturnType<typeof useVoiceAndMedia>;
@@ -187,7 +188,6 @@ interface AppBodyProps {
 
 function AppBody({
   ws,
-  planning,
   research,
   conflictsGraph,
   voice,
@@ -196,6 +196,8 @@ function AppBody({
   const ui = useUI();
   const file = useFiles();
   const editor = useEditor();
+  const planning = usePlanningCtx();
+  const plan = useSignalValue(planning.plan);
   const sidecarCollapsed = useSignalValue(ai.sidecarCollapsed);
   const providerStatus = useSignalValue(ai.providerStatus);
   const providerBannerDismissed = useSignalValue(ai.providerBannerDismissed);
@@ -215,7 +217,6 @@ function AppBody({
   const showToc = useSignalValue(ui.showToc);
   const showSearch = useSignalValue(ui.showSearch);
   const showPlan = useSignalValue(ui.showPlan);
-  const planSeedGoal = useSignalValue(ui.planSeedGoal);
   const dismissedLargeFile = useSignalValue(ui.dismissedLargeFile);
   const isDragOver = useSignalValue(ui.isDragOver);
   const editorMode = useSignalValue(ui.editorMode);
@@ -399,8 +400,8 @@ function AppBody({
   // ── Auto-open the plan panel when a plan is created ─────────────────────────
 
   useEffect(() => {
-    if (planning.plan) ui.showPlan.value = true;
-  }, [planning.plan !== null, ui]);
+    if (plan) ui.showPlan.value = true;
+  }, [plan !== null, ui]);
 
   // ── Writing-aid persistence + menu state ────────────────────────────────────
 
@@ -984,31 +985,7 @@ function AppBody({
             label: "Plan",
             defaultWidth: 300,
             onClose: () => { ui.showPlan.value = false; },
-            content: (
-              <PlanPanel
-                plan={planning.plan}
-                activeFile={activeFile}
-                agentState={ws.agentState}
-                onRequestPlan={planning.requestPlan}
-                onRequestPlanFromDocument={planning.requestPlanFromDocument}
-                onApprovePlan={planning.approvePlan}
-                onApproveStep={planning.approveStep}
-                onRetryStep={planning.retryStep}
-                onSkipStep={planning.skipStep}
-                onAmendSteps={planning.amendSteps}
-                onEditStepSummary={planning.editStepSummary}
-                onEditStepInstruction={planning.editStepInstruction}
-                onAddStep={planning.addStep}
-                onReorderStep={planning.reorderStep}
-                onPause={planning.pausePlan}
-                onResume={planning.resumePlan}
-                onResumeAuto={planning.resumeAuto}
-                onCancel={planning.cancelPlan}
-                onNewPlan={planning.resetPlan}
-                seedGoal={planSeedGoal}
-                onSeedConsumed={() => { ui.planSeedGoal.value = ""; }}
-              />
-            ),
+            content: <PlanPanel />,
           });
           if (conflictsGraph.showGraph) panels.push({
             id: "graph",
