@@ -1,13 +1,12 @@
 import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 import { signal, useConstant, type Signal } from "./signals.ts";
-import type { useFileManager } from "../hooks/useFileManager.ts";
+import type { UseFileManagerReturn } from "../hooks/useFileManager.ts";
 import type { useFileTreeState } from "../hooks/useFileTreeState.ts";
 
-type FileManagerReturn = ReturnType<typeof useFileManager>;
 type FileTreeStateReturn = ReturnType<typeof useFileTreeState>;
 
 export interface FileContextValue {
-  // ── File / editor state (mirrored from useFileManager) ──────────────────
+  // Signals (sourced directly from useFileManager v2 — no mirror).
   activeFile: Signal<string | null>;
   editorContent: Signal<string>;
   isDirty: Signal<boolean>;
@@ -19,14 +18,15 @@ export interface FileContextValue {
   externalContent: Signal<string | null>;
   autosaveEnabled: Signal<boolean>;
 
-  // ── Workspace root (lifted in AppShell so reconnect handler can set it) ─
+  // workspaceRoot lives in AppShell (lifted so the reconnect handler can set
+  // it); mirrored to a signal here so context consumers stay reactive.
   workspaceRoot: Signal<string>;
 
-  // ── File-tree expansion state ───────────────────────────────────────────
+  // File-tree expansion state — still mirrored from React-state hook.
   expandedDirs: Signal<string[]>;
   setExpandedDirs: (paths: string[]) => void;
 
-  // ── Actions (stable; closures read latest props via refs) ───────────────
+  // Actions (stable references from useFileManager v2).
   openFile: (path: string) => void;
   saveFile: () => void;
   createFile: (path: string) => void;
@@ -54,7 +54,7 @@ export function useFiles(): FileContextValue {
 }
 
 interface FileProviderProps {
-  fileManager: FileManagerReturn;
+  fileManager: UseFileManagerReturn;
   fileTreeState: FileTreeStateReturn;
   workspaceRoot: string;
   setWorkspaceRoot: (root: string) => void;
@@ -68,98 +68,53 @@ export function FileProvider({
   setWorkspaceRoot,
   children,
 }: FileProviderProps) {
-  const fmRef = useRef(fileManager);
-  fmRef.current = fileManager;
   const ftsRef = useRef(fileTreeState);
   ftsRef.current = fileTreeState;
   const setRootRef = useRef(setWorkspaceRoot);
   setRootRef.current = setWorkspaceRoot;
 
+  // The hook returns are stable across renders, so we can publish them through
+  // a constant value object. Two pieces still need mirroring (workspaceRoot
+  // and expandedDirs) because their source is React state, not signals.
   const value = useConstant<FileContextValue>(() => {
-    const activeFile = signal<string | null>(null);
-    const editorContent = signal("");
-    const isDirty = signal(false);
-    const workspaceFiles = signal<string[]>([]);
-    const workspaceFolders = signal<string[]>([]);
-    const workspaceName = signal("workspace");
-    const needsWorkspace = signal(false);
-    const isPickingWorkspace = signal(false);
-    const externalContent = signal<string | null>(null);
-    const autosaveEnabled = signal(true);
     const workspaceRootSig = signal("");
     const expandedDirs = signal<string[]>([]);
-
     return {
-      activeFile,
-      editorContent,
-      isDirty,
-      workspaceFiles,
-      workspaceFolders,
-      workspaceName,
-      needsWorkspace,
-      isPickingWorkspace,
-      externalContent,
-      autosaveEnabled,
+      // ── filled in below via assignment (still stable — same object) ──
+      activeFile: fileManager.activeFile,
+      editorContent: fileManager.editorContent,
+      isDirty: fileManager.isDirty,
+      workspaceFiles: fileManager.workspaceFiles,
+      workspaceFolders: fileManager.workspaceFolders,
+      workspaceName: fileManager.workspaceName,
+      needsWorkspace: fileManager.needsWorkspace,
+      isPickingWorkspace: fileManager.isPickingWorkspace,
+      externalContent: fileManager.externalContent,
+      autosaveEnabled: fileManager.autosaveEnabled,
       workspaceRoot: workspaceRootSig,
       expandedDirs,
-
-      // Stubs — bound below. Closures read latest props via refs.
-      setExpandedDirs: () => {},
-      openFile: () => {},
-      saveFile: () => {},
-      createFile: () => {},
-      createFolder: () => {},
-      renameFile: () => {},
-      renameFolder: () => {},
-      deleteFile: () => {},
-      refreshFiles: () => {},
-      openInFinder: () => {},
-      handleOpenWorkspace: () => {},
-      resolveExternalConflict: () => {},
-      setEditorContent: () => {},
-      setWorkspaceName: () => {},
-      setNeedsWorkspace: () => {},
-      setWorkspaceRoot: () => {},
-      setAutosaveEnabled: () => {},
+      setExpandedDirs: (paths) => ftsRef.current.setExpandedDirs(paths),
+      openFile: fileManager.openFile,
+      saveFile: fileManager.saveFile,
+      createFile: fileManager.createFile,
+      createFolder: fileManager.createFolder,
+      renameFile: fileManager.renameFile,
+      renameFolder: fileManager.renameFolder,
+      deleteFile: fileManager.deleteFile,
+      refreshFiles: fileManager.refreshFiles,
+      openInFinder: fileManager.openInFinder,
+      handleOpenWorkspace: fileManager.handleOpenWorkspace,
+      resolveExternalConflict: fileManager.resolveExternalConflict,
+      setEditorContent: fileManager.setEditorContent,
+      setWorkspaceName: fileManager.setWorkspaceName,
+      setNeedsWorkspace: fileManager.setNeedsWorkspace,
+      setAutosaveEnabled: fileManager.setAutosaveEnabled,
+      setWorkspaceRoot: (r) => setRootRef.current(r),
     };
   });
 
-  // Bind actions once; they read latest underlying hook via refs.
+  // Mirror the two remaining React-state inputs into signals.
   useEffect(() => {
-    value.setExpandedDirs = (paths) => ftsRef.current.setExpandedDirs(paths);
-    value.openFile = (path) => fmRef.current.openFile(path);
-    value.saveFile = () => fmRef.current.saveFile();
-    value.createFile = (path) => fmRef.current.createFile(path);
-    value.createFolder = (path) => fmRef.current.createFolder(path);
-    value.renameFile = (a, b) => fmRef.current.renameFile(a, b);
-    value.renameFolder = (a, b) => fmRef.current.renameFolder(a, b);
-    value.deleteFile = (path) => fmRef.current.deleteFile(path);
-    value.refreshFiles = () => fmRef.current.refreshFiles();
-    value.openInFinder = (path) => fmRef.current.openInFinder(path);
-    value.handleOpenWorkspace = () => fmRef.current.handleOpenWorkspace();
-    value.resolveExternalConflict = (c) => fmRef.current.resolveExternalConflict(c);
-    value.setEditorContent = (c) => fmRef.current.setEditorContent(c);
-    value.setWorkspaceName = (n) => fmRef.current.setWorkspaceName(n);
-    value.setNeedsWorkspace = (v) => fmRef.current.setNeedsWorkspace(v);
-    value.setWorkspaceRoot = (r) => setRootRef.current(r);
-    value.setAutosaveEnabled = (v) => fmRef.current.setAutosaveEnabled(v);
-  }, [value]);
-
-  // Mirror React state → signals after commit. Children that read signals via
-  // useSignalValue re-render only when their specific signal changes. Writing
-  // an identical value is a no-op on @preact/signals-core, so unchanged fields
-  // don't trigger anything.
-  useEffect(() => {
-    value.activeFile.value = fileManager.activeFile;
-    value.editorContent.value = fileManager.editorContent;
-    value.isDirty.value = fileManager.isDirty;
-    value.workspaceFiles.value = fileManager.workspaceFiles;
-    value.workspaceFolders.value = fileManager.workspaceFolders;
-    value.workspaceName.value = fileManager.workspaceName;
-    value.needsWorkspace.value = fileManager.needsWorkspace;
-    value.isPickingWorkspace.value = fileManager.isPickingWorkspace;
-    value.externalContent.value = fileManager.externalContent;
-    value.autosaveEnabled.value = fileManager.autosaveEnabled;
     value.workspaceRoot.value = workspaceRoot;
     value.expandedDirs.value = fileTreeState.expandedDirs;
   });

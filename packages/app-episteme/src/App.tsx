@@ -113,10 +113,14 @@ function AppShell() {
   const fileManager = useFileManager(ws.wsRef, ws.agentState, ws.subscribe);
   const [workspaceRoot, setWorkspaceRoot] = useState("");
   const fileTreeState = useFileTreeState(ws.wsRef, ws.agentState, ws.subscribe, workspaceRoot);
+  // Extract the one fileManager value that downstream hooks need as a string.
+  // AppShell re-renders when activeFile changes — much less often than every
+  // keystroke (which now stays inside the signal).
+  const activeFileValue = useSignalValue(fileManager.activeFile);
   const editorFeatures = useEditorFeatures(
     ws.wsRef,
     ws.agentState,
-    fileManager.activeFile,
+    activeFileValue,
     fileManager.editorContentRef,
     fileManager.setEditorContent,
     ws.subscribe,
