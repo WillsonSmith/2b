@@ -43,6 +43,9 @@ import { UIProvider, useUI } from "./state/UIContext.tsx";
 import { FileProvider, useFiles } from "./state/FileContext.tsx";
 import { EditorProvider, useEditor } from "./state/EditorContext.tsx";
 import { PlanningProvider, usePlanningCtx } from "./state/PlanningContext.tsx";
+import { ResearchProvider, useResearchCtx } from "./state/ResearchContext.tsx";
+import { ConflictsProvider, useConflictsCtx } from "./state/ConflictsContext.tsx";
+import { VoiceProvider, useVoice } from "./state/VoiceContext.tsx";
 import { useSignalValue } from "./state/signals.ts";
 
 // ── Large file warning ────────────────────────────────────────────────────────
@@ -166,12 +169,13 @@ function AppShell() {
       >
         <EditorProvider editorFeatures={editorFeatures}>
           <PlanningProvider planning={planning}>
-            <AppBody
-              ws={ws}
-              research={research}
-              conflictsGraph={conflictsGraph}
-              voice={voice}
-            />
+            <ResearchProvider research={research}>
+              <ConflictsProvider conflictsGraph={conflictsGraph}>
+                <VoiceProvider voice={voice}>
+                  <AppBody ws={ws} />
+                </VoiceProvider>
+              </ConflictsProvider>
+            </ResearchProvider>
           </PlanningProvider>
         </EditorProvider>
       </FileProvider>
@@ -181,23 +185,23 @@ function AppShell() {
 
 interface AppBodyProps {
   ws: UseWebSocketReturn;
-  research: ReturnType<typeof useResearch>;
-  conflictsGraph: ReturnType<typeof useConflictsAndGraph>;
-  voice: ReturnType<typeof useVoiceAndMedia>;
 }
 
-function AppBody({
-  ws,
-  research,
-  conflictsGraph,
-  voice,
-}: AppBodyProps) {
+function AppBody({ ws }: AppBodyProps) {
   const ai = useAI();
   const ui = useUI();
   const file = useFiles();
   const editor = useEditor();
   const planning = usePlanningCtx();
+  const research = useResearchCtx();
+  const conflictsGraph = useConflictsCtx();
+  const voice = useVoice();
   const plan = useSignalValue(planning.plan);
+  const showResearch = useSignalValue(research.showResearch);
+  const showConflicts = useSignalValue(conflictsGraph.showConflicts);
+  const showGraph = useSignalValue(conflictsGraph.showGraph);
+  const researchSearchResults = useSignalValue(research.searchResults);
+  const researchIsSearching = useSignalValue(research.isSearching);
   const sidecarCollapsed = useSignalValue(ai.sidecarCollapsed);
   const providerStatus = useSignalValue(ai.providerStatus);
   const providerBannerDismissed = useSignalValue(ai.providerBannerDismissed);
@@ -260,7 +264,7 @@ function AppBody({
       ui.focusSnapshot.value = {
         fileTree: ui.fileTreeCollapsed.value,
         sidecar: ai.sidecarCollapsed.value,
-        research: research.showResearch,
+        research: research.showResearch.value,
       };
       ui.fileTreeCollapsed.value = true;
       ai.sidecarCollapsed.value = true;
@@ -473,9 +477,9 @@ function AppBody({
   const searchCommands = useMemo<SearchCommand[]>(
     () => [
       { id: "toc", label: "Table of Contents", description: "Toggle TOC panel", action: () => { ui.showToc.value = !ui.showToc.value; } },
-      { id: "research", label: "Research Panel", description: "Search arXiv, Wikipedia & workspace", action: () => research.setShowResearch((v) => !v) },
-      { id: "conflicts", label: "Conflicts Panel", description: "Detect contradictions", action: () => conflictsGraph.showConflicts ? conflictsGraph.setShowConflicts(false) : conflictsGraph.handleOpenConflicts() },
-      { id: "graph", label: "Knowledge Graph", description: "Visualize note connections", action: () => conflictsGraph.showGraph ? conflictsGraph.setShowGraph(false) : conflictsGraph.handleOpenGraph() },
+      { id: "research", label: "Research Panel", description: "Search arXiv, Wikipedia & workspace", action: () => research.toggleShowResearch() },
+      { id: "conflicts", label: "Conflicts Panel", description: "Detect contradictions", action: () => conflictsGraph.showConflicts.value ? conflictsGraph.setShowConflicts(false) : conflictsGraph.handleOpenConflicts() },
+      { id: "graph", label: "Knowledge Graph", description: "Visualize note connections", action: () => conflictsGraph.showGraph.value ? conflictsGraph.setShowGraph(false) : conflictsGraph.handleOpenGraph() },
       { id: "settings", label: "Settings", description: "Style guide & features", action: () => { ui.showSettings.value = true; } },
       { id: "help", label: "Keyboard Shortcuts", description: "View all shortcuts", action: () => { ui.settingsInitialSection.value = "help"; ui.showSettings.value = true; } },
       { id: "newfile", label: "New File", description: "Create a new note", action: () => file.createFile("untitled.md") },
@@ -713,8 +717,8 @@ function AppBody({
           research.setShowResearch(true);
           ui.showSearch.value = false;
         }}
-        researchResults={research.searchResults}
-        isResearching={research.isSearching}
+        researchResults={researchSearchResults}
+        isResearching={researchIsSearching}
         commands={searchCommands}
       />
       {showSettings && (
@@ -801,17 +805,17 @@ function AppBody({
                 <AlignLeft size={18} />
               </button>
               <button
-                className={`rail-btn${research.showResearch ? " active" : ""}`}
+                className={`rail-btn${showResearch ? " active" : ""}`}
                 title="Research panel"
-                onClick={() => research.setShowResearch((v) => !v)}
+                onClick={() => research.toggleShowResearch()}
               >
                 <Search size={18} />
               </button>
               <button
-                className={`rail-btn${conflictsGraph.showGraph ? " active" : ""}`}
+                className={`rail-btn${showGraph ? " active" : ""}`}
                 title="Knowledge graph"
                 onClick={() =>
-                  conflictsGraph.showGraph
+                  showGraph
                     ? conflictsGraph.setShowGraph(false)
                     : conflictsGraph.handleOpenGraph()
                 }
@@ -864,10 +868,7 @@ function AppBody({
           <Editor
             content={editorContent}
             onUpdate={(md) => file.setEditorContent(md)}
-            onImagePaste={voice.handleImagePaste}
             onExplainCode={handleExplainCode}
-            isRecording={voice.isRecording}
-            onToggleRecording={voice.handleToggleRecording}
             onSendToChat={handleSendToChat}
             onNavigate={file.openFile}
             onCreateFile={file.createFile}
@@ -945,40 +946,19 @@ function AppBody({
             onClose: () => { ui.showToc.value = false; },
             content: <TocPanel />,
           });
-          if (research.showResearch) panels.push({
+          if (showResearch) panels.push({
             id: "research",
             label: "Research",
             defaultWidth: 320,
             onClose: () => research.setShowResearch(false),
-            content: (
-              <ResearchPanel
-                onSearch={research.handleSearch}
-                onDetectGaps={research.handleDetectGaps}
-                onIngest={research.handleIngestFromSearch}
-                onReindex={research.handleReindex}
-                onSendToAgent={(text) => {
-                  ai.sendToAgent(text);
-                  ai.sidecarCollapsed.value = false;
-                }}
-                searchResults={research.searchResults}
-                gapReport={research.gapReport}
-                isSearching={research.isSearching}
-                isDetectingGaps={research.isDetectingGaps}
-              />
-            ),
+            content: <ResearchPanel />,
           });
-          if (conflictsGraph.showConflicts) panels.push({
+          if (showConflicts) panels.push({
             id: "conflicts",
             label: "Conflicts",
             defaultWidth: 320,
             onClose: () => conflictsGraph.setShowConflicts(false),
-            content: (
-              <ConflictsPanel
-                onRefresh={conflictsGraph.handleContradictionScan}
-                contradictions={conflictsGraph.contradictions}
-                isLoading={conflictsGraph.isScanning}
-              />
-            ),
+            content: <ConflictsPanel />,
           });
           if (showPlan) panels.push({
             id: "plan",
@@ -987,22 +967,12 @@ function AppBody({
             onClose: () => { ui.showPlan.value = false; },
             content: <PlanPanel />,
           });
-          if (conflictsGraph.showGraph) panels.push({
+          if (showGraph) panels.push({
             id: "graph",
             label: "Graph",
             defaultWidth: 420,
             onClose: () => conflictsGraph.setShowGraph(false),
-            content: (
-              <KnowledgeGraph
-                onRefresh={conflictsGraph.handleRefreshGraph}
-                onReindex={conflictsGraph.handleReindex}
-                onLoadMore={conflictsGraph.handleLoadMoreGraph}
-                onNodeClick={conflictsGraph.handleGraphNodeClick}
-                graphData={conflictsGraph.graphData}
-                pagination={conflictsGraph.graphPagination}
-                isLoading={conflictsGraph.isLoadingGraph}
-              />
-            ),
+            content: <KnowledgeGraph />,
           });
           return <PanelGroup panels={panels} />;
         })()}

@@ -1,5 +1,6 @@
 import { useEditor as useTiptap, EditorContent } from "@tiptap/react";
 import { useEditor } from "../../state/EditorContext.tsx";
+import { useVoice } from "../../state/VoiceContext.tsx";
 import { useSignalValue } from "../../state/signals.ts";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
@@ -55,10 +56,7 @@ function getMarkdown(ed: any): string {
 interface EditorProps {
   content: string;
   onUpdate: (markdown: string) => void;
-  onImagePaste?: (base64: string, mimeType: string, filename: string) => void;
   onExplainCode?: (code: string, language: string) => void;
-  isRecording?: boolean;
-  onToggleRecording?: () => void;
   onSendToChat?: (selectionRef: string) => void;
   onNavigate?: (path: string) => void;
   onCreateFile?: (path: string) => void;
@@ -189,10 +187,7 @@ function DiagramBar({ value, onChange, onSubmit, onClose, inputRef }: DiagramBar
 export function Editor({
   content,
   onUpdate,
-  onImagePaste,
   onExplainCode,
-  isRecording,
-  onToggleRecording,
   onSendToChat,
   onNavigate,
   onCreateFile,
@@ -206,9 +201,14 @@ export function Editor({
   styleCheck: styleCheckProp,
   command,
 }: EditorProps) {
-  // editor-feature state + handlers come from EditorContext; Editor's existing
-  // internals still reference these names so we mirror them with locals.
+  // editor-feature state + handlers come from EditorContext; voice/mic from
+  // VoiceContext. Editor's existing internals still reference these names so
+  // we mirror them with locals.
   const editorCtx = useEditor();
+  const voice = useVoice();
+  const isRecording = useSignalValue(voice.isRecording);
+  const onImagePaste = voice.handleImagePaste;
+  const onToggleRecording = voice.handleToggleRecording;
   const ghostText = useSignalValue(editorCtx.ghostText);
   const toneReplacement = useSignalValue(editorCtx.toneReplacement);
   const summarizeResult = useSignalValue(editorCtx.summarizeResult);
