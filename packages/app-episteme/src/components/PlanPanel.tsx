@@ -8,6 +8,11 @@ import {
 import type { EpistemePlan, EpistemePlanStep, EpistemePlanStepType, PlanStepDraft, PlanApprovalMode } from "../planning/types.ts";
 import { PlanModeOptions } from "./PlanModeOptions.tsx";
 import { MarkdownView } from "./MarkdownView.tsx";
+import { usePlanningCtx } from "../state/PlanningContext.tsx";
+import { useFiles } from "../state/FileContext.tsx";
+import { useUI } from "../state/UIContext.tsx";
+import { useAI } from "../state/AIContext.tsx";
+import { useSignalValue } from "../state/signals.ts";
 
 // ── Icons per step type ───────────────────────────────────────────────────────
 
@@ -425,29 +430,8 @@ function PlanRequestForm({ activeFile, followingUp, onClearFollowup, onRequest, 
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export interface PlanPanelProps {
-  plan: EpistemePlan | null;
-  activeFile: string | null;
-  agentState: string;
-  onRequestPlan: (goal: string, approvalMode: PlanApprovalMode) => void;
-  onRequestPlanFromDocument: (path: string, goal: string, approvalMode: PlanApprovalMode) => void;
-  onApprovePlan: (planId: string) => void;
-  onApproveStep: (planId: string, stepId: string) => void;
-  onRetryStep: (planId: string, stepId: string) => void;
-  onSkipStep: (planId: string, stepId: string) => void;
-  onAmendSteps: (planId: string, steps: PlanStepDraft[]) => void;
-  onEditStepSummary: (planId: string, stepId: string, summary: string) => void;
-  onEditStepInstruction: (planId: string, stepId: string, instruction: string) => void;
-  onAddStep: (planId: string, description: string, insertAfterStepId?: string | null) => void;
-  onReorderStep: (planId: string, stepId: string, direction: "up" | "down") => void;
-  onPause: () => void;
-  onResume: () => void;
-  onResumeAuto: () => void;
-  onCancel: () => void;
-  onNewPlan: () => void;
-  seedGoal?: string;
-  onSeedConsumed?: () => void;
-}
+// PlanPanel consumes PlanningContext/FileContext/UIContext/AIContext directly
+// — no props needed.
 
 const PLAN_STATE_LABELS: Record<string, string> = {
   structuring:       "Structuring…",
@@ -460,14 +444,32 @@ const PLAN_STATE_LABELS: Record<string, string> = {
   cancelled:         "Cancelled",
 };
 
-export function PlanPanel({
-  plan, activeFile, agentState,
-  onRequestPlan, onRequestPlanFromDocument,
-  onApprovePlan, onApproveStep, onRetryStep, onSkipStep,
-  onAmendSteps, onEditStepSummary, onEditStepInstruction, onAddStep, onReorderStep,
-  onPause, onResume, onResumeAuto, onCancel, onNewPlan,
-  seedGoal, onSeedConsumed,
-}: PlanPanelProps) {
+export function PlanPanel() {
+  const planning = usePlanningCtx();
+  const file = useFiles();
+  const ui = useUI();
+  const ai = useAI();
+  const plan = useSignalValue(planning.plan);
+  const activeFile = useSignalValue(file.activeFile);
+  const agentState = useSignalValue(ai.agentState);
+  const seedGoal = useSignalValue(ui.planSeedGoal);
+  const onRequestPlan = planning.requestPlan;
+  const onRequestPlanFromDocument = planning.requestPlanFromDocument;
+  const onApprovePlan = planning.approvePlan;
+  const onApproveStep = planning.approveStep;
+  const onRetryStep = planning.retryStep;
+  const onSkipStep = planning.skipStep;
+  const onAmendSteps = planning.amendSteps;
+  const onEditStepSummary = planning.editStepSummary;
+  const onEditStepInstruction = planning.editStepInstruction;
+  const onAddStep = planning.addStep;
+  const onReorderStep = planning.reorderStep;
+  const onPause = planning.pausePlan;
+  const onResume = planning.resumePlan;
+  const onResumeAuto = planning.resumeAuto;
+  const onCancel = planning.cancelPlan;
+  const onNewPlan = planning.resetPlan;
+  const onSeedConsumed = () => { ui.planSeedGoal.value = ""; };
   const [editing, setEditing] = useState(false);
   const [pausing, setPausing] = useState(false);
   const [cancelling, setCancelling] = useState(false);

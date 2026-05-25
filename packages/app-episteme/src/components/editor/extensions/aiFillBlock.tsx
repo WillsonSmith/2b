@@ -5,7 +5,7 @@ import {
   ReactNodeViewRenderer,
   type NodeViewProps,
 } from "@tiptap/react";
-import { Loader2, Sparkles, X } from "lucide-react";
+import { AlertCircle, Loader2, RotateCw, Sparkles, X } from "lucide-react";
 import type React from "react";
 
 export function AIFillBlockExtension(
@@ -15,12 +15,27 @@ export function AIFillBlockExtension(
 ) {
   function AIFillBlockView({ node, updateAttributes, editor, getPos }: NodeViewProps) {
     const isGenerating = node.attrs.generating as boolean;
+    const error = (node.attrs.error as string | null) ?? null;
+    const instruction = node.textContent.trim();
+    const canGenerate = instruction.length > 0;
 
     const removeBlock = () => {
       if (typeof getPos !== "function") return;
       const pos = getPos();
       if (typeof pos !== "number") return;
       editor.chain().focus().deleteRange({ from: pos, to: pos + node.nodeSize }).run();
+    };
+
+    const triggerGenerate = () => {
+      if (!canGenerate || !callbackRef.current) return;
+      let blockId = node.attrs.id as string | null;
+      if (!blockId) {
+        blockId = crypto.randomUUID();
+        updateAttributes({ id: blockId, generating: true, error: null });
+      } else {
+        updateAttributes({ generating: true, error: null });
+      }
+      callbackRef.current(blockId, instruction);
     };
 
     if (isGenerating) {
@@ -36,33 +51,23 @@ export function AIFillBlockExtension(
       );
     }
 
-    const instruction = node.textContent.trim();
-    const canGenerate = instruction.length > 0;
-
     return (
-      <NodeViewWrapper className="ai-fill-block" data-type="ai-fill-block">
+      <NodeViewWrapper
+        className={`ai-fill-block${error ? " ai-fill-block--error" : ""}`}
+        data-type="ai-fill-block"
+      >
         <span className="ai-fill-block-label" contentEditable={false}>
           AI Fill
         </span>
         <div className="ai-fill-block-actions" contentEditable={false}>
           <button
             className="ai-fill-block-btn"
-            onClick={() => {
-              if (!canGenerate || !callbackRef.current) return;
-              let blockId = node.attrs.id as string | null;
-              if (!blockId) {
-                blockId = crypto.randomUUID();
-                updateAttributes({ id: blockId, generating: true });
-              } else {
-                updateAttributes({ generating: true });
-              }
-              callbackRef.current(blockId, instruction);
-            }}
-            title={canGenerate ? "Generate content" : "Type an instruction first"}
+            onClick={triggerGenerate}
+            title={canGenerate ? (error ? "Retry" : "Generate content") : "Type an instruction first"}
             type="button"
             disabled={!canGenerate}
           >
-            <Sparkles size={12} />
+            {error ? <RotateCw size={12} /> : <Sparkles size={12} />}
           </button>
           <button
             className="ai-fill-block-btn ai-fill-block-btn--remove"
@@ -74,6 +79,12 @@ export function AIFillBlockExtension(
           </button>
         </div>
         <NodeViewContent className="ai-fill-block-instruction" />
+        {error && (
+          <div className="ai-fill-block-error" contentEditable={false}>
+            <AlertCircle size={12} />
+            <span>{error}</span>
+          </div>
+        )}
       </NodeViewWrapper>
     );
   }
@@ -95,6 +106,11 @@ export function AIFillBlockExtension(
         generating: {
           default: false,
           parseHTML: () => false,
+          renderHTML: () => ({}),
+        },
+        error: {
+          default: null,
+          parseHTML: () => null,
           renderHTML: () => ({}),
         },
       };
@@ -127,12 +143,12 @@ export function AIFillBlockExtension(
               blockId = crypto.randomUUID();
               this.editor
                 .chain()
-                .updateAttributes("aiFillBlock", { id: blockId, generating: true })
+                .updateAttributes("aiFillBlock", { id: blockId, generating: true, error: null })
                 .run();
             } else {
               this.editor
                 .chain()
-                .updateAttributes("aiFillBlock", { generating: true })
+                .updateAttributes("aiFillBlock", { generating: true, error: null })
                 .run();
             }
             callbackRef.current(blockId, instruction);

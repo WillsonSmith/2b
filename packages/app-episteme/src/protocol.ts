@@ -7,7 +7,6 @@
  */
 
 import type { Tone } from "./features/tone.ts";
-import type { LintIssue } from "./features/lint.ts";
 import type { BacklinkItem } from "./features/links.ts";
 import type { TocEntry } from "./features/toc.ts";
 import type { UnifiedSearchResponse } from "./plugins/ResearchPlugin.ts";
@@ -61,7 +60,6 @@ export type ClientMsg =
   | { type: "analyze_image"; base64: string; mimeType: string; filename: string }
   | { type: "explain_code"; code: string; language: string }
   | { type: "voice_data"; audioBase64: string; mimeType: string }
-  | { type: "lint_request"; content: string }
   | { type: "open_in_finder"; path: string }
   | { type: "backlinks_request"; path: string }
   | { type: "plan_request"; goal: string; approvalMode: "all" | "per_step"; previousPlanId?: string }
@@ -98,11 +96,10 @@ export type ServerMsg =
   | { type: "ingest_result"; success: boolean; message: string }
   | { type: "tone_result"; text: string; from: number; to: number }
   | { type: "summarize_result"; text: string; insertPos: number }
-  | { type: "lint_result"; issues: LintIssue[] }
   | { type: "metadata_result"; yaml: string }
   | { type: "toc_result"; entries: TocEntry[] }
   | { type: "toc_stored"; file: string; entries: TocEntry[] }
-  | { type: "diagram_result"; code: string; placeholderId: string }
+  | { type: "diagram_result"; code: string; placeholderId: string; error?: string }
   | { type: "ai_fill_result"; id: string; content: string; error?: string }
   | { type: "table_result"; text: string; insertPos: number }
   | { type: "search_result"; results: UnifiedSearchResponse }
@@ -118,6 +115,7 @@ export type ServerMsg =
   | { type: "file_externally_changed"; path: string; content: string }
   | { type: "backlinks_result"; path: string; items: BacklinkItem[] }
   | { type: "error"; message: string }
+  | { type: "provider_status"; reachable: boolean; endpoint: string; reason?: string }
   | { type: "plan_created"; plan: EpistemePlan }
   | { type: "plan_updated"; plan: EpistemePlan }
   | { type: "plan_step_started"; planId: string; stepId: string }

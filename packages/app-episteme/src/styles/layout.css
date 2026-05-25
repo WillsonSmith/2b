@@ -176,6 +176,28 @@
   color: var(--accent);
   border-color: var(--accent-soft);
 }
+.provider-offline-banner {
+  background: color-mix(in srgb, var(--red) 14%, var(--bg-raised));
+  border-bottom: 1px solid color-mix(in srgb, var(--red) 35%, var(--border));
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-default);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.provider-offline-banner strong {
+  color: var(--red);
+  font-weight: 600;
+}
+.provider-offline-banner code {
+  background: var(--bg-default);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  border: 1px solid var(--border);
+}
 
 /* ── Empty workspace state ──────────────────────────────────────────────── */
 .empty-workspace {

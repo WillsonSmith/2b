@@ -24,7 +24,6 @@ import { createProvider } from "@2b/framework/providers/llm/createProvider.ts";
 import { TickMetricsAggregator } from "@2b/framework/core/TickMetricsAggregator.ts";
 import { PlanningController } from "../planning/PlanningController.ts";
 import { AutocompleteRunner } from "../features/autocomplete.ts";
-import { LintRunner } from "../features/lint.ts";
 import { assertNever, type ClientMsg, type ServerMsg } from "../protocol.ts";
 import index from "../index.html";
 import type { WsContext } from "./context.ts";
@@ -115,11 +114,34 @@ function autoActivateForText(text: string, ctx: WsContext): void {
   }
 }
 
+/**
+ * Message types that don't require a running agent. Everything else is
+ * silently dropped while AI is disabled (the frontend hides UI for those
+ * features, but defend the server too in case a stale client sends one).
+ */
+const NON_AI_MESSAGE_TYPES = new Set<ClientMsg["type"]>([
+  "list_workspace",
+  "file_open",
+  "file_save",
+  "file_create",
+  "folder_create",
+  "folder_rename",
+  "file_rename",
+  "file_delete",
+  "open_in_finder",
+  "backlinks_request",
+  "get_filetree_expanded",
+  "set_filetree_expanded",
+  "editor_context",
+]);
+
 async function dispatch(
   msg: ClientMsg,
   ctx: WsContext,
   ws: ServerWebSocket<unknown>,
+  aiEnabled: () => boolean,
 ): Promise<void> {
+  if (!aiEnabled() && !NON_AI_MESSAGE_TYPES.has(msg.type)) return;
   autoActivateForMessage(msg, ctx);
   switch (msg.type) {
     case "send": {
@@ -181,7 +203,6 @@ async function dispatch(
     case "toc_request":
     case "diagram_request":
     case "table_request":
-    case "lint_request":
       return handleEditor(msg, ctx, ws);
 
     case "ai_fill_request":
@@ -230,11 +251,20 @@ async function dispatch(
   }
 }
 
+export interface StartServerOptions {
+  /** No config.json existed on disk — the workspace needs onboarding. */
+  isFirstLaunch: boolean;
+  /** Whether the agent should be started at boot. False when onboarding is
+   *  pending or the user has opted into editor-only mode. */
+  aiEnabled: boolean;
+}
+
 export async function startEpistemServer(
   bundle: EpistemeAgentBundle,
   workspaceRoot: string,
   config: EpistemeConfig,
   port: number,
+  options: StartServerOptions,
 ): Promise<void> {
   const {
     agent, editorContext, workspace, styleGuide, research,
@@ -243,20 +273,12 @@ export async function startEpistemServer(
   } = bundle;
   const absRoot = resolve(workspaceRoot);
 
-  await agent.start();
-
-  bundle.shortTermMemory.seed(
-    bundle.workspaceDb
-      .listChatMessages(200)
-      .flatMap((r) =>
-        r.role === "user" || r.role === "assistant"
-          ? [{ role: r.role, content: r.text }]
-          : [],
-      ),
-  );
+  // Mutable: flipped to true after agent.start() succeeds. The onboarding
+  // endpoint can transition it from false → true at runtime.
+  let agentStarted = false;
+  let onboardingRequired = options.isFirstLaunch;
 
   const autocomplete = new AutocompleteRunner(config);
-  const linter = new LintRunner(config);
 
   const clients = new Set<ServerWebSocket<unknown>>();
 
@@ -316,7 +338,6 @@ export async function startEpistemServer(
     config,
     absRoot,
     autocomplete,
-    linter,
     broadcast,
     send,
     collectMarkdownFiles: () => collectMarkdownFiles(absRoot),
@@ -346,8 +367,6 @@ export async function startEpistemServer(
   contradiction.onBackgroundFindings = (count) => {
     broadcast({ type: "contradiction_notification", count });
   };
-  // Initial index after the listener is wired so connected clients see progress.
-  await workspace.index();
 
   watch(absRoot, { recursive: true }, async (_, filename) => {
     if (typeof filename !== "string" || !filename.endsWith(".md")) return;
@@ -366,7 +385,36 @@ export async function startEpistemServer(
   const tickMetrics = new TickMetricsAggregator(50);
   agent.on("tick_metrics", (m) => tickMetrics.record(m));
 
-  agent.on("error", (err: Error) => broadcast({ type: "error", message: err.message }));
+  // ── LLM provider health monitor ────────────────────────────────────────────
+  // Periodically probes the LLM backend (Ollama) and broadcasts state changes
+  // so the UI can render a banner / sidecar badge. Also probes immediately
+  // whenever the agent emits an error, so the UI updates without waiting for
+  // the next interval.
+  const providerEndpoint = process.env["OLLAMA_URL"] ?? "http://127.0.0.1:11434";
+  const healthProbe = createProvider(featureModel(config, "default"));
+  let lastProviderReachable: boolean | null = null;
+  async function probeProvider(reason?: string): Promise<boolean> {
+    const reachable = await healthProbe.isReachable(1500);
+    if (reachable !== lastProviderReachable) {
+      lastProviderReachable = reachable;
+      broadcast({
+        type: "provider_status",
+        reachable,
+        endpoint: providerEndpoint,
+        reason: reachable ? undefined : reason ?? "Backend is not responding",
+      });
+    }
+    return reachable;
+  }
+  // Initial probe + 10s heartbeat.
+  probeProvider();
+  setInterval(() => probeProvider(), 10_000);
+
+  agent.on("error", (err: Error) => {
+    broadcast({ type: "error", message: err.message });
+    // Connection-class errors → re-probe immediately so the UI flips to offline.
+    probeProvider(err.message);
+  });
   agent.on("speak", (text) => {
     workspaceDb.appendChatMessage("assistant", text);
     broadcast({ type: "speak", text });
@@ -390,13 +438,39 @@ export async function startEpistemServer(
     }
   });
 
+  async function startAgent(): Promise<void> {
+    if (agentStarted) return;
+    await agent.start();
+    bundle.shortTermMemory.seed(
+      bundle.workspaceDb
+        .listChatMessages(200)
+        .flatMap((r) =>
+          r.role === "user" || r.role === "assistant"
+            ? [{ role: r.role, content: r.text }]
+            : [],
+        ),
+    );
+    await workspace.index();
+    agentStarted = true;
+  }
+
+  if (options.aiEnabled) {
+    await startAgent();
+  }
+
   const server = Bun.serve({
     port,
     routes: {
       "/": index,
       "/api/health": {
         GET: () =>
-          json({ status: "ok", app: "episteme", workspace: workspaceRoot }),
+          json({
+            status: "ok",
+            app: "episteme",
+            workspace: workspaceRoot,
+            onboarding: { required: onboardingRequired },
+            aiEnabled: agentStarted,
+          }),
       },
       "/api/metrics": {
         GET: () => {
@@ -523,8 +597,58 @@ export async function startEpistemServer(
               permissionManager.setModes(config.permissions);
               dirty = true;
             }
+            let restartRequired = false;
+            if (body.aiEnabled !== undefined) {
+              // Hot-toggle is unsafe: turning AI off mid-session would orphan a
+              // running CortexAgent; turning it on needs index init that's
+              // safest from a clean boot. Persist and let the UI prompt for
+              // restart.
+              if (config.aiEnabled !== body.aiEnabled) {
+                config.aiEnabled = body.aiEnabled;
+                restartRequired = true;
+                dirty = true;
+              }
+            }
             if (dirty) await saveConfig(workspaceRoot, config);
-            return json(config);
+            return json({ ...config, restartRequired });
+          } catch {
+            return json({ error: "Invalid JSON body" }, 400);
+          }
+        },
+      },
+      "/api/onboarding/complete": {
+        POST: async (req: Request) => {
+          if (!onboardingRequired) {
+            return json({ error: "Onboarding already complete." }, 409);
+          }
+          try {
+            const body = (await req.json()) as {
+              aiEnabled: boolean;
+              models?: { default?: string; embedding?: string };
+              ollamaBaseUrl?: string;
+            };
+            if (body.aiEnabled) {
+              if (!body.models?.default) {
+                return json({ error: "models.default is required when enabling AI." }, 400);
+              }
+              config.models.default = body.models.default;
+              if (body.models.embedding) config.models.embedding = body.models.embedding;
+              if (body.ollamaBaseUrl) {
+                const trimmed = body.ollamaBaseUrl.trim();
+                config.ollamaBaseUrl = trimmed || undefined;
+                process.env.OLLAMA_URL = trimmed || "http://127.0.0.1:11434";
+              }
+              config.aiEnabled = true;
+            } else {
+              config.aiEnabled = false;
+            }
+            await saveConfig(workspaceRoot, config);
+            onboardingRequired = false;
+            if (config.aiEnabled) {
+              await startAgent();
+              broadcast({ type: "state_change", state: "idle" });
+            }
+            return json({ ...config, aiEnabled: agentStarted });
           } catch {
             return json({ error: "Invalid JSON body" }, 400);
           }
@@ -621,6 +745,7 @@ export async function startEpistemServer(
     websocket: {
       open(ws) {
         clients.add(ws);
+        if (!agentStarted) return;
         const activePlan = planningPlugin.getActivePlan();
         if (activePlan) {
           send(ws, { type: "plan_created", plan: activePlan });
@@ -639,7 +764,7 @@ export async function startEpistemServer(
         } catch {
           return;
         }
-        await dispatch(msg, ctx, ws);
+        await dispatch(msg, ctx, ws, () => agentStarted);
       },
     },
     fetch(req, server) {

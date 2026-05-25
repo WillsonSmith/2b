@@ -1,4 +1,7 @@
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor as useTiptap, EditorContent } from "@tiptap/react";
+import { useEditor } from "../../state/EditorContext.tsx";
+import { useVoice } from "../../state/VoiceContext.tsx";
+import { useSignalValue } from "../../state/signals.ts";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -11,7 +14,6 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { ChevronUp, ChevronDown, X } from "lucide-react";
-import type { LintIssue } from "../../features/lint.ts";
 import {
   isLocalLink,
   resolveLocalHref,
@@ -20,7 +22,6 @@ import {
 } from "../../features/links.ts";
 import type { LinkSuggestionItem } from "../../features/links.ts";
 import { GhostTextExtension } from "./extensions/ghostText.ts";
-import { LintExtension, resolveIssuePositions, type ResolvedIssue } from "./extensions/lint.ts";
 import { FindExtension, resolveFindMatches, type FindMatch, type FindState } from "./extensions/find.ts";
 import { MarkdownRevealExtension } from "./extensions/markdownReveal.ts";
 import {
@@ -55,31 +56,7 @@ function getMarkdown(ed: any): string {
 interface EditorProps {
   content: string;
   onUpdate: (markdown: string) => void;
-  onAutocompleteRequest?: (context: string) => void;
-  ghostText?: string;
-  onGhostAccept?: (text: string) => void;
-  onGhostDismiss?: () => void;
-  toneReplacement?: { text: string; from: number; to: number } | null;
-  summarizeResult?: { text: string; insertPos: number } | null;
-  onToneApplied?: () => void;
-  onSummarizeApplied?: () => void;
-  lintIssues?: LintIssue[];
-  onMetadataRequest?: () => void;
-  isGeneratingMetadata?: boolean;
-  onDiagramRequest?: (description: string, placeholderId: string) => void;
-  diagramResult?: { code: string; placeholderId: string } | null;
-  onDiagramApplied?: () => void;
-  onAIFillRequest?: (id: string, instruction: string) => void;
-  aiFillResult?: { id: string; content: string; error?: string } | null;
-  onAIFillApplied?: () => void;
-  metadataResult?: string | null;
-  onMetadataApplied?: () => void;
-  tableResult?: { text: string; insertPos: number } | null;
-  onTableApplied?: () => void;
-  onImagePaste?: (base64: string, mimeType: string, filename: string) => void;
   onExplainCode?: (code: string, language: string) => void;
-  isRecording?: boolean;
-  onToggleRecording?: () => void;
   onSendToChat?: (selectionRef: string) => void;
   onNavigate?: (path: string) => void;
   onCreateFile?: (path: string) => void;
@@ -91,7 +68,9 @@ interface EditorProps {
   punctuationHighlight?: boolean;
   focusMode?: FocusModeOptions;
   styleCheck?: StyleCheckOptions;
-  command?: { name: string; nonce: number } | null;
+  // Each dispatch creates a fresh wrapper object; Editor's useEffect deps on
+  // `command` fire on identity change, so repeats of the same name still run.
+  command?: { name: string } | null;
 }
 
 interface FindBarProps {
@@ -210,31 +189,7 @@ function DiagramBar({ value, onChange, onSubmit, onClose, inputRef }: DiagramBar
 export function Editor({
   content,
   onUpdate,
-  onAutocompleteRequest,
-  ghostText = "",
-  onGhostAccept,
-  onGhostDismiss,
-  toneReplacement,
-  summarizeResult,
-  onToneApplied,
-  onSummarizeApplied,
-  lintIssues = [],
-  onMetadataRequest,
-  isGeneratingMetadata,
-  onDiagramRequest,
-  diagramResult,
-  onDiagramApplied,
-  onAIFillRequest,
-  aiFillResult,
-  onAIFillApplied,
-  metadataResult,
-  onMetadataApplied,
-  tableResult,
-  onTableApplied,
-  onImagePaste,
   onExplainCode,
-  isRecording,
-  onToggleRecording,
   onSendToChat,
   onNavigate,
   onCreateFile,
@@ -248,8 +203,35 @@ export function Editor({
   styleCheck: styleCheckProp,
   command,
 }: EditorProps) {
+  // editor-feature state + handlers come from EditorContext; voice/mic from
+  // VoiceContext. Editor's existing internals still reference these names so
+  // we mirror them with locals.
+  const editorCtx = useEditor();
+  const voice = useVoice();
+  const isRecording = useSignalValue(voice.isRecording);
+  const onImagePaste = voice.handleImagePaste;
+  const onToggleRecording = voice.handleToggleRecording;
+  const ghostText = useSignalValue(editorCtx.ghostText);
+  const toneReplacement = useSignalValue(editorCtx.toneReplacement);
+  const summarizeResult = useSignalValue(editorCtx.summarizeResult);
+  const isGeneratingMetadata = useSignalValue(editorCtx.isGeneratingMetadata);
+  const metadataResult = useSignalValue(editorCtx.metadataResult);
+  const diagramResult = useSignalValue(editorCtx.diagramResult);
+  const aiFillResult = useSignalValue(editorCtx.aiFillResult);
+  const tableResult = useSignalValue(editorCtx.tableResult);
+  const onAutocompleteRequest = editorCtx.handleAutocompleteRequest;
+  const onGhostAccept = editorCtx.handleGhostAccept;
+  const onGhostDismiss = editorCtx.handleGhostDismiss;
+  const onMetadataRequest = editorCtx.handleMetadataRequest;
+  const onDiagramRequest = editorCtx.handleDiagramRequest;
+  const onAIFillRequest = editorCtx.handleAIFillRequest;
+  const onToneApplied = editorCtx.clearTone;
+  const onSummarizeApplied = editorCtx.clearSummarize;
+  const onMetadataApplied = editorCtx.clearMetadata;
+  const onDiagramApplied = editorCtx.clearDiagram;
+  const onAIFillApplied = editorCtx.clearAIFill;
+  const onTableApplied = editorCtx.clearTable;
   const ghostRef = useRef(ghostText);
-  const lintRef = useRef<ResolvedIssue[]>([]);
   const localLinksRef = useRef<ResolvedLocalLink[]>([]);
   const filesRef = useRef<string[]>(workspaceFiles);
   filesRef.current = workspaceFiles;
@@ -318,11 +300,11 @@ export function Editor({
   const handleAccept = useCallback((t: string) => acceptRef.current?.(t), []);
   const handleDismiss = useCallback(() => dismissRef.current?.(), []);
 
-  const editor = useEditor({
+  const editor = useTiptap({
     extensions: [
       StarterKit.configure({ link: { openOnClick: false }, codeBlock: false }),
       MermaidCodeBlock,
-      DiagramPlaceholderExtension,
+      DiagramPlaceholderExtension(diagramCallbackRef),
       Markdown.configure({ transformPastedText: true }),
       Placeholder.configure({ placeholder: "Start writing… (type /diagram <description> to insert a diagram)" }),
       CharacterCount,
@@ -333,7 +315,6 @@ export function Editor({
       TableHeader,
       TableCell,
       GhostTextExtension(ghostRef, handleAccept, handleDismiss),
-      LintExtension(lintRef),
       FindExtension(findStateRef),
       MarkdownRevealExtension,
       DiagramCommandExtension(diagramCallbackRef),
@@ -398,13 +379,22 @@ export function Editor({
 
   useEffect(() => {
     if (!editor || !diagramResult) return;
-    const { code, placeholderId } = diagramResult;
-    const replacement = "```mermaid\n" + code + "\n```";
+    const { code, placeholderId, error } = diagramResult;
     editor.state.doc.descendants((node, pos) => {
-      if (node.type.name === "diagramPlaceholder" && node.attrs.id === placeholderId) {
+      if (node.type.name !== "diagramPlaceholder" || node.attrs.id !== placeholderId) return undefined;
+      if (error) {
+        // Mark the placeholder as errored — the node view renders the message
+        // inline with retry / dismiss controls instead of staying spinning.
+        const tr = editor.state.tr.setNodeMarkup(pos, undefined, {
+          ...node.attrs,
+          error,
+        });
+        editor.view.dispatch(tr);
+      } else {
+        const replacement = "```mermaid\n" + code + "\n```";
         editor.chain().focus().insertContentAt({ from: pos, to: pos + node.nodeSize }, replacement).run();
-        return false;
       }
+      return false;
     });
     onDiagramApplied?.();
   }, [diagramResult]);
@@ -429,18 +419,18 @@ export function Editor({
     const { pos, size } = target as { pos: number; size: number };
     if (error || !content.trim()) {
       const node = editor.state.doc.nodeAt(pos);
+      const message = error ?? "AI fill returned empty content";
       const tr = editor.state.tr.setNodeMarkup(pos, undefined, {
         ...node?.attrs,
         generating: false,
+        error: message,
       });
       editor.view.dispatch(tr);
-      const message = error ?? "AI fill returned empty content";
       console.error("[ai-fill]", message);
       onAIFillApplied?.();
       advanceFillQueue();
       return;
     }
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const parser = (editor.storage as any).markdown?.parser;
     let inserted = false;
@@ -492,13 +482,6 @@ export function Editor({
     editor.chain().focus().insertContentAt(insertPos, "\n\n" + text + "\n\n").run();
     onTableApplied?.();
   }, [tableResult]);
-
-  useEffect(() => {
-    if (!editor) return;
-    lintRef.current = resolveIssuePositions(editor.state.doc, lintIssues);
-    const { tr } = editor.state;
-    editor.view.dispatch(tr.setMeta("lint-refresh", true));
-  }, [lintIssues, editor]);
 
   // Refresh writing-aid decorations when their toggles change.
   useEffect(() => {
@@ -645,7 +628,7 @@ export function Editor({
     const placeholderId = crypto.randomUUID();
     editor.chain().focus().insertContentAt(diagramInsertPosRef.current, {
       type: "diagramPlaceholder",
-      attrs: { id: placeholderId },
+      attrs: { id: placeholderId, description },
     }).run();
     onDiagramRequest(description, placeholderId);
     setDiagramBarOpen(false);
