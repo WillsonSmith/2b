@@ -41,6 +41,7 @@ import { useVoiceAndMedia } from "./hooks/useVoiceAndMedia.ts";
 import { AIProvider, useAI, type HistoryRow } from "./state/AIContext.tsx";
 import { UIProvider, useUI } from "./state/UIContext.tsx";
 import { FileProvider, useFiles } from "./state/FileContext.tsx";
+import { EditorProvider, useEditor } from "./state/EditorContext.tsx";
 import { useSignalValue } from "./state/signals.ts";
 
 // ── Large file warning ────────────────────────────────────────────────────────
@@ -162,14 +163,15 @@ function AppShell() {
         workspaceRoot={workspaceRoot}
         setWorkspaceRoot={setWorkspaceRoot}
       >
-        <AppBody
-          ws={ws}
-          planning={planning}
-          editorFeatures={editorFeatures}
-          research={research}
-          conflictsGraph={conflictsGraph}
-          voice={voice}
-        />
+        <EditorProvider editorFeatures={editorFeatures}>
+          <AppBody
+            ws={ws}
+            planning={planning}
+            research={research}
+            conflictsGraph={conflictsGraph}
+            voice={voice}
+          />
+        </EditorProvider>
       </FileProvider>
     </AIProvider>
   );
@@ -178,7 +180,6 @@ function AppShell() {
 interface AppBodyProps {
   ws: UseWebSocketReturn;
   planning: UsePlanningReturn;
-  editorFeatures: ReturnType<typeof useEditorFeatures>;
   research: ReturnType<typeof useResearch>;
   conflictsGraph: ReturnType<typeof useConflictsAndGraph>;
   voice: ReturnType<typeof useVoiceAndMedia>;
@@ -187,7 +188,6 @@ interface AppBodyProps {
 function AppBody({
   ws,
   planning,
-  editorFeatures,
   research,
   conflictsGraph,
   voice,
@@ -195,6 +195,7 @@ function AppBody({
   const ai = useAI();
   const ui = useUI();
   const file = useFiles();
+  const editor = useEditor();
   const sidecarCollapsed = useSignalValue(ai.sidecarCollapsed);
   const providerStatus = useSignalValue(ai.providerStatus);
   const providerBannerDismissed = useSignalValue(ai.providerBannerDismissed);
@@ -313,7 +314,7 @@ function AppBody({
           };
         }) => {
           if (data.features?.autocomplete !== undefined)
-            editorFeatures.setAutocompleteEnabled(data.features.autocomplete);
+            editor.setAutocompleteEnabled(data.features.autocomplete);
           if (data.features?.autosave !== undefined)
             file.setAutosaveEnabled(data.features.autosave);
           if (data.features?.writingAids)
@@ -321,7 +322,7 @@ function AppBody({
         },
       )
       .catch(() => {});
-  }, [editorFeatures.setAutocompleteEnabled, file]);
+  }, [editor, file]);
 
   // ── /api/health on mount ────────────────────────────────────────────────────
 
@@ -557,11 +558,11 @@ function AppBody({
 
   useEffect(() => {
     const unsubFileContent = ws.subscribe("file_content", () => {
-      editorFeatures.setGhostText("");
+      editor.setGhostText("");
       ui.dismissedLargeFile.value = false;
     });
     const unsubFileCreated = ws.subscribe("file_created", () => {
-      editorFeatures.setGhostText("");
+      editor.setGhostText("");
     });
     const unsubIndex = ws.subscribe("index_progress", (msg) => {
       if (msg.total === 0 || msg.indexed >= msg.total) ui.indexProgress.value = null;
@@ -570,8 +571,8 @@ function AppBody({
     // Reset loading flags on error. The error message itself is pushed into
     // the chat stream by AIProvider (a separate subscriber on the same event).
     const unsubErrorResets = ws.subscribe("error", () => {
-      editorFeatures.setIsGeneratingMetadata(false);
-      editorFeatures.setIsTocGenerating(false);
+      editor.setIsGeneratingMetadata(false);
+      editor.setIsTocGenerating(false);
       research.setIsSearching(false);
       research.setIsDetectingGaps(false);
       conflictsGraph.setIsScanning(false);
@@ -583,7 +584,7 @@ function AppBody({
       unsubIndex();
       unsubErrorResets();
     };
-  }, [ws.subscribe, editorFeatures, research, conflictsGraph, ui]);
+  }, [ws.subscribe, editor, research, conflictsGraph, ui]);
 
   const charCount = editorContent.length;
   const showLargeFileWarning = charCount > 50_000 && !dismissedLargeFile;
@@ -718,7 +719,7 @@ function AppBody({
       {showSettings && (
         <SettingsPanel
           onClose={() => { ui.showSettings.value = false; }}
-          onAutocompleteEnabledChange={editorFeatures.setAutocompleteEnabled}
+          onAutocompleteEnabledChange={editor.setAutocompleteEnabled}
           onAutosaveEnabledChange={file.setAutosaveEnabled}
           onWritingAidsChange={setWritingAids}
           initialSection={settingsInitialSection}
@@ -862,26 +863,6 @@ function AppBody({
           <Editor
             content={editorContent}
             onUpdate={(md) => file.setEditorContent(md)}
-            onAutocompleteRequest={editorFeatures.handleAutocompleteRequest}
-            ghostText={editorFeatures.ghostText}
-            onGhostAccept={editorFeatures.handleGhostAccept}
-            onGhostDismiss={editorFeatures.handleGhostDismiss}
-            toneReplacement={editorFeatures.toneReplacement}
-            summarizeResult={editorFeatures.summarizeResult}
-            onToneApplied={() => editorFeatures.setToneReplacement(null)}
-            onSummarizeApplied={() => editorFeatures.setSummarizeResult(null)}
-            onMetadataRequest={editorFeatures.handleMetadataRequest}
-            isGeneratingMetadata={editorFeatures.isGeneratingMetadata}
-            metadataResult={editorFeatures.metadataResult}
-            onMetadataApplied={() => editorFeatures.setMetadataResult(null)}
-            tableResult={editorFeatures.tableResult}
-            onTableApplied={() => editorFeatures.setTableResult(null)}
-            onDiagramRequest={editorFeatures.handleDiagramRequest}
-            diagramResult={editorFeatures.diagramResult}
-            onDiagramApplied={() => editorFeatures.setDiagramResult(null)}
-            onAIFillRequest={editorFeatures.handleAIFillRequest}
-            aiFillResult={editorFeatures.aiFillResult}
-            onAIFillApplied={() => editorFeatures.setAIFillResult(null)}
             onImagePaste={voice.handleImagePaste}
             onExplainCode={handleExplainCode}
             isRecording={voice.isRecording}
@@ -961,14 +942,7 @@ function AppBody({
             label: "TOC",
             defaultWidth: 220,
             onClose: () => { ui.showToc.value = false; },
-            content: (
-              <TocPanel
-                content={editorContent}
-                tocEntries={editorFeatures.tocEntries}
-                isAnnotating={editorFeatures.isTocGenerating}
-                onAnnotate={editorFeatures.handleGenerateToc}
-              />
-            ),
+            content: <TocPanel />,
           });
           if (research.showResearch) panels.push({
             id: "research",
