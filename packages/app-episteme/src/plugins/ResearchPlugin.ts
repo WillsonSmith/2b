@@ -98,7 +98,10 @@ export class ResearchPlugin implements AgentPlugin {
   }
 
   getSystemPromptFragment(): string {
-    return "You can ingest URLs and PDFs, and search arXiv and Wikipedia via research tools.";
+    return [
+      "You can ingest URLs and PDFs, and search arXiv and Wikipedia via research tools.",
+      "Use research tools when the workspace does not contain sufficient information on the topic.",
+    ].join("\n");
   }
 
   getTools() {

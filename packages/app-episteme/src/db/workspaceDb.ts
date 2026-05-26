@@ -29,7 +29,7 @@ export interface WorkspaceFileSummary {
 export interface FileLinkRow {
   sourcePath: string;
   targetPath: string;
-  linkType: "wikilink" | "markdown";
+  linkType: "markdown";
   raw: string;
 }
 
@@ -920,7 +920,7 @@ function toFileLinkRow(r: WsLinkRecord): FileLinkRow {
   return {
     sourcePath: r.source_path,
     targetPath: r.target_path,
-    linkType: r.link_type as "wikilink" | "markdown",
+    linkType: r.link_type as "markdown",
     raw: r.raw ?? "",
   };
 }

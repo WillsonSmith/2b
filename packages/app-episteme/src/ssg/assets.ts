@@ -299,8 +299,8 @@ article th{background:var(--bg-highlight);font-weight:600;color:var(--text);whit
 /* ── Images ──────────────────────────────────────────────────────────── */
 article img{max-width:100%;height:auto;border-radius:var(--md-radius-md)}
 
-/* ── Wikilinks ───────────────────────────────────────────────────────── */
-.wikilink-broken{color:var(--text-muted);border-bottom:1px dashed currentColor;cursor:help}
+/* ── Broken links ────────────────────────────────────────────────────── */
+.link-broken{color:var(--text-muted);border-bottom:1px dashed currentColor;cursor:help}
 
 /* ── Mermaid diagrams ────────────────────────────────────────────────── */
 .mermaid{

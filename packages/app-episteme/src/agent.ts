@@ -20,9 +20,12 @@ import type { EpistemeConfig } from "./config.ts";
 import { WebSocketPermissionManager } from "./server/WebSocketPermissionManager.ts";
 
 /**
- * Wraps a plugin and suppresses its tool surface, system-prompt fragment, and
- * per-turn context unless its name is in the shared `activePlugins` set. All
- * other hooks (onInit, executeTool, onMessage, …) always delegate so that
+ * Wraps a plugin and suppresses its tool surface and per-turn context unless
+ * its name is in the shared `activePlugins` set. When active, the inner
+ * plugin's full system-prompt fragment is injected; when inactive, the
+ * inner plugin's `getInactiveHint()` is injected instead (if defined) so the
+ * model is still aware the capability exists and when to enable it. All other
+ * hooks (onInit, executeTool, onMessage, …) always delegate so that
  * server-side direct calls and background tasks keep working regardless.
  */
 class ModeGated implements AgentPlugin {
@@ -35,7 +38,10 @@ class ModeGated implements AgentPlugin {
   private get active() { return this.activePlugins.has(this.inner.name); }
 
   onInit(agent: BaseAgent) { return this.inner.onInit?.(agent); }
-  getSystemPromptFragment(ctx?: string) { return this.active ? (this.inner.getSystemPromptFragment?.(ctx) ?? "") : ""; }
+  getSystemPromptFragment(ctx?: string) {
+    if (this.active) return this.inner.getSystemPromptFragment?.(ctx) ?? "";
+    return this.inner.getInactiveHint?.() ?? "";
+  }
   getContext(events?: string[]) { return this.active ? (this.inner.getContext?.(events) ?? "") : ""; }
   getTools() { return this.active ? (this.inner.getTools?.() ?? []) : []; }
   async executeTool(name: string, args: Record<string, unknown>) { return this.inner.executeTool?.(name, args); }
@@ -45,17 +51,13 @@ class ModeGated implements AgentPlugin {
   augmentResponse(response: string) { return this.inner.augmentResponse?.(response) ?? response; }
 }
 
-const SYSTEM_PROMPT = `You are Episteme, an AI research assistant embedded in a Markdown editor.
+const SYSTEM_PROMPT = `You are Episteme, an AI assistant inside a Markdown text editor that also has research capability. Writing is the default; research is a mode you invoke when the user needs it.
 
-Your role is to help users:
-- Draft and refine Markdown documents
-- Research topics and synthesize information
-- Organize their knowledge workspace
-- Identify connections and contradictions across their notes
+Write naturally and precisely in the user's register. For conversational replies, use prose — not headers or bullet lists. Reach for Markdown structure only when the user explicitly asks for synthesized content (a summary, an outline, a research output) or when inserting structured content into the active document.
 
-Your primary context is the current workspace and its documents.
-Be concise and precise. Prefer structured Markdown output when providing content.
-When editing or generating text, preserve the user's voice and style.`;
+If a style guide is active, it takes precedence over these defaults for voice, tone, and formatting.
+
+Read the injected context — the active document, workspace files, active plan, retrieved memories — before reaching for tools. The user's own notes are the highest-priority source.`;
 
 /** Names of mode-gated plugins, in registration order. */
 export const MODE_GATED_PLUGIN_NAMES = [

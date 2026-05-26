@@ -30,7 +30,11 @@ export class StyleGuidePlugin implements AgentPlugin {
       this.content.length > MAX_FRAGMENT_CHARS
         ? this.content.slice(0, MAX_FRAGMENT_CHARS) + "\n...[style guide truncated]"
         : this.content;
-    return `## Style Guide\nFollow these writing style rules when editing or generating text:\n\n${truncated}`;
+    return `## Style Guide\nA style guide is active. It takes precedence over default voice and formatting when editing or generating text.\n\n${truncated}`;
+  }
+
+  getInactiveHint(): string {
+    return "Style guide enforcement is available but inactive. Suggest the user enable it when they want consistent voice, tone, or formatting applied across their writing.";
   }
 
   getTools(): ToolDefinition[] {

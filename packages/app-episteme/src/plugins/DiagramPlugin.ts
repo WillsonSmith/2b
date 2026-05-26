@@ -32,6 +32,10 @@ export class DiagramPlugin implements AgentPlugin {
     return "Use the generate_diagram tool to create Mermaid.js diagrams from natural language descriptions.";
   }
 
+  getInactiveHint(): string {
+    return "Diagram generation is available but inactive. Suggest the user enable it when they want to create Mermaid.js diagrams from natural language descriptions.";
+  }
+
   getTools(): ToolDefinition[] {
     return [
       {

@@ -61,7 +61,11 @@ export class CitationPlugin implements AgentPlugin {
   }
 
   getSystemPromptFragment(): string {
-    return "You can check, format, and export citations for the current document via citation tools.";
+    return "You can check, format, and export citations for the active document via citation tools.";
+  }
+
+  getInactiveHint(): string {
+    return "Citation tools are available but inactive. Suggest the user enable them when working with sources, bibliographies, or verifying references.";
   }
 
   getTools() {
@@ -69,7 +73,7 @@ export class CitationPlugin implements AgentPlugin {
       {
         name: "check_citations",
         description:
-          "Validate the URLs listed in the current document's frontmatter `bibliography` field. Returns valid and broken URLs.",
+          "Validate the URLs listed in the active document's frontmatter `bibliography` field. Returns valid and broken URLs.",
         parameters: { type: "object", properties: {}, required: [] },
       },
       {
@@ -86,7 +90,7 @@ export class CitationPlugin implements AgentPlugin {
       {
         name: "export_citations",
         description:
-          "Format all bibliography URLs from the current document as BibTeX and append them to `references.bib` in the workspace root.",
+          "Format all bibliography URLs from the active document as BibTeX and append them to `references.bib` in the workspace root.",
         parameters: { type: "object", properties: {}, required: [] },
       },
     ];

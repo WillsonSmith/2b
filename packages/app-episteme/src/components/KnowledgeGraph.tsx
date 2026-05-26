@@ -149,7 +149,7 @@ export function KnowledgeGraph() {
       <div className="knowledge-graph-header">
         <div className="knowledge-graph-legend">
           <span className="kg-legend-dot kg-legend-dot--node" /> Files
-          <span className="kg-legend-dot kg-legend-dot--link" /> Wikilinks
+          <span className="kg-legend-dot kg-legend-dot--link" /> Links
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <button className="header-icon-btn" onClick={onReindex} disabled={isLoading} title="Re-index workspace files"><FolderSync size={13} /></button>

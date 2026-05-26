@@ -46,19 +46,24 @@ export class PlanningPlugin implements AgentPlugin {
   }
 
   getSystemPromptFragment(): string {
+    const alwaysOn =
+      "For multi-step or research-heavy tasks, offer to create a plan before proceeding. Plans let progress be tracked and recovered across interruptions.";
+
     if (!this.activePlan || this.activePlan.state !== "executing" || !this.executingStepId) {
-      return "";
+      return alwaysOn;
     }
 
     const plan = this.activePlan;
     const step = plan.steps.find(s => s.id === this.executingStepId);
-    if (!step) return "";
+    if (!step) return alwaysOn;
 
     const completedSteps = plan.steps.filter(s => s.state === "complete");
     const stepNumber = step.index + 1;
     const total = plan.steps.length;
 
     const lines: string[] = [
+      alwaysOn,
+      "",
       "## Active Plan Execution",
       `You are executing step ${stepNumber} of ${total} in a structured plan.`,
       `**Plan Goal:** ${plan.goal}`,

@@ -64,7 +64,7 @@ describe("WorkspaceDb - workspace files", () => {
     db.upsertWorkspaceFile(makeFile({ relPath: "src.md" }));
     db.upsertWorkspaceFile(makeFile({ relPath: "tgt.md" }));
     db.replaceFileLinks("src.md", [
-      { targetPath: "tgt.md", linkType: "wikilink", raw: "tgt" },
+      { targetPath: "tgt.md", linkType: "markdown", raw: "tgt" },
     ]);
     expect(db.getOutboundLinks("src.md").length).toBe(1);
     db.deleteWorkspaceFile("src.md");
@@ -140,11 +140,11 @@ describe("WorkspaceDb - file links", () => {
     db.upsertWorkspaceFile(makeFile({ relPath: "a.md" }));
     db.upsertWorkspaceFile(makeFile({ relPath: "b.md" }));
     db.replaceFileLinks("src.md", [
-      { targetPath: "a.md", linkType: "wikilink", raw: "a" },
+      { targetPath: "a.md", linkType: "markdown", raw: "a" },
     ]);
     expect(db.getOutboundLinks("src.md").map((l) => l.targetPath)).toEqual(["a.md"]);
     db.replaceFileLinks("src.md", [
-      { targetPath: "b.md", linkType: "wikilink", raw: "b" },
+      { targetPath: "b.md", linkType: "markdown", raw: "b" },
     ]);
     expect(db.getOutboundLinks("src.md").map((l) => l.targetPath)).toEqual(["b.md"]);
   });
@@ -155,7 +155,7 @@ describe("WorkspaceDb - file links", () => {
     db.upsertWorkspaceFile(makeFile({ relPath: "a.md" }));
     db.upsertWorkspaceFile(makeFile({ relPath: "b.md" }));
     db.replaceFileLinks("src.md", [
-      { targetPath: "a.md", linkType: "wikilink", raw: "a" },
+      { targetPath: "a.md", linkType: "markdown", raw: "a" },
       { targetPath: "b.md", linkType: "markdown", raw: "./b.md" },
     ]);
     expect(db.getAllLinks().length).toBe(2);
@@ -166,8 +166,8 @@ describe("WorkspaceDb - file links", () => {
     db.upsertWorkspaceFile(makeFile({ relPath: "src.md" }));
     db.upsertWorkspaceFile(makeFile({ relPath: "a.md" }));
     db.replaceFileLinks("src.md", [
-      { targetPath: "a.md", linkType: "wikilink", raw: "a" },
-      { targetPath: "a.md", linkType: "wikilink", raw: "a-again" },
+      { targetPath: "a.md", linkType: "markdown", raw: "a" },
+      { targetPath: "a.md", linkType: "markdown", raw: "a-again" },
     ]);
     expect(db.getOutboundLinks("src.md").length).toBe(1);
   });

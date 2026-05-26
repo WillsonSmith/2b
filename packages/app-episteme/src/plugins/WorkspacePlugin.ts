@@ -3,7 +3,7 @@ import { stat } from "node:fs/promises";
 import type { AgentPlugin, ToolDefinition } from "@2b/framework/core/Plugin.ts";
 import { logger } from "@2b/framework/logger.ts";
 import type { WorkspaceDb, FileLinkRow, WorkspaceSearchHit } from "../db/workspaceDb.ts";
-import { findWikilinks, resolveWikilinkTarget } from "../features/wikilinks.ts";
+import { resolveLocalHref } from "../features/links.ts";
 
 const DEFAULT_GRAPH_LIMIT = 500;
 
@@ -52,7 +52,12 @@ export class WorkspacePlugin implements AgentPlugin {
   getSystemPromptFragment(): string {
     const fileCount = this.workspaceDb.listWorkspaceFiles().length;
     const indexed = fileCount > 0 ? ` (${fileCount} files indexed)` : " (not yet indexed)";
-    return `You have access to a Markdown workspace at: ${this.root}${indexed}\nUse workspace tools to index, search, and read files in the workspace.\nFor large Markdown files, use search_workspace to locate relevant content by keyword, then get_workspace_section to read a specific section by heading. Use read_file with offset and limit for precise line ranges.`;
+    return [
+      `You have access to a Markdown workspace at: ${this.root}${indexed}`,
+      "Search the workspace before reaching for external sources — the user's own notes are the highest-priority context.",
+      "Use workspace tools to index, search, and read files in the workspace. For large Markdown files, use search_workspace to locate relevant content by keyword, then get_workspace_section to read a specific section by heading. Use read_file with offset and limit for precise line ranges.",
+      "Workspace files are connected by standard Markdown links — not wikilinks. When inserting a link between files, use `[display text](./relative/path.md)`, where the path is relative to the file being edited (not the workspace root).",
+    ].join("\n");
   }
 
   getTools(): ToolDefinition[] {
@@ -197,7 +202,7 @@ export class WorkspacePlugin implements AgentPlugin {
         wordCount,
       });
 
-      const links = extractLinksForFile(content, allFiles);
+      const links = extractLinksForFile(content, relPath, allFiles);
       this.workspaceDb.replaceFileLinks(relPath, links);
 
       return "indexed";
@@ -340,31 +345,22 @@ export class WorkspacePlugin implements AgentPlugin {
 }
 
 /**
- * Extract resolved wikilinks and relative markdown links from `content`.
- * Both link types are resolved against the full workspace file list, so
- * `[[notes/foo]]` and `[foo](./notes/foo.md)` both produce a link with
- * `targetPath = "notes/foo.md"` when that file exists.
+ * Extract resolved relative markdown links from `content`. Each href is
+ * resolved against the source file's directory using the workspace file list,
+ * so `[foo](./notes/foo.md)` produces `targetPath = "notes/foo.md"` when that
+ * file exists.
  */
 function extractLinksForFile(
   content: string,
+  sourcePath: string,
   allFiles: string[],
 ): Omit<FileLinkRow, "sourcePath">[] {
   const links: Omit<FileLinkRow, "sourcePath">[] = [];
 
-  for (const wl of findWikilinks(content)) {
-    const target = resolveWikilinkTarget(wl.target, allFiles);
-    if (target) {
-      links.push({ targetPath: target, linkType: "wikilink", raw: wl.target });
-    }
-  }
-
   for (const m of content.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
     const href = (m[1] ?? "").trim();
     if (!href) continue;
-    if (href.startsWith("http") || href.startsWith("mailto:") || href.startsWith("#")) continue;
-    const cleaned = href.replace(/^\.\//, "").replace(/[?#].*$/, "");
-    if (!cleaned) continue;
-    const target = resolveWikilinkTarget(cleaned, allFiles);
+    const target = resolveLocalHref(href, sourcePath, allFiles);
     if (target) {
       links.push({ targetPath: target, linkType: "markdown", raw: href });
     }

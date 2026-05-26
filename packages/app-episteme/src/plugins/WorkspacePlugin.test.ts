@@ -20,11 +20,11 @@ async function makeTempWorkspace(): Promise<string> {
   return dir;
 }
 
-describe("WorkspacePlugin.index() — wikilink resolution", () => {
-  test("indexes files and stores resolved wikilinks", async () => {
+describe("WorkspacePlugin.index() — markdown link resolution", () => {
+  test("indexes files and stores resolved markdown links", async () => {
     const root = await makeTempWorkspace();
     await mkdir(join(root, "notes"), { recursive: true });
-    await writeFile(join(root, "notes", "alpha.md"), "links to [[notes/beta]] here");
+    await writeFile(join(root, "notes", "alpha.md"), "links to [Beta](./beta.md) here");
     await writeFile(join(root, "notes", "beta.md"), "# Beta\nplain content");
 
     const db = new WorkspaceDb(":memory:");
@@ -34,13 +34,13 @@ describe("WorkspacePlugin.index() — wikilink resolution", () => {
     const links = db.getOutboundLinks("notes/alpha.md");
     expect(links.length).toBe(1);
     expect(links[0]!.targetPath).toBe("notes/beta.md");
-    expect(links[0]!.linkType).toBe("wikilink");
+    expect(links[0]!.linkType).toBe("markdown");
   });
 
-  test("basename-only wikilink resolves to the matching file", async () => {
+  test("relative link traverses up to a sibling directory", async () => {
     const root = await makeTempWorkspace();
-    await writeFile(join(root, "src.md"), "I reference [[target]] here.");
     await mkdir(join(root, "deep", "nested"), { recursive: true });
+    await writeFile(join(root, "src.md"), "I reference [target](./deep/nested/target.md) here.");
     await writeFile(join(root, "deep", "nested", "target.md"), "ok");
 
     const db = new WorkspaceDb(":memory:");
@@ -52,9 +52,9 @@ describe("WorkspacePlugin.index() — wikilink resolution", () => {
     expect(links[0]!.targetPath).toBe("deep/nested/target.md");
   });
 
-  test("aliased wikilink resolves the target, ignores alias", async () => {
+  test("link text is preserved but resolution uses the href", async () => {
     const root = await makeTempWorkspace();
-    await writeFile(join(root, "src.md"), "see [[foo|Friendly Name]]");
+    await writeFile(join(root, "src.md"), "see [Friendly Name](./foo.md)");
     await writeFile(join(root, "foo.md"), "ok");
 
     const db = new WorkspaceDb(":memory:");
@@ -99,10 +99,10 @@ describe("WorkspacePlugin.index() — wikilink resolution", () => {
   });
 });
 
-describe("WorkspacePlugin.buildKnowledgeGraph — wikilink edges", () => {
-  test("emits a document-link edge between files connected by [[wikilink]]", async () => {
+describe("WorkspacePlugin.buildKnowledgeGraph — markdown link edges", () => {
+  test("emits a document-link edge between files connected by a markdown link", async () => {
     const root = await makeTempWorkspace();
-    await writeFile(join(root, "src.md"), "this links to [[target]]");
+    await writeFile(join(root, "src.md"), "this links to [target](./target.md)");
     await writeFile(join(root, "target.md"), "ok");
 
     const db = new WorkspaceDb(":memory:");

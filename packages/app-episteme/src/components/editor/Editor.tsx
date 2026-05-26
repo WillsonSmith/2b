@@ -45,12 +45,9 @@ import { FrontmatterPanel } from "./FrontmatterPanel.tsx";
 import { useImagePaste } from "./imagePaste.ts";
 import { parseFrontmatter } from "../../features/frontmatter.ts";
 
-// prosemirror-markdown's esc() escapes every [ and ] in text nodes, turning
-// [[wikilink]] into \[\[wikilink\]\] on save. Unescape double-bracket patterns
-// after serialization so any remaining wikilinks survive round-trips.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getMarkdown(ed: any): string {
-  return (ed.storage.markdown.getMarkdown() as string).replace(/\\\[\\\[([^\n]*?)\\\]\\\]/g, "[[$1]]");
+  return ed.storage.markdown.getMarkdown() as string;
 }
 
 interface EditorProps {
@@ -761,7 +758,7 @@ export function Editor({
   const onCreateFileRef = useRef(onCreateFile);
   onCreateFileRef.current = onCreateFile;
 
-  // ── Click handling (links + wikilinks) ──────────────────────────────────────
+  // ── Click handling ──────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!editor) return;

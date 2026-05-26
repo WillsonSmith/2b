@@ -11,7 +11,6 @@ import {
   titleFromPath,
   pathToRoot,
   extractEdgesForFile,
-  resolveWikilinksInBody,
   isLocalHref,
   resolveMarkdownLinkInSsg,
   contentPage,
@@ -36,7 +35,7 @@ function createMarked(allRelPaths: string[], currentRelPath: string): Marked {
         if (href && isLocalHref(href)) {
           const resolved = resolveMarkdownLinkInSsg(href, currentRelPath, allRelPaths);
           if (!resolved) {
-            return `<span class="wikilink-broken" title="Broken link: ${escapeHtml(href)}">${text}</span>`;
+            return `<span class="link-broken" title="Broken link: ${escapeHtml(href)}">${text}</span>`;
           }
           href = href.replace(/\.md(#[^)]*)?$/, (_, frag) => `.html${frag ?? ""}`);
         }
@@ -55,7 +54,7 @@ async function generate(workspace: string, output: string): Promise<void> {
   const rawFiles: RawFile[] = [];
   let hasIndexMd = false;
 
-  // Pass 1: collect raw data (all paths must be known before resolving wikilinks)
+  // Pass 1: collect raw data (all paths must be known before resolving links)
   for await (const relPath of glob.scan({ cwd: workspace, dot: false })) {
     if (relPath.startsWith(".episteme/")) continue;
 
@@ -87,7 +86,7 @@ async function generate(workspace: string, output: string): Promise<void> {
 
   const allRelPaths = rawFiles.map((f) => f.relPath);
 
-  // Pass 2: resolve wikilinks, render markdown, build FileInfo
+  // Pass 2: render markdown, build FileInfo
   const files: FileInfo[] = [];
   for (const raw of rawFiles) {
     let processedBody = raw.body;
@@ -98,9 +97,8 @@ async function generate(workspace: string, output: string): Promise<void> {
       }
     }
 
-    const resolvedBody = resolveWikilinksInBody(processedBody, allRelPaths, raw.relPath);
     const marked = createMarked(allRelPaths, raw.relPath);
-    const html = await marked.parse(resolvedBody);
+    const html = await marked.parse(processedBody);
     const hasMermaid = html.includes('class="mermaid"');
 
     const depth = raw.relPath.split("/").length - 1;

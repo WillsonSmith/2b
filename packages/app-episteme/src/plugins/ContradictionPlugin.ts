@@ -84,6 +84,10 @@ export class ContradictionPlugin implements AgentPlugin {
     return "You can scan workspace memories for logical contradictions and list known contradictions.";
   }
 
+  getInactiveHint(): string {
+    return "Contradiction scanning is available but inactive. Suggest the user enable it when they want to identify conflicting claims across their workspace notes.";
+  }
+
   getTools(): ToolDefinition[] {
     return [
       {

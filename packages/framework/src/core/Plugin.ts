@@ -83,6 +83,13 @@ export interface AgentPlugin {
    */
   getSystemPromptFragment?: (context?: string) => string | Promise<string>;
   /**
+   * For mode-gated plugins: a short hint injected into the system prompt when the
+   * plugin is *inactive*. Use it to advertise the capability and a heuristic for
+   * when the user should enable it. The host gating wrapper substitutes this
+   * string for `getSystemPromptFragment` when the plugin is not active.
+   */
+  getInactiveHint?: () => string;
+  /**
    * Return a string of context to inject into the current turn.
    * @param currentEvents - The raw input strings for the current turn.
    */

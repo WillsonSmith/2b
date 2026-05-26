@@ -1,5 +1,4 @@
 import * as path from "path";
-import { WIKILINK_RE, resolveWikilinkTarget } from "../features/wikilinks";
 import { CSS, MERMAID_SCRIPT, THEME_INIT_SCRIPT, THEME_TOGGLE_SCRIPT } from "./assets";
 
 // Matches standard markdown links: [text](href)
@@ -47,7 +46,7 @@ export interface FileInfo {
   html: string;
   hasMermaid: boolean;
   depth: number;
-  edges: string[]; // htmlRelPaths of wikilink targets
+  edges: string[]; // htmlRelPaths of link targets
 }
 
 export function escapeHtml(s: string): string {
@@ -82,7 +81,6 @@ export function extractEdgesForFile(body: string, allRelPaths: string[], current
   const result: string[] = [];
   const currentRelPath = currentHtmlRelPath.replace(/\.html$/, ".md");
 
-  // Standard markdown links
   for (const match of body.matchAll(new RegExp(MARKDOWN_LINK_RE.source, "g"))) {
     const href = match[2];
     if (!href || !isLocalHref(href)) continue;
@@ -96,34 +94,7 @@ export function extractEdgesForFile(body: string, allRelPaths: string[], current
     }
   }
 
-  // Legacy wikilinks — still extract edges for existing content
-  for (const match of body.matchAll(new RegExp(WIKILINK_RE.source, "g"))) {
-    const target = match[1];
-    if (!target) continue;
-    const resolved = resolveWikilinkTarget(target, allRelPaths);
-    if (resolved) {
-      const htmlPath = resolved.replace(/\.md$/, ".html");
-      if (!seen.has(htmlPath) && htmlPath !== currentHtmlRelPath) {
-        seen.add(htmlPath);
-        result.push(htmlPath);
-      }
-    }
-  }
-
   return result;
-}
-
-export function resolveWikilinksInBody(body: string, allRelPaths: string[], currentRelPath: string): string {
-  return body.replace(WIKILINK_RE, (_, target: string, alias: string | undefined) => {
-    const display = alias?.trim() ?? target.trim();
-    const resolved = resolveWikilinkTarget(target, allRelPaths);
-    if (!resolved) {
-      return `<span class="wikilink-broken" title="Broken link: ${target}">${display}</span>`;
-    }
-    const targetHtmlPath = resolved.replace(/\.md$/, ".html");
-    const href = encodeURI(relativeHref(currentRelPath, targetHtmlPath));
-    return `<a href="${href}">${escapeHtml(display)}</a>`;
-  });
 }
 
 export function pageShell(opts: {

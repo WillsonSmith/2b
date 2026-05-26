@@ -23,12 +23,15 @@ export class EditorContextPlugin implements AgentPlugin {
 
   getSystemPromptFragment(): string {
     if (!this.currentFile) return "";
-    return "The user is currently editing a Markdown document. Its content is injected into your context each turn. When answering, take the current document into account.";
+    return [
+      "The user is currently editing a Markdown document — the active document. Its content is injected into your context each turn. When answering, take the active document into account.",
+      "When generating or inserting content into the active document, match the heading depth, formatting style, and voice of the surrounding text. Do not add parenthetical annotations to headings or impose structural conventions not already present in the document.",
+    ].join("\n");
   }
 
   getContext(): string {
     if (!this.currentFile) return "";
-    return `[Current Document: ${this.currentFile}]\n${this.windowedContent()}`;
+    return `[Active Document: ${this.currentFile}]\n${this.windowedContent()}`;
   }
 
   private windowedContent(): string {
