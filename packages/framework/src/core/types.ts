@@ -54,6 +54,21 @@ export interface AgentEventMap {
    * already appended), not the raw value the caller passed in.
    */
   system_prompt_updated: [newSystemPrompt: string];
+  /**
+   * Emitted when the LLM returns an empty non-reasoning response on a tick
+   * that required a reply (direct input). Fires once per occurrence — on the
+   * initial empty result (attempt=1) and again with `failed=true` if the retry
+   * also returns empty. Lets observability surfaces (UI, telemetry) track how
+   * often this happens and distinguish "model glitch" from "code regression".
+   */
+  empty_response: [details: {
+    agentName: string;
+    model: string;
+    hadThinking: boolean;
+    reasoningChars: number;
+    attempt: number;
+    failed?: boolean;
+  }];
 }
 
 /**
@@ -102,6 +117,14 @@ export interface TickMetrics {
    * before succeeding contributes 2. Useful for spotting flaky tools / endpoints.
    */
   retries: number;
+  /**
+   * Number of times the LLM returned an empty non-reasoning response and was
+   * re-prompted within this tick. Capped at 1 by the current retry policy, so
+   * values are 0 or 1. Track over time to see whether empty responses are a
+   * model issue (correlated with model/version changes) or a code issue
+   * (correlated with prompt/plugin changes).
+   */
+  emptyResponseRetries: number;
   /** Whether the tick's AbortController fired before act() returned. */
   aborted: boolean;
   /**

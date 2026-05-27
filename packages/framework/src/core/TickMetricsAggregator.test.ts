@@ -20,6 +20,7 @@ function tick(overrides: Partial<TickMetrics> = {}): TickMetrics {
     ignored: false,
     errored: false,
     retries: 0,
+    emptyResponseRetries: 0,
     aborted: false,
     queueDepthAtStart: 0,
     ...overrides,

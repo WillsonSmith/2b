@@ -673,6 +673,7 @@ export class BaseAgent extends EventEmitter {
     const queueDepthAtStart = direct.length + ambient.length;
     this.currentTickToolCalls = {};
     this.currentTickRetries = 0;
+    let emptyResponseRetries = 0;
 
     try {
       const collectMessagesStart = performance.now();
@@ -703,7 +704,59 @@ export class BaseAgent extends EventEmitter {
       logger.debug("BaseAgent", `System prompt (${systemPromptFragments.length} fragments):\n${systemPrompt.slice(0, 400)}…`);
 
       const llmStart = performance.now();
-      const { response, nonReasoningContent, reasoningText } = await this.llm.chat(messages, systemPrompt, undefined, tools, this.tokenCallback, this.currentAbortController.signal);
+      let { response, nonReasoningContent, reasoningText } = await this.llm.chat(messages, systemPrompt, undefined, tools, this.tokenCallback, this.currentAbortController.signal);
+
+      // ── Empty-response retry ───────────────────────────────────────
+      // Models occasionally return an empty non-reasoning response despite
+      // being asked for a direct reply. Retry once with a small nudge before
+      // surfacing nothing to the user. The nudge is ephemeral — appended to
+      // the retry's messages array only, never persisted to plugin memory.
+      // Reasoning text is intentionally NOT re-fed: most providers warn
+      // against putting prior chain-of-thought back into the message stream.
+      if (mustRespond && nonReasoningContent.trim() === "") {
+        const hadThinking = (reasoningText?.trim().length ?? 0) > 0;
+        logger.warn(
+          "BaseAgent",
+          `Empty LLM response — agent=${this.name} model=${this.config.model} hadThinking=${hadThinking} reasoningChars=${reasoningText?.length ?? 0}; retrying once`,
+        );
+        this.emit("empty_response", {
+          agentName: this.name,
+          model: this.config.model,
+          hadThinking,
+          reasoningChars: reasoningText?.length ?? 0,
+          attempt: 1,
+        });
+
+        const nudge = hadThinking
+          ? "Your previous response was empty even though you reasoned through the request. Provide your final response to the user now."
+          : "Your previous response was empty. Provide a response now.";
+        const retryMessages: Message[] = [...messages, { role: "user", content: nudge }];
+
+        const retry = await this.llm.chat(retryMessages, systemPrompt, undefined, tools, this.tokenCallback, this.currentAbortController.signal);
+        response = retry.response;
+        nonReasoningContent = retry.nonReasoningContent;
+        reasoningText = retry.reasoningText;
+        emptyResponseRetries = 1;
+
+        if (nonReasoningContent.trim() === "") {
+          logger.error(
+            "BaseAgent",
+            `Empty LLM response persisted after retry — agent=${this.name} model=${this.config.model} hadThinking=${(reasoningText?.trim().length ?? 0) > 0}`,
+          );
+          this.emit("empty_response", {
+            agentName: this.name,
+            model: this.config.model,
+            hadThinking: (reasoningText?.trim().length ?? 0) > 0,
+            reasoningChars: reasoningText?.length ?? 0,
+            attempt: 2,
+            failed: true,
+          });
+        } else {
+          logger.info("BaseAgent", `Empty-response retry recovered (${nonReasoningContent.length} chars)`);
+        }
+      }
+      // ── End empty-response retry ───────────────────────────────────
+
       llmMs = performance.now() - llmStart;
       logger.info("BaseAgent", `LLM response received (${response.length} chars)`);
 
@@ -766,6 +819,7 @@ export class BaseAgent extends EventEmitter {
         ignored,
         errored,
         retries: this.currentTickRetries,
+        emptyResponseRetries,
         aborted: this.currentAbortController?.signal.aborted ?? false,
         queueDepthAtStart,
       });
@@ -787,6 +841,7 @@ export class BaseAgent extends EventEmitter {
     const suffix = metrics.errored
       ? " [ERROR]"
       : metrics.ignored ? " [IGNORED]" : "";
+    const emptyRetry = metrics.emptyResponseRetries > 0 ? ` emptyRetry=${metrics.emptyResponseRetries}` : "";
     logger.debug(
       "BaseAgent",
       `[tick] ${metrics.totalMs.toFixed(0)}ms ` +
@@ -795,6 +850,7 @@ export class BaseAgent extends EventEmitter {
       `dispatch=${metrics.dispatchMs.toFixed(0)}) ` +
       `| prompt=${metrics.systemPromptChars}ch tools=${metrics.toolsChars}ch history=${metrics.historyChars}ch ` +
       `| tools=${metrics.toolCount} ctxBlocks=${metrics.contextContributors} called=${callsSummary}` +
+      emptyRetry +
       suffix,
     );
   }
