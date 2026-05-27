@@ -1,0 +1,71 @@
+/* Chip — small pill with optional icon and remove control. */
+.ep-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-5);
+  height: var(--ctrl-h-sm);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-sm);
+  border: 1px solid transparent;
+  background: var(--bg-highlight);
+  color: var(--text);
+  line-height: 1;
+}
+.ep-chip--clickable {
+  cursor: pointer;
+}
+.ep-chip--clickable:hover {
+  background: color-mix(in srgb, var(--bg-highlight) 80%, var(--text) 6%);
+}
+
+/* ── Tones ───────────────────────────────────────────────────────────────── */
+.ep-chip--neutral {
+  background: var(--bg-highlight);
+  color: var(--text);
+}
+.ep-chip--info {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+.ep-chip--warn {
+  background: color-mix(in srgb, var(--yellow) 18%, transparent);
+  color: var(--yellow);
+}
+.ep-chip--danger {
+  background: color-mix(in srgb, var(--red) 18%, transparent);
+  color: var(--red);
+}
+.ep-chip--success {
+  background: color-mix(in srgb, var(--green) 18%, transparent);
+  color: var(--green);
+}
+
+.ep-chip__icon {
+  display: inline-flex;
+  align-items: center;
+}
+.ep-chip__label {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.ep-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  margin-left: var(--sp-2);
+  opacity: 0.7;
+  border-radius: var(--radius-circle);
+  width: 14px;
+  height: 14px;
+}
+.ep-chip__remove:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.15);
+}

@@ -1,0 +1,23 @@
+/* Dot — small colored circle status indicator. */
+.ep-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-circle);
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.ep-dot--neutral { background: var(--text-muted); }
+.ep-dot--muted   { background: var(--text-dim); }
+.ep-dot--info    { background: var(--accent); }
+.ep-dot--warn    { background: var(--yellow); }
+.ep-dot--danger  { background: var(--red); }
+.ep-dot--success { background: var(--green); }
+
+.ep-dot--pulse {
+  animation: ep-dot-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ep-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.6; transform: scale(0.85); }
+}

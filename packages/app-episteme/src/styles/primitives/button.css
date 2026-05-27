@@ -1,0 +1,142 @@
+/* Button — the single button primitive for the app. Variants drive look. */
+.ep-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+
+.ep-button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ep-button:disabled,
+.ep-button[aria-busy="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* ── Sizes ───────────────────────────────────────────────────────────────── */
+.ep-button--sm {
+  height: var(--ctrl-h-sm);
+  padding: 0 var(--sp-5);
+  font-size: var(--fs-sm);
+  border-radius: var(--radius-sm);
+}
+.ep-button--md {
+  height: var(--ctrl-h-md);
+  padding: 0 var(--sp-6);
+  font-size: var(--fs-md);
+  border-radius: var(--radius-sm);
+}
+
+/* ── Shapes ──────────────────────────────────────────────────────────────── */
+.ep-button--square.ep-button--sm,
+.ep-button--circle.ep-button--sm {
+  width: var(--ctrl-sq-sm);
+  height: var(--ctrl-sq-sm);
+  padding: 0;
+}
+.ep-button--square.ep-button--md,
+.ep-button--circle.ep-button--md {
+  width: var(--ctrl-sq-md);
+  height: var(--ctrl-sq-md);
+  padding: 0;
+}
+.ep-button--circle {
+  border-radius: var(--radius-circle);
+}
+
+/* Icon-only rect: collapse horizontal padding */
+.ep-button--rect.ep-button--icon-only {
+  padding: 0 var(--sp-3);
+}
+
+/* ── Variants ────────────────────────────────────────────────────────────── */
+
+/* Solid — primary action */
+.ep-button--solid {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.ep-button--solid:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, #fff 12%);
+}
+.ep-button--solid:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 80%, #000 20%);
+}
+
+/* Ghost — default for icon buttons, secondary actions */
+.ep-button--ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+.ep-button--ghost:hover:not(:disabled) {
+  background: var(--bg-highlight);
+  color: var(--text);
+}
+.ep-button--ghost:active:not(:disabled) {
+  background: color-mix(in srgb, var(--bg-highlight) 60%, var(--bg) 40%);
+}
+
+/* Danger — destructive action */
+.ep-button--danger {
+  background: transparent;
+  color: var(--red);
+  border-color: transparent;
+}
+.ep-button--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+  color: var(--red);
+}
+.ep-button--danger.ep-button--solid {
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red);
+}
+
+/* Link — looks like an anchor */
+.ep-button--link {
+  height: auto;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-weight: var(--fw-regular);
+}
+.ep-button--link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+/* ── Internals ───────────────────────────────────────────────────────────── */
+.ep-button__icon {
+  display: inline-flex;
+  align-items: center;
+}
+.ep-button__label {
+  display: inline-block;
+}
+.ep-button__spinner {
+  animation: ep-spin 0.8s linear infinite;
+}
+
+@keyframes ep-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

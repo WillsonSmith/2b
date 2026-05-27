@@ -1,0 +1,6 @@
+/* Icon — thin wrapper around lucide-react. Inherits color from currentColor. */
+.ep-icon {
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}

@@ -1,0 +1,33 @@
+/* Badge — inline status indicator, denser than Chip. */
+.ep-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--sp-3);
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+}
+.ep-badge--neutral {
+  background: var(--bg-highlight);
+  color: var(--text-muted);
+}
+.ep-badge--info {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+}
+.ep-badge--warn {
+  background: color-mix(in srgb, var(--yellow) 22%, transparent);
+  color: var(--yellow);
+}
+.ep-badge--danger {
+  background: color-mix(in srgb, var(--red) 22%, transparent);
+  color: var(--red);
+}
+.ep-badge--success {
+  background: color-mix(in srgb, var(--green) 22%, transparent);
+  color: var(--green);
+}

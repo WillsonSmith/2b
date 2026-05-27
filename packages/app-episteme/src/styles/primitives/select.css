@@ -1,0 +1,49 @@
+/* Select — styled native <select>. Custom caret since native is unstylable. */
+.ep-select {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+.ep-select--sm { height: var(--ctrl-h-sm); font-size: var(--fs-sm); }
+.ep-select--md { height: var(--ctrl-h-md); font-size: var(--fs-md); }
+
+.ep-select:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+.ep-select--invalid { border-color: var(--red); }
+.ep-select--disabled { opacity: 0.55; cursor: not-allowed; }
+
+.ep-select__field {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  height: 100%;
+  padding: 0 var(--sp-7) 0 var(--sp-5);
+  cursor: pointer;
+}
+.ep-select--disabled .ep-select__field {
+  cursor: not-allowed;
+}
+
+.ep-select__caret {
+  position: absolute;
+  right: var(--sp-4);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+  font-size: var(--fs-xs);
+}

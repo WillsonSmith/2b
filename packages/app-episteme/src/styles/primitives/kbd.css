@@ -1,0 +1,17 @@
+/* Kbd — keyboard key glyph. */
+.ep-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 0 var(--sp-3);
+  height: 18px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xs);
+  background: var(--bg-app);
+  color: var(--text-muted);
+  font-family: var(--md-font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1;
+  vertical-align: baseline;
+}

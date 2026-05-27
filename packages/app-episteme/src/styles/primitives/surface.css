@@ -1,0 +1,23 @@
+/* Surface — generic container with padding/elevation/border tokens. */
+.ep-surface {
+  background: var(--bg);
+  border-radius: var(--radius-md);
+  color: var(--text);
+}
+.ep-surface--bordered {
+  border: 1px solid var(--border);
+}
+
+/* Elevations */
+.ep-surface--elev-flat   { box-shadow: var(--elev-flat); }
+.ep-surface--elev-low    { box-shadow: var(--elev-low); }
+.ep-surface--elev-raised {
+  background: var(--bg-raised);
+  box-shadow: var(--elev-raised);
+}
+
+/* Padding */
+.ep-surface--pad-none { padding: 0; }
+.ep-surface--pad-sm   { padding: var(--sp-5); }
+.ep-surface--pad-md   { padding: var(--sp-8); }
+.ep-surface--pad-lg   { padding: var(--sp-12); }

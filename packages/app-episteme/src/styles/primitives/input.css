@@ -1,0 +1,52 @@
+/* Input — text input wrapper with optional prefix/suffix slots. */
+.ep-input {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--sp-5);
+  color: var(--text);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+.ep-input--sm { height: var(--ctrl-h-sm); font-size: var(--fs-sm); }
+.ep-input--md { height: var(--ctrl-h-md); font-size: var(--fs-md); }
+
+.ep-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+.ep-input--invalid {
+  border-color: var(--red);
+}
+.ep-input--invalid:focus-within {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--red) 35%, transparent);
+}
+.ep-input--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ep-input__field {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+}
+.ep-input__field::placeholder {
+  color: var(--text-dim);
+}
+
+.ep-input__affix {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}

@@ -1,0 +1,15 @@
+/* Divider — horizontal or vertical rule. */
+.ep-divider {
+  border: none;
+  margin: 0;
+  background: var(--border);
+}
+.ep-divider--horizontal {
+  width: 100%;
+  height: 1px;
+}
+.ep-divider--vertical {
+  width: 1px;
+  align-self: stretch;
+  min-height: 1em;
+}

@@ -1,0 +1,16 @@
+/* ScrollArea — scroll container that inherits the app's scrollbar styling. */
+.ep-scroll {
+  min-height: 0;
+  min-width: 0;
+}
+.ep-scroll--y {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.ep-scroll--x {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.ep-scroll--both {
+  overflow: auto;
+}

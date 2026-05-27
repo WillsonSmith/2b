@@ -1,0 +1,59 @@
+/* Checkbox — uses a hidden native input + styled box overlay. */
+.ep-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-5);
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+.ep-checkbox--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ep-checkbox__input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+
+.ep-checkbox__box {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xs);
+  background: var(--bg);
+  flex-shrink: 0;
+  position: relative;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.ep-checkbox__input:checked + .ep-checkbox__box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.ep-checkbox__input:checked + .ep-checkbox__box::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.ep-checkbox__input:focus-visible + .ep-checkbox__box {
+  box-shadow: var(--focus-ring);
+}
+
+.ep-checkbox__label {
+  line-height: 1.2;
+}

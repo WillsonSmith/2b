@@ -1,0 +1,52 @@
+/* Radio — single choice in a group. */
+.ep-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-5);
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+.ep-radio--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ep-radio__input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+
+.ep-radio__dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-circle);
+  background: var(--bg);
+  flex-shrink: 0;
+  position: relative;
+  transition:
+    border-color var(--motion-fast) var(--ease-out);
+}
+.ep-radio__input:checked + .ep-radio__dot {
+  border-color: var(--accent);
+}
+.ep-radio__input:checked + .ep-radio__dot::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+}
+.ep-radio__input:focus-visible + .ep-radio__dot {
+  box-shadow: var(--focus-ring);
+}
+
+.ep-radio__label {
+  line-height: 1.2;
+}

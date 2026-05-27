@@ -1,0 +1,71 @@
+/* ── Design tokens for the primitives layer ────────────────────────────────
+   Color tokens live in base.css/themes.css and are intentionally not
+   re-declared here. This file adds the shape, size, motion, and elevation
+   tokens that primitives reference.
+   --------------------------------------------------------------------------- */
+
+:root {
+  /* ── Spacing scale (4-pt base, multiples) ──────────────────────────────── */
+  --sp-0: 0;
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 10px;
+  --sp-6: 12px;
+  --sp-7: 14px;
+  --sp-8: 16px;
+  --sp-10: 20px;
+  --sp-12: 24px;
+  --sp-16: 32px;
+
+  /* ── Radii ─────────────────────────────────────────────────────────────── */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  /* ── Control heights (buttons, inputs) ─────────────────────────────────── */
+  --ctrl-h-sm: 24px;
+  --ctrl-h-md: 28px;
+  --ctrl-h-lg: 34px;
+
+  /* ── Square icon-button sizes ──────────────────────────────────────────── */
+  --ctrl-sq-sm: 22px;
+  --ctrl-sq-md: 26px;
+  --ctrl-sq-lg: 30px;
+
+  /* ── Default icon sizes (px values for the lucide stroke icons) ────────── */
+  --icon-xs: 12px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 20px;
+
+  /* ── Font sizes ────────────────────────────────────────────────────────── */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-base: 14px;
+  --fs-lg: 16px;
+
+  /* ── Font weights ──────────────────────────────────────────────────────── */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  /* ── Elevations (re-uses --panel-shadow from base for raised level) ────── */
+  --elev-flat: none;
+  --elev-low: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --elev-raised: var(--panel-shadow);
+
+  /* ── Motion ────────────────────────────────────────────────────────────── */
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 260ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* ── Focus ring ────────────────────────────────────────────────────────── */
+  --focus-ring: 0 0 0 2px var(--accent-soft);
+}
