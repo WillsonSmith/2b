@@ -72,22 +72,28 @@
 }
 
 /* ── Link picker popup ───────────────────────────────────────────────── */
-.link-picker-input {
-  width: 100%;
-  padding: 5px 8px;
-  font-size: 13px;
+.link-picker {
+  min-width: 260px;
+}
+/* The Input primitive inside the picker drops its own frame and uses
+   an underline divider, so it reads as part of the popover chrome
+   rather than a nested control. */
+.link-picker .ep-input {
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--border);
-  color: var(--text);
+  border-radius: 0;
+  padding: 0;
   margin-bottom: 4px;
-  outline: none;
+  width: 100%;
 }
-.link-picker-input::placeholder {
-  color: var(--text-dim);
+.link-picker .ep-input:focus-within {
+  border-bottom-color: var(--accent);
+  box-shadow: none;
 }
-.link-picker {
-  min-width: 260px;
+.link-picker .ep-input__field {
+  padding: 5px 8px;
+  font-size: 13px;
 }
 
 .wikilink-popup {
