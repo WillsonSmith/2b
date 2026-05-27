@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { UnifiedSearchResponse } from "../components/ResearchPanel.tsx";
+import type { UnifiedSearchResponse } from "../plugins/ResearchPlugin.ts";
 import type { AgentState, Subscribe } from "./useWebSocket.ts";
 
 export function useResearch(
