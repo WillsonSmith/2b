@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
-import type { TextareaHTMLAttributes } from "react";
+import type { Ref, TextareaHTMLAttributes } from "react";
 
 export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   invalid?: boolean;
   autosize?: boolean;
   maxAutosizeRows?: number;
+  ref?: Ref<HTMLTextAreaElement>;
 }
 
 export function Textarea({
@@ -14,13 +15,22 @@ export function Textarea({
   className,
   value,
   rows = 2,
+  ref: externalRef,
   ...rest
 }: TextareaProps) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const innerRef = useRef<HTMLTextAreaElement>(null);
+
+  const setRef = (el: HTMLTextAreaElement | null) => {
+    innerRef.current = el;
+    if (typeof externalRef === "function") externalRef(el);
+    else if (externalRef && "current" in externalRef) {
+      (externalRef as { current: HTMLTextAreaElement | null }).current = el;
+    }
+  };
 
   useEffect(() => {
     if (!autosize) return;
-    const el = ref.current;
+    const el = innerRef.current;
     if (!el) return;
     el.style.height = "auto";
     const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 18;
@@ -40,7 +50,7 @@ export function Textarea({
   return (
     <textarea
       {...rest}
-      ref={ref}
+      ref={setRef}
       rows={rows}
       value={value}
       aria-invalid={invalid || undefined}

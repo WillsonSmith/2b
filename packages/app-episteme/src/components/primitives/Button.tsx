@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
 import { Loader2 } from "lucide-react";
 import { Icon } from "./Icon.tsx";
 
@@ -16,6 +16,7 @@ export interface ButtonProps
   loading?: boolean;
   type?: "button" | "submit" | "reset";
   children?: ReactNode;
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function Button({
@@ -29,6 +30,7 @@ export function Button({
   type = "button",
   className,
   children,
+  ref,
   ...rest
 }: ButtonProps) {
   const classes = [
@@ -46,6 +48,7 @@ export function Button({
   return (
     <button
       {...rest}
+      ref={ref}
       type={type}
       className={classes}
       disabled={disabled || loading}

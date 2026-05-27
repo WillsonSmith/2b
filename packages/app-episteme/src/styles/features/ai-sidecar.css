@@ -1,0 +1,426 @@
+/* ── AI Sidecar feature ─────────────────────────────────────────────────── */
+.ep-sidecar__track {
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: width var(--motion-base) var(--ease-out);
+}
+.ep-sidecar__track--collapsed {
+  width: 0;
+  min-width: 0;
+}
+
+.ep-sidecar {
+  height: 100%;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+  position: relative;
+}
+
+.ep-sidecar__header {
+  height: var(--header-h);
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-5);
+  gap: var(--sp-4);
+  flex-shrink: 0;
+}
+.ep-sidecar__title {
+  flex: 1;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* ── Messages list ──────────────────────────────────────────────────────── */
+.ep-sidecar__messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-6) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.ep-sidecar__msg {
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-md);
+  line-height: 1.55;
+  word-break: break-word;
+}
+.ep-sidecar__msg--user {
+  background: var(--sidecar-user-bg);
+  border-left: 2px solid var(--accent);
+}
+.ep-sidecar__msg--assistant {
+  background: var(--sidecar-assistant-bg);
+  border-left: 2px solid var(--green);
+}
+.ep-sidecar__msg--notification {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  background: var(--sidecar-user-bg);
+  border-left: 2px solid var(--accent);
+  padding: var(--sp-3) var(--sp-5);
+}
+.ep-sidecar__msg--empty-response {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  background: var(--sidecar-user-bg);
+  border-left: 2px solid var(--yellow);
+  padding: var(--sp-3) var(--sp-5);
+  color: var(--yellow);
+}
+.ep-sidecar__empty-response-text {
+  flex: 1;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.ep-sidecar__notification-text {
+  flex: 1;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.ep-sidecar__msg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-2);
+}
+.ep-sidecar__msg-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.ep-sidecar__msg-role {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ep-sidecar__msg-user-text {
+  white-space: pre-wrap;
+}
+.ep-sidecar__msg-markdown {
+  font-size: var(--fs-md);
+}
+.ep-sidecar__msg-action {
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.ep-sidecar__msg:hover .ep-sidecar__msg-action {
+  opacity: 1;
+}
+
+/* ── Thinking ───────────────────────────────────────────────────────────── */
+.ep-sidecar__thinking {
+  padding: var(--sp-2) var(--sp-3);
+  font-style: italic;
+}
+
+/* ── Tool row ───────────────────────────────────────────────────────────── */
+.ep-sidecar__tool-row {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  padding: var(--sp-2) var(--sp-4);
+  border-left: 2px solid var(--border);
+  border-radius: var(--radius-xs);
+}
+.ep-sidecar__tool-row--calling {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.ep-sidecar__tool-row--error {
+  border-left-color: var(--red);
+  color: var(--red);
+}
+.ep-sidecar__tool-arrow {
+  color: var(--text-dim);
+}
+.ep-sidecar__tool-name {
+  font-family: var(--md-font-mono);
+  font-size: var(--md-code-size);
+}
+.ep-sidecar__tool-icon--error {
+  color: var(--red);
+}
+.ep-sidecar__tool-error {
+  color: var(--red);
+  font-size: var(--fs-sm);
+}
+.ep-sidecar__tool-ok {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* ── Plan step row ──────────────────────────────────────────────────────── */
+.ep-sidecar__plan-step {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+  padding: var(--sp-2) var(--sp-4);
+  border-left: 2px solid var(--border);
+  color: var(--text-muted);
+}
+.ep-sidecar__plan-step--running { border-left-color: var(--accent); color: var(--text); }
+.ep-sidecar__plan-step--complete { border-left-color: var(--green); }
+.ep-sidecar__plan-step--failed { border-left-color: var(--red); color: var(--red); }
+.ep-sidecar__plan-step-state { display: inline-flex; align-items: center; flex-shrink: 0; }
+.ep-sidecar__plan-step-type-icon { display: inline-flex; color: var(--text-dim); flex-shrink: 0; }
+.ep-sidecar__plan-step-title { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ep-sidecar__plan-step-type { font-size: var(--fs-xs); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+.ep-sidecar__plan-step-done { color: var(--green); }
+.ep-sidecar__plan-step-fail { color: var(--red); }
+.ep-sidecar__plan-step-error { color: var(--red); font-size: var(--fs-sm); }
+.ep-sidecar__plan-step-result { color: var(--text-muted); font-size: var(--fs-sm); }
+
+/* When PlanStepRow uses Disclosure, its summary row is the button — override
+   the default Disclosure padding so it matches the inline plan-step look. */
+.ep-sidecar__plan-step.ep-disclosure .ep-disclosure__summary {
+  padding: 0;
+  background: transparent;
+}
+.ep-sidecar__plan-step.ep-disclosure .ep-disclosure__summary:hover {
+  background: var(--hover-tint);
+}
+
+/* ── System event ───────────────────────────────────────────────────────── */
+.ep-sidecar__system-event {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  font-style: italic;
+  padding: var(--sp-1) var(--sp-3);
+}
+.ep-sidecar__system-event-text { flex: 1; }
+
+/* ── Mention chip (file reference) ──────────────────────────────────────── */
+.ep-sidecar__mention-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.ep-sidecar__mention-chip {
+  background: var(--bg-highlight);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+}
+.ep-sidecar__mention-chip-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  cursor: pointer;
+  list-style: none;
+}
+.ep-sidecar__mention-chip-summary::-webkit-details-marker { display: none; }
+.ep-sidecar__mention-chip-name {
+  color: var(--accent);
+  font-family: var(--md-font-mono);
+}
+.ep-sidecar__mention-chip-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  padding: 0 var(--sp-1);
+  line-height: 1;
+}
+.ep-sidecar__mention-chip-remove:hover { color: var(--text); }
+.ep-sidecar__mention-chip-content {
+  padding: var(--sp-3);
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  font-size: var(--fs-xs);
+}
+.ep-sidecar__mention-chip-pre {
+  font-family: var(--md-font-mono);
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+}
+.ep-sidecar__mention-chip-loading,
+.ep-sidecar__mention-chip-error { color: var(--text-muted); }
+
+/* ── Composer (input area) ──────────────────────────────────────────────── */
+.ep-sidecar__composer {
+  position: relative;
+  padding: 0 var(--sp-4) var(--sp-4);
+  flex-shrink: 0;
+}
+
+.ep-sidecar__composer-box {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-highlight);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+.ep-sidecar__composer-box:focus-within {
+  border-color: var(--accent-soft);
+}
+
+.ep-sidecar__composer-textarea {
+  background: transparent;
+  border: none;
+  padding: var(--sp-5) var(--sp-6) var(--sp-2);
+}
+.ep-sidecar__composer-textarea:focus {
+  border: none;
+  box-shadow: none;
+}
+
+.ep-sidecar__composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4) var(--sp-3);
+}
+.ep-sidecar__composer-toolbar .ep-sidecar__status {
+  margin-left: auto;
+  margin-right: var(--sp-2);
+}
+.ep-sidecar__toolbar-toggle--active {
+  background: var(--bg-active);
+  color: var(--accent);
+}
+
+/* ── Quick actions ──────────────────────────────────────────────────────── */
+.ep-sidecar__quick-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.ep-sidecar__quick-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2);
+}
+
+/* ── Mention dropdown ───────────────────────────────────────────────────── */
+.ep-sidecar__mention-dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: var(--sp-4);
+  right: var(--sp-4);
+  margin-bottom: var(--sp-2);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-raised);
+  z-index: 20;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.ep-sidecar__mention-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-5);
+  background: transparent;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+.ep-sidecar__mention-item--active,
+.ep-sidecar__mention-item:hover {
+  background: var(--bg-active);
+}
+.ep-sidecar__mention-name {
+  font-family: var(--md-font-mono);
+  color: var(--accent);
+}
+.ep-sidecar__mention-dir {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+/* ── Follow-up ──────────────────────────────────────────────────────────── */
+.ep-sidecar__followup-badge {
+  margin-bottom: var(--sp-3);
+}
+
+.ep-sidecar__followup-composer {
+  margin-top: var(--sp-4);
+  padding: var(--sp-4);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.ep-sidecar__followup-context,
+.ep-sidecar__followup-warn {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.ep-sidecar__followup-warn { color: var(--yellow); }
+.ep-sidecar__followup-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+}
+
+/* ── Plan mode options (radio strip in composer) ────────────────────────── */
+.ep-sidecar__plan-mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-xs);
+}
+.ep-sidecar__plan-mode-label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+/* ── Expanded chat modal ────────────────────────────────────────────────── */
+.ep-sidecar__chat-modal .ep-modal__body {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ep-sidecar__chat-modal-body {
+  display: flex;
+  flex-direction: column;
+  height: min(70vh, 600px);
+}

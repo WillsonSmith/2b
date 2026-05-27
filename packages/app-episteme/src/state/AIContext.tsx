@@ -5,7 +5,7 @@ import {
   useConstant,
   type Signal,
 } from "./signals.ts";
-import type { SidecarMessage } from "../components/AISidecar.tsx";
+import type { SidecarMessage } from "../components/features/ai-sidecar/types.ts";
 import type { EpistemePlanStepType } from "../planning/types.ts";
 import type { AgentState, UseWebSocketReturn } from "../hooks/useWebSocket.ts";
 import type { UsePlanningReturn } from "../hooks/usePlanning.ts";
