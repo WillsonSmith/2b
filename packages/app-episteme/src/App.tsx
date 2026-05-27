@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Editor } from "./components/editor/Editor.tsx";
-import { FileTree } from "./components/FileTree.tsx";
+import { FileTree } from "./components/features/file-tree/FileTree.tsx";
 import { TocPanel } from "./components/TocPanel.tsx";
 import { AISidecar } from "./components/features/ai-sidecar/AISidecar.tsx";
 import { SettingsPanel } from "./components/features/settings/SettingsPanel.tsx";
