@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { ContradictionRecord } from "../components/ConflictsPanel.tsx";
+import type { ContradictionRecord } from "../plugins/ContradictionPlugin.ts";
 import type { GraphData, GraphLink } from "../components/KnowledgeGraph.tsx";
 import type { AgentState, Subscribe } from "./useWebSocket.ts";
 
