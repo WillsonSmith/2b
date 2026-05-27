@@ -76,6 +76,24 @@
   font-size: 12px;
   color: var(--text-muted);
 }
+.sidecar-msg.empty-response {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--sidecar-user-bg);
+  border-left: 2px solid var(--yellow);
+  padding: 6px 10px;
+}
+.sidecar-empty-response-icon {
+  color: var(--yellow);
+  display: inline-flex;
+  align-items: center;
+}
+.sidecar-empty-response-text {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-muted);
+}
 .sidecar-msg-header {
   display: flex;
   align-items: center;

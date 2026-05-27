@@ -778,6 +778,15 @@ export class BaseAgent extends EventEmitter {
         return;
       }
 
+      // Empty content after a retry already happened means both attempts came
+      // back blank. Suppress the speak event and the assistant dispatchMessage —
+      // otherwise the UI gets an empty assistant bubble and history persists
+      // it as a real reply. The `empty_response` event (already emitted with
+      // failed=true above) is what UIs should render in this case.
+      if (mustRespond && emptyResponseRetries > 0 && cleanResponse.trim() === "") {
+        return;
+      }
+
       // Allow plugins to augment or replace the response before it is spoken
       const augmentStart = performance.now();
       let finalResponse = cleanResponse;

@@ -117,6 +117,13 @@ export type ServerMsg =
   | { type: "plan_complete"; planId: string }
   | { type: "agent_mode_changed"; activePlugins: string[]; availablePlugins: string[] }
   | {
+      type: "empty_response";
+      attempt: number;
+      hadThinking: boolean;
+      /** True when the retry also returned empty — UI should surface this to the user. */
+      failed?: boolean;
+    }
+  | {
       type: "permission_request";
       id: string;
       agentName: string;

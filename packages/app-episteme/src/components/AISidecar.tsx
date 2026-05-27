@@ -15,6 +15,7 @@ export type SidecarMessage =
   | { role: "tool"; name: string; status: "calling" | "done" | "error"; error?: string }
   | { role: "notification"; text: string; actionLabel: string; onAction: () => void }
   | { role: "system_event"; text: string; plugin?: string }
+  | { role: "empty_response"; hadThinking: boolean }
   | {
       role: "plan_step";
       planId: string;
@@ -331,6 +332,20 @@ const MessageList = memo(function MessageList({ endRef, onNavigate }: MessageLis
             <div key={i} className="sidecar-system-event">
               <span className="sidecar-system-event-icon"><Layers size={11} /></span>
               <span className="sidecar-system-event-text">{m.text}</span>
+            </div>
+          );
+        }
+
+        if (m.role === "empty_response") {
+          return (
+            <div key={i} className="sidecar-msg empty-response">
+              <span className="sidecar-empty-response-icon"><AlertCircle size={12} /></span>
+              <span className="sidecar-empty-response-text">
+                The model returned an empty response{m.hadThinking ? " after reasoning" : ""}. Try again?
+              </span>
+              <button className="sidecar-action-btn" onClick={() => ai.regenerate(i)}>
+                Retry
+              </button>
             </div>
           );
         }

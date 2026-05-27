@@ -407,6 +407,17 @@ export function AIProvider({
       );
     });
 
+    // Only surface the failed retry. Attempt 1 (transient empty followed by a
+    // successful retry) stays silent — the next `speak` event delivers the
+    // real reply and the user need not see the recovery.
+    const unsubEmptyResponse = ws.subscribe("empty_response", (msg) => {
+      if (!msg.failed) return;
+      value.messages.value = [
+        ...value.messages.value,
+        { role: "empty_response", hadThinking: msg.hadThinking },
+      ];
+    });
+
     const unsubAgentMode = ws.subscribe("agent_mode_changed", (msg) => {
       const newlyActive = msg.activePlugins.filter((name) => !announcedPlugins.has(name));
       if (newlyActive.length === 0) return;
@@ -436,6 +447,7 @@ export function AIProvider({
       unsubStepCompleted();
       unsubStepFailed();
       unsubAgentMode();
+      unsubEmptyResponse();
     };
   }, [value]);
 

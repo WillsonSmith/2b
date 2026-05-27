@@ -412,6 +412,14 @@ export async function startEpistemServer(
     // Connection-class errors → re-probe immediately so the UI flips to offline.
     probeProvider(err.message);
   });
+  agent.on("empty_response", (details) => {
+    broadcast({
+      type: "empty_response",
+      attempt: details.attempt,
+      hadThinking: details.hadThinking,
+      failed: details.failed,
+    });
+  });
   agent.on("speak", (text) => {
     workspaceDb.appendChatMessage("assistant", text);
     broadcast({ type: "speak", text });

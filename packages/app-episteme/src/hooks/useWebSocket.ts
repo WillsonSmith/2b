@@ -101,6 +101,7 @@ export function useWebSocket(): UseWebSocketReturn {
       case "plan_complete":
       case "agent_mode_changed":
       case "permission_request":
+      case "empty_response":
         break;
       default:
         assertNever(msg);
