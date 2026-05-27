@@ -12,7 +12,7 @@ import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
 import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
 import { PanelGroup, type PanelEntry } from "./components/PanelGroup.tsx";
 import { UnifiedSearch, type SearchCommand } from "./components/UnifiedSearch.tsx";
-import { PlanPanel } from "./components/PlanPanel.tsx";
+import { PlanPanel } from "./components/features/plan-panel/PlanPanel.tsx";
 import { usePlanning } from "./hooks/usePlanning.ts";
 import "./styles.css";
 import { getShell } from "./shell/index.ts";
