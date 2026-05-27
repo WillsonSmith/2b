@@ -4,7 +4,7 @@ import { Editor } from "./components/editor/Editor.tsx";
 import { FileTree } from "./components/FileTree.tsx";
 import { TocPanel } from "./components/TocPanel.tsx";
 import { AISidecar } from "./components/features/ai-sidecar/AISidecar.tsx";
-import { SettingsPanel } from "./components/SettingsPanel.tsx";
+import { SettingsPanel } from "./components/features/settings/SettingsPanel.tsx";
 import { OnboardingModal } from "./components/OnboardingModal.tsx";
 import { PermissionDialog } from "./components/PermissionDialog.tsx";
 import { ResearchPanel } from "./components/ResearchPanel.tsx";
