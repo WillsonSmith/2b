@@ -6,7 +6,7 @@ import { TocPanel } from "./components/TocPanel.tsx";
 import { AISidecar } from "./components/features/ai-sidecar/AISidecar.tsx";
 import { SettingsPanel } from "./components/features/settings/SettingsPanel.tsx";
 import { OnboardingModal } from "./components/OnboardingModal.tsx";
-import { PermissionDialog } from "./components/PermissionDialog.tsx";
+import { PermissionDialog } from "./components/features/permission-dialog/PermissionDialog.tsx";
 import { ResearchPanel } from "./components/features/research-panel/ResearchPanel.tsx";
 import { ConflictsPanel } from "./components/ConflictsPanel.tsx";
 import { KnowledgeGraph } from "./components/KnowledgeGraph.tsx";
