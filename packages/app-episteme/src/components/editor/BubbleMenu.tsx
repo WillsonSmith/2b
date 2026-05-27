@@ -1,5 +1,8 @@
 import { BubbleMenu as TiptapBubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/react";
+import { Button } from "../primitives/Button.tsx";
+import { Divider } from "../primitives/Divider.tsx";
+import { Toolbar } from "../composites/Toolbar.tsx";
 
 function getLineRange(
   doc: Editor["state"]["doc"],
@@ -28,6 +31,18 @@ export function EditorBubbleMenu({
 }: BubbleMenuProps) {
   const isLink = editor.isActive("link");
 
+  const handleAskAI = () => {
+    if (!onSendToChat) return;
+    const { from, to } = editor.state.selection;
+    const { start, end } = getLineRange(editor.state.doc, from, to);
+    const filename = currentFilePath?.split("/").at(-1) ?? "document";
+    const ref =
+      start === end
+        ? `@${filename}[line ${start}]`
+        : `@${filename}[lines ${start}–${end}]`;
+    onSendToChat(ref);
+  };
+
   return (
     <TiptapBubbleMenu
       editor={editor}
@@ -36,52 +51,47 @@ export function EditorBubbleMenu({
         return from !== to || ed.isActive("link");
       }}
     >
-      <div className="bubble-menu">
+      <Toolbar ariaLabel="Selection actions" className="bubble-menu">
         {onOpenLinkPicker && (
           <>
-            <button
-              className={`bubble-btn${isLink ? " active" : ""}`}
+            <Button
+              size="sm"
+              variant="ghost"
               title={isLink ? "Edit link" : "Insert link"}
               onMouseDown={(e) => e.preventDefault()}
               onClick={onOpenLinkPicker}
+              className={isLink ? "bubble-btn--active" : undefined}
             >
               Link
-            </button>
+            </Button>
             {isLink && (
-              <button
-                className="bubble-btn"
+              <Button
+                size="sm"
+                variant="ghost"
                 title="Remove link"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => editor.chain().focus().unsetLink().run()}
               >
                 Unlink
-              </button>
+              </Button>
             )}
           </>
         )}
         {onSendToChat && (
           <>
-            <div className="bubble-sep" />
-            <button
-              className="bubble-btn"
+            <Divider orientation="vertical" />
+            <Button
+              size="sm"
+              variant="ghost"
               title="Send selection to AI chat"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                const { from, to } = editor.state.selection;
-                const { start, end } = getLineRange(editor.state.doc, from, to);
-                const filename = currentFilePath?.split("/").at(-1) ?? "document";
-                const ref =
-                  start === end
-                    ? `@${filename}[line ${start}]`
-                    : `@${filename}[lines ${start}–${end}]`;
-                onSendToChat(ref);
-              }}
+              onClick={handleAskAI}
             >
               Ask AI
-            </button>
+            </Button>
           </>
         )}
-      </div>
+      </Toolbar>
     </TiptapBubbleMenu>
   );
 }

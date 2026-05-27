@@ -1,32 +1,35 @@
 import {
   Undo2, Redo2, Mic, Square, Quote, Code2, Minus, List, ListOrdered,
-  FileCode, Loader2, Table, CheckSquare, Network, Link, Sparkles,
+  FileCode, Table, CheckSquare, Network, Link, Sparkles,
 } from "lucide-react";
 import type { Editor } from "@tiptap/react";
+import type { ReactNode } from "react";
+import { Button } from "../primitives/Button.tsx";
+import { Divider } from "../primitives/Divider.tsx";
+import { Icon } from "../primitives/Icon.tsx";
+import { Spinner } from "../primitives/Spinner.tsx";
+import { Toolbar } from "../composites/Toolbar.tsx";
 
-function ToolbarButton({
-  onClick,
-  active,
-  title,
-  disabled,
-  children,
-}: {
+interface ToolbarBtnProps {
   onClick: () => void;
   active?: boolean;
   title: string;
   disabled?: boolean;
-  children: React.ReactNode;
-}) {
+  children: ReactNode;
+}
+
+function ToolbarBtn({ onClick, active, title, disabled, children }: ToolbarBtnProps) {
   return (
-    <button
-      className={`toolbar-btn${active ? " active" : ""}`}
+    <Button
+      size="sm"
+      variant="ghost"
       onClick={onClick}
       title={title}
-      type="button"
       disabled={disabled}
+      className={active ? "toolbar-btn--active" : undefined}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -52,202 +55,192 @@ export function MarkdownToolbar({
   onProcessAllFills,
 }: MarkdownToolbarProps) {
   return (
-    <div className="editor-toolbar">
-      <ToolbarButton
+    <Toolbar ariaLabel="Editor formatting" className="editor-toolbar">
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().toggleBold().run()}
         active={editor?.isActive("bold")}
         title="Bold (⌘B)"
       >
         <strong>B</strong>
-      </ToolbarButton>
-      <ToolbarButton
+      </ToolbarBtn>
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().toggleItalic().run()}
         active={editor?.isActive("italic")}
         title="Italic (⌘I)"
       >
         <em>I</em>
-      </ToolbarButton>
-      <ToolbarButton
+      </ToolbarBtn>
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().toggleStrike().run()}
         active={editor?.isActive("strike")}
         title="Strikethrough"
       >
         <s>S</s>
-      </ToolbarButton>
-      <ToolbarButton
+      </ToolbarBtn>
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().toggleCode().run()}
         active={editor?.isActive("code")}
         title="Inline code"
       >
         {"</>"}
-      </ToolbarButton>
+      </ToolbarBtn>
 
-      <div className="toolbar-sep" />
+      <Divider orientation="vertical" />
 
-      <ToolbarButton
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
         active={editor?.isActive("heading", { level: 1 })}
         title="Heading 1"
       >
         H1
-      </ToolbarButton>
-      <ToolbarButton
+      </ToolbarBtn>
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
         active={editor?.isActive("heading", { level: 2 })}
         title="Heading 2"
       >
         H2
-      </ToolbarButton>
-      <ToolbarButton
+      </ToolbarBtn>
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}
         active={editor?.isActive("heading", { level: 3 })}
         title="Heading 3"
       >
         H3
-      </ToolbarButton>
+      </ToolbarBtn>
 
-      <div className="toolbar-sep" />
+      <Divider orientation="vertical" />
 
-      <ToolbarButton
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().toggleBulletList().run()}
         active={editor?.isActive("bulletList")}
         title="Bullet list"
       >
-        <List size={14} />
-      </ToolbarButton>
-      <ToolbarButton
+        <Icon icon={List} size="sm" />
+      </ToolbarBtn>
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().toggleOrderedList().run()}
         active={editor?.isActive("orderedList")}
         title="Ordered list"
       >
-        <ListOrdered size={14} />
-      </ToolbarButton>
-      <ToolbarButton
+        <Icon icon={ListOrdered} size="sm" />
+      </ToolbarBtn>
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().toggleBlockquote().run()}
         active={editor?.isActive("blockquote")}
         title="Blockquote"
       >
-        <Quote size={14} />
-      </ToolbarButton>
-      <ToolbarButton
+        <Icon icon={Quote} size="sm" />
+      </ToolbarBtn>
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
         active={editor?.isActive("codeBlock")}
         title="Code block"
       >
-        <Code2 size={14} />
-      </ToolbarButton>
-      <ToolbarButton
+        <Icon icon={Code2} size="sm" />
+      </ToolbarBtn>
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().setHorizontalRule().run()}
         title="Horizontal rule"
-        active={false}
       >
-        <Minus size={14} />
-      </ToolbarButton>
-      <ToolbarButton
+        <Icon icon={Minus} size="sm" />
+      </ToolbarBtn>
+      <ToolbarBtn
         onClick={() =>
-          editor
-            ?.chain()
-            .focus()
-            .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-            .run()
+          editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
         }
         title="Insert table"
-        active={false}
       >
-        <Table size={14} />
-      </ToolbarButton>
-      <ToolbarButton
+        <Icon icon={Table} size="sm" />
+      </ToolbarBtn>
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().toggleTaskList().run()}
         active={editor?.isActive("taskList")}
         title="Task list"
       >
-        <CheckSquare size={14} />
-      </ToolbarButton>
+        <Icon icon={CheckSquare} size="sm" />
+      </ToolbarBtn>
 
-      <div className="toolbar-sep" />
+      <Divider orientation="vertical" />
 
-      <ToolbarButton
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().undo().run()}
         title="Undo (⌘Z)"
-        active={false}
       >
-        <Undo2 size={14} />
-      </ToolbarButton>
-      <ToolbarButton
+        <Icon icon={Undo2} size="sm" />
+      </ToolbarBtn>
+      <ToolbarBtn
         onClick={() => editor?.chain().focus().redo().run()}
         title="Redo (⌘⇧Z)"
-        active={false}
       >
-        <Redo2 size={14} />
-      </ToolbarButton>
-
-      <div className="toolbar-sep" />
+        <Icon icon={Redo2} size="sm" />
+      </ToolbarBtn>
 
       {onOpenLinkPicker && (
-        <ToolbarButton
-          onClick={onOpenLinkPicker}
-          title="Insert link (⌘K)"
-          active={false}
-        >
-          <span className="icon-inline">
-            <Link size={14} />
+        <>
+          <Divider orientation="vertical" />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onOpenLinkPicker}
+            title="Insert link (⌘K)"
+            iconLeft={<Icon icon={Link} size="sm" />}
+          >
             Link
-          </span>
-        </ToolbarButton>
+          </Button>
+        </>
       )}
 
-      <div className="toolbar-sep" />
+      <Divider orientation="vertical" />
 
-      <ToolbarButton
+      <Button
+        size="sm"
+        variant="ghost"
         onClick={() => onMetadataRequest?.()}
         title="Generate Frontmatter (AI)"
         disabled={isGeneratingMetadata || !onMetadataRequest}
-        active={false}
+        iconLeft={isGeneratingMetadata ? <Spinner size="sm" /> : <Icon icon={FileCode} size="sm" />}
       >
-        <span className="icon-inline">
-          {isGeneratingMetadata ? <Loader2 size={14} className="icon-spin" /> : <FileCode size={14} />}
-          Frontmatter
-        </span>
-      </ToolbarButton>
+        Frontmatter
+      </Button>
       {onOpenDiagramBar && (
-        <ToolbarButton
+        <Button
+          size="sm"
+          variant="ghost"
           onClick={onOpenDiagramBar}
           title="Insert diagram (AI)"
-          active={false}
+          iconLeft={<Icon icon={Network} size="sm" />}
         >
-          <span className="icon-inline">
-            <Network size={14} />
-            Diagram
-          </span>
-        </ToolbarButton>
+          Diagram
+        </Button>
       )}
       {onProcessAllFills && (
-        <ToolbarButton
+        <Button
+          size="sm"
+          variant="ghost"
           onClick={onProcessAllFills}
           title="Generate content for all AI Fill blocks in this document"
-          active={false}
+          iconLeft={<Icon icon={Sparkles} size="sm" />}
         >
-          <span className="icon-inline">
-            <Sparkles size={14} />
-            Process Fills
-          </span>
-        </ToolbarButton>
+          Process Fills
+        </Button>
       )}
 
       {onToggleRecording && (
         <>
-          <div className="toolbar-sep" />
-          <ToolbarButton
+          <Divider orientation="vertical" />
+          <Button
+            size="sm"
+            variant="ghost"
             onClick={onToggleRecording}
             title={isRecording ? "Stop recording" : "Record voice (requires Whisper)"}
-            active={isRecording}
+            className={isRecording ? "toolbar-btn--active" : undefined}
+            iconLeft={isRecording ? <Icon icon={Square} size="sm" /> : <Icon icon={Mic} size="sm" />}
           >
-            <span className="icon-inline">
-              {isRecording ? <><Square size={14} /> Stop</> : <><Mic size={14} /> Voice</>}
-            </span>
-          </ToolbarButton>
+            {isRecording ? "Stop" : "Voice"}
+          </Button>
         </>
       )}
-    </div>
+    </Toolbar>
   );
 }

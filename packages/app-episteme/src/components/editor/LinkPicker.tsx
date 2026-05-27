@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { Input } from "../primitives/Input.tsx";
 import type { LinkSuggestionItem } from "../../features/links.ts";
 
 interface LinkPickerProps {
@@ -31,7 +32,6 @@ export function LinkPicker({
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
-  // Close when clicking outside the picker
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
@@ -43,15 +43,10 @@ export function LinkPicker({
   }, [onClose]);
 
   return (
-    <div
-      ref={pickerRef}
-      className="wikilink-popup link-picker"
-      style={{ top, left }}
-    >
-      <input
+    <div ref={pickerRef} className="wikilink-popup link-picker" style={{ top, left }}>
+      <Input
         ref={inputRef}
-        className="link-picker-input"
-        type="text"
+        size="sm"
         placeholder="Search files…"
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
@@ -77,7 +72,6 @@ export function LinkPicker({
           key={item.path}
           className={`wikilink-popup-item${i === selectedIndex ? " active" : ""}`}
           onMouseEnter={() => onHover(i)}
-          // Use mousedown so the click registers before the input blurs
           onMouseDown={(e) => { e.preventDefault(); onAccept(item.path); }}
         >
           <span className="wikilink-popup-name">{item.basename}</span>

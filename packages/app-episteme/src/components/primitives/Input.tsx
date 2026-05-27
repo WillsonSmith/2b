@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode } from "react";
+import type { InputHTMLAttributes, ReactNode, Ref } from "react";
 
 export type InputSize = "sm" | "md";
 
@@ -8,6 +8,7 @@ export interface InputProps
   invalid?: boolean;
   prefix?: ReactNode;
   suffix?: ReactNode;
+  ref?: Ref<HTMLInputElement>;
 }
 
 export function Input({
@@ -16,6 +17,7 @@ export function Input({
   prefix,
   suffix,
   className,
+  ref,
   ...rest
 }: InputProps) {
   const wrapperClasses = [
@@ -33,6 +35,7 @@ export function Input({
       {prefix && <span className="ep-input__affix ep-input__affix--prefix">{prefix}</span>}
       <input
         {...rest}
+        ref={ref}
         aria-invalid={invalid || undefined}
         className="ep-input__field"
       />

@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { Button } from "../primitives/Button.tsx";
+import { Chip } from "../primitives/Chip.tsx";
+import { Icon } from "../primitives/Icon.tsx";
+import { IconButton } from "../primitives/IconButton.tsx";
+import { Input } from "../primitives/Input.tsx";
+import { Textarea } from "../primitives/Textarea.tsx";
 import {
   parseYamlFields,
   serializeYamlFields,
@@ -44,13 +50,14 @@ export function FrontmatterPanel({ yaml, onChange }: FrontmatterPanelProps) {
   if (!hasYaml && fieldEntries.length === 0) {
     return (
       <div className="frontmatter-panel frontmatter-panel-empty">
-        <button
-          type="button"
-          className="fm-add-empty"
+        <Button
+          size="sm"
+          variant="ghost"
+          iconLeft={<Icon icon={Plus} size="xs" />}
           onClick={() => commit({ title: "" })}
         >
-          <Plus size={12} /> Add properties
-        </button>
+          Add properties
+        </Button>
       </div>
     );
   }
@@ -63,42 +70,40 @@ export function FrontmatterPanel({ yaml, onChange }: FrontmatterPanelProps) {
           className="fm-toggle"
           onClick={() => setExpanded((v) => !v)}
         >
-          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <Icon icon={expanded ? ChevronDown : ChevronRight} size="sm" />
           <span>Properties</span>
           <span className="fm-count">{fieldEntries.length}</span>
         </button>
         {expanded && (
           <div className="fm-header-actions">
-            <button
-              type="button"
-              className="fm-mode-toggle"
+            <Button
+              size="sm"
+              variant="ghost"
               onClick={() => setForceRaw((v) => !v)}
               disabled={!yamlIsStructured}
               title={showRaw ? "Show fields" : "Edit as YAML"}
             >
               {showRaw ? "Fields" : "YAML"}
-            </button>
+            </Button>
             {!showRaw && (
-              <button
-                type="button"
-                className="fm-add"
+              <IconButton
+                size="sm"
+                icon={<Icon icon={Plus} size="sm" />}
+                aria-label="Add property"
                 onClick={() => {
                   let key = "new_key";
                   let n = 1;
                   while (key in fields) key = `new_key_${++n}`;
                   commit({ ...fields, [key]: "" });
                 }}
-                title="Add property"
-              >
-                <Plus size={14} />
-              </button>
+              />
             )}
           </div>
         )}
       </div>
 
       {expanded && showRaw && (
-        <textarea
+        <Textarea
           className="fm-raw"
           value={yaml ?? ""}
           onChange={(e) =>
@@ -150,8 +155,9 @@ function FieldRow({
 }: FieldRowProps) {
   return (
     <div className="fm-row">
-      <input
+      <Input
         className="fm-key"
+        size="sm"
         value={fieldKey}
         onChange={(e) => onKeyChange(e.target.value)}
         spellCheck={false}
@@ -159,14 +165,12 @@ function FieldRow({
       <div className="fm-value">
         <ValueEditor fieldKey={fieldKey} value={value} onChange={onValueChange} />
       </div>
-      <button
-        type="button"
-        className="fm-delete"
+      <IconButton
+        size="sm"
+        icon={<Icon icon={Trash2} size="sm" />}
+        aria-label={`Remove ${fieldKey}`}
         onClick={onDelete}
-        title="Remove"
-      >
-        <Trash2 size={13} />
-      </button>
+      />
     </div>
   );
 }
@@ -186,7 +190,7 @@ function ValueEditor({ fieldKey, value, onChange }: ValueEditorProps) {
 
   if (fieldKey === "summary") {
     return (
-      <textarea
+      <Textarea
         className="fm-textarea"
         value={stringValue}
         onChange={(e) => onChange(e.target.value)}
@@ -197,8 +201,9 @@ function ValueEditor({ fieldKey, value, onChange }: ValueEditorProps) {
 
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return (
-      <input
+      <Input
         type="date"
+        size="sm"
         className="fm-input"
         value={stringValue}
         onChange={(e) => onChange(e.target.value)}
@@ -207,8 +212,8 @@ function ValueEditor({ fieldKey, value, onChange }: ValueEditorProps) {
   }
 
   return (
-    <input
-      type="text"
+    <Input
+      size="sm"
       className="fm-input"
       value={stringValue}
       onChange={(e) => onChange(e.target.value)}
@@ -236,16 +241,9 @@ function ChipEditor({ values, onChange }: ChipEditorProps) {
   return (
     <div className="fm-chips">
       {values.map((v, i) => (
-        <span key={i} className="fm-chip">
+        <Chip key={i} onRemove={() => onChange(values.filter((_, j) => j !== i))}>
           {v}
-          <button
-            type="button"
-            className="fm-chip-remove"
-            onClick={() => onChange(values.filter((_, j) => j !== i))}
-          >
-            <X size={10} />
-          </button>
-        </span>
+        </Chip>
       ))}
       <input
         type="text"
