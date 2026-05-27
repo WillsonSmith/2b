@@ -1,65 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Search, FileText, Globe, Terminal } from "lucide-react";
-import type { UnifiedSearchResponse, SearchResult } from "./ResearchPanel.tsx";
+import type { KeyboardEvent } from "react";
+import type { SearchResult, UnifiedSearchResponse } from "../../../plugins/ResearchPlugin.ts";
+import { CLOSE_ANIMATION_MS, PLACEHOLDERS, SCOPES } from "./constants.ts";
+import { fuzzyMatch } from "./pathUtils.ts";
+import { SearchInput } from "./SearchInput.tsx";
+import { ScopeTabs } from "./ScopeTabs.tsx";
+import { FileResultRow } from "./results/FileResultRow.tsx";
+import { FullTextResultRow } from "./results/FullTextResultRow.tsx";
+import { ResearchResultRow } from "./results/ResearchResultRow.tsx";
+import { CommandResultRow } from "./results/CommandResultRow.tsx";
+import type { FullTextResult, Scope, SearchCommand } from "./types.ts";
 
-type Scope = "files" | "fulltext" | "research" | "commands";
-
-export interface SearchCommand {
-  id: string;
-  label: string;
-  description?: string;
-  action: () => void;
-}
-
-interface FullTextResult {
-  path: string;
-  matches: Array<{ line: number; text: string }>;
-}
+export type { SearchCommand } from "./types.ts";
 
 interface UnifiedSearchProps {
   open: boolean;
   onClose: () => void;
-  workspaceFiles: string[];
+  workspaceFiles: ReadonlyArray<string>;
   onFileSelect: (path: string) => void;
   onResearchSearch: (query: string) => void;
   researchResults: UnifiedSearchResponse | null;
   isResearching: boolean;
-  commands: SearchCommand[];
-}
-
-const SCOPE_LABELS: Record<Scope, string> = {
-  files: "Files",
-  fulltext: "Full-text",
-  research: "Research",
-  commands: "Commands",
-};
-
-const PLACEHOLDERS: Record<Scope, string> = {
-  files: "Find file…",
-  fulltext: "Search in notes…",
-  research: "Search arXiv, Wikipedia, workspace…",
-  commands: "> command",
-};
-
-const CLOSE_ANIMATION_MS = 180;
-
-function fuzzyMatch(pattern: string, str: string): boolean {
-  const p = pattern.toLowerCase();
-  const s = str.toLowerCase();
-  let pi = 0;
-  for (let i = 0; i < s.length && pi < p.length; i++) {
-    if (s[i] === p[pi]) pi++;
-  }
-  return pi === p.length;
-}
-
-function basename(path: string): string {
-  return path.split("/").at(-1)?.replace(/\.md$/i, "") ?? path;
-}
-
-function dirpart(path: string): string {
-  const parts = path.split("/");
-  return parts.length > 1 ? parts.slice(0, -1).join("/") : "";
+  commands: ReadonlyArray<SearchCommand>;
 }
 
 export function UnifiedSearch({
@@ -86,9 +48,7 @@ export function UnifiedSearch({
   const handleClose = useCallback(() => {
     if (closeTimerRef.current) return;
     setExiting(true);
-    closeTimerRef.current = setTimeout(() => {
-      onClose();
-    }, CLOSE_ANIMATION_MS);
+    closeTimerRef.current = setTimeout(() => onClose(), CLOSE_ANIMATION_MS);
   }, [onClose]);
 
   useEffect(() => {
@@ -97,7 +57,6 @@ export function UnifiedSearch({
     };
   }, []);
 
-  // Reset on open
   useEffect(() => {
     if (open) {
       setQuery("");
@@ -150,31 +109,23 @@ export function UnifiedSearch({
         : workspaceFiles.slice(0, 20)
       : [];
 
-  const commandResults: SearchCommand[] =
+  const commandResults: ReadonlyArray<SearchCommand> =
     scope === "commands"
       ? displayQuery
-        ? commands.filter((c) =>
-            c.label.toLowerCase().includes(displayQuery.toLowerCase()),
-          )
+        ? commands.filter((c) => c.label.toLowerCase().includes(displayQuery.toLowerCase()))
         : commands
       : [];
 
-  const researchItems: SearchResult[] = researchResults?.all ?? [];
+  const researchItems: ReadonlyArray<SearchResult> = researchResults?.all ?? [];
 
   const totalResults =
-    scope === "files"
-      ? fileResults.length
-      : scope === "fulltext"
-        ? fullTextResults.length
-        : scope === "research"
-          ? researchItems.length
-          : commandResults.length;
+    scope === "files" ? fileResults.length
+    : scope === "fulltext" ? fullTextResults.length
+    : scope === "research" ? researchItems.length
+    : commandResults.length;
 
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [query, scope]);
+  useEffect(() => { setActiveIndex(0); }, [query, scope]);
 
-  // Scroll active item into view
   useEffect(() => {
     const container = resultsRef.current;
     if (!container) return;
@@ -198,7 +149,7 @@ export function UnifiedSearch({
     }
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
+  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Escape") { handleClose(); return; }
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -215,11 +166,16 @@ export function UnifiedSearch({
       }
     } else if (e.key === "Tab") {
       e.preventDefault();
-      const scopes: Scope[] = ["files", "fulltext", "research", "commands"];
-      const next = scopes[(scopes.indexOf(scope) + 1) % scopes.length] ?? "files";
+      const next = SCOPES[(SCOPES.indexOf(scope) + 1) % SCOPES.length] ?? "files";
       setScope(next);
     }
   }
+
+  const handleScopeChange = (next: Scope) => {
+    setScope(next);
+    setActiveIndex(0);
+    inputRef.current?.focus();
+  };
 
   if (!open) return null;
 
@@ -232,43 +188,15 @@ export function UnifiedSearch({
         className={`usearch-container${exiting ? " usearch-container--exiting" : ""}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Scope tabs */}
-        <div className="usearch-scopes">
-          {(["files", "fulltext", "research", "commands"] as Scope[]).map(
-            (s) => (
-              <button
-                key={s}
-                className={`usearch-scope-tab${scope === s ? " active" : ""}`}
-                onClick={() => {
-                  setScope(s);
-                  setActiveIndex(0);
-                  inputRef.current?.focus();
-                }}
-              >
-                {SCOPE_LABELS[s]}
-              </button>
-            ),
-          )}
-          <span className="usearch-scope-hint">Tab to cycle</span>
-        </div>
+        <ScopeTabs active={scope} onChange={handleScopeChange} />
+        <SearchInput
+          inputRef={inputRef}
+          value={query}
+          onChange={setQuery}
+          onKeyDown={handleKeyDown}
+          placeholder={PLACEHOLDERS[scope]}
+        />
 
-        {/* Input */}
-        <div className="usearch-input-row">
-          <Search size={15} className="usearch-input-icon" />
-          <input
-            ref={inputRef}
-            className="usearch-input"
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={PLACEHOLDERS[scope]}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </div>
-
-        {/* Results */}
         <div className="usearch-results" ref={resultsRef}>
           {scope === "files" && (
             fileResults.length === 0 && displayQuery ? (
@@ -277,18 +205,13 @@ export function UnifiedSearch({
               <div className="usearch-empty">No files in workspace</div>
             ) : (
               fileResults.map((f, i) => (
-                <div
+                <FileResultRow
                   key={f}
-                  className={`usearch-result${i === activeIndex ? " active" : ""}`}
-                  onClick={() => selectItem(i)}
-                  onMouseEnter={() => setActiveIndex(i)}
-                >
-                  <FileText size={13} className="usearch-result-icon" />
-                  <span className="usearch-result-label">{basename(f)}</span>
-                  {dirpart(f) && (
-                    <span className="usearch-result-sub">{dirpart(f)}</span>
-                  )}
-                </div>
+                  path={f}
+                  active={i === activeIndex}
+                  onSelect={() => selectItem(i)}
+                  onHover={() => setActiveIndex(i)}
+                />
               ))
             )
           )}
@@ -302,26 +225,13 @@ export function UnifiedSearch({
               <div className="usearch-empty">No matches for "{query.trim()}"</div>
             ) : (
               fullTextResults.map((r, i) => (
-                <div
+                <FullTextResultRow
                   key={r.path}
-                  className={`usearch-result usearch-result--block${i === activeIndex ? " active" : ""}`}
-                  onClick={() => selectItem(i)}
-                  onMouseEnter={() => setActiveIndex(i)}
-                >
-                  <div className="usearch-result-main">
-                    <FileText size={13} className="usearch-result-icon" />
-                    <span className="usearch-result-label">{basename(r.path)}</span>
-                    {dirpart(r.path) && (
-                      <span className="usearch-result-sub">{dirpart(r.path)}</span>
-                    )}
-                  </div>
-                  {r.matches.map((m, j) => (
-                    <div key={j} className="usearch-match-row">
-                      <span className="usearch-match-line">:{m.line}</span>
-                      <span className="usearch-match-text">{m.text}</span>
-                    </div>
-                  ))}
-                </div>
+                  result={r}
+                  active={i === activeIndex}
+                  onSelect={() => selectItem(i)}
+                  onHover={() => setActiveIndex(i)}
+                />
               ))
             )
           )}
@@ -331,16 +241,13 @@ export function UnifiedSearch({
               <div className="usearch-empty">Searching…</div>
             ) : researchItems.length > 0 ? (
               researchItems.slice(0, 20).map((r, i) => (
-                <div
+                <ResearchResultRow
                   key={i}
-                  className={`usearch-result${i === activeIndex ? " active" : ""}`}
-                  onClick={() => selectItem(i)}
-                  onMouseEnter={() => setActiveIndex(i)}
-                >
-                  <Globe size={13} className="usearch-result-icon" />
-                  <span className="usearch-result-label">{r.title}</span>
-                  <span className="usearch-result-sub">{r.source}</span>
-                </div>
+                  result={r}
+                  active={i === activeIndex}
+                  onSelect={() => selectItem(i)}
+                  onHover={() => setActiveIndex(i)}
+                />
               ))
             ) : (
               <div className="usearch-empty">
@@ -354,18 +261,13 @@ export function UnifiedSearch({
               <div className="usearch-empty">No commands match</div>
             ) : (
               commandResults.map((cmd, i) => (
-                <div
+                <CommandResultRow
                   key={cmd.id}
-                  className={`usearch-result${i === activeIndex ? " active" : ""}`}
-                  onClick={() => selectItem(i)}
-                  onMouseEnter={() => setActiveIndex(i)}
-                >
-                  <Terminal size={13} className="usearch-result-icon" />
-                  <span className="usearch-result-label">{cmd.label}</span>
-                  {cmd.description && (
-                    <span className="usearch-result-sub">{cmd.description}</span>
-                  )}
-                </div>
+                  command={cmd}
+                  active={i === activeIndex}
+                  onSelect={() => selectItem(i)}
+                  onHover={() => setActiveIndex(i)}
+                />
               ))
             )
           )}
