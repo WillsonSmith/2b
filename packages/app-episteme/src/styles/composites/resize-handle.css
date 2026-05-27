@@ -1,0 +1,18 @@
+/* ResizeHandle — narrow drag strip pinned to the left or right edge. */
+.ep-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+.ep-resize-handle--left  { left: 0; }
+.ep-resize-handle--right { right: 0; }
+
+.ep-resize-handle:hover {
+  background: var(--accent);
+  opacity: 0.5;
+}

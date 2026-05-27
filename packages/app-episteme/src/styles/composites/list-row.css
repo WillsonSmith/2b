@@ -1,0 +1,66 @@
+/* ListRow — flex row with icon / main / meta / actions slots. */
+.ep-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  padding: var(--sp-4) var(--sp-6);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--fs-md);
+  line-height: 1.3;
+}
+
+.ep-list-row--clickable {
+  cursor: pointer;
+}
+.ep-list-row--clickable:hover:not(.ep-list-row--disabled) {
+  background: var(--bg-highlight);
+}
+.ep-list-row--clickable:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ep-list-row--selected {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+.ep-list-row--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ep-list-row__icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ep-list-row__main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-list-row__meta {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.ep-list-row__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.ep-list-row:hover .ep-list-row__actions,
+.ep-list-row:focus-within .ep-list-row__actions {
+  opacity: 1;
+}

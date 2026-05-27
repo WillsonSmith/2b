@@ -1,0 +1,21 @@
+/* KeyValueRow — left label + right value. */
+.ep-kv-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-5);
+  padding: var(--sp-3) 0;
+  font-size: var(--fs-sm);
+}
+
+.ep-kv-row__label {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  min-width: 100px;
+}
+
+.ep-kv-row__value {
+  flex: 1;
+  color: var(--text);
+  min-width: 0;
+  word-break: break-word;
+}

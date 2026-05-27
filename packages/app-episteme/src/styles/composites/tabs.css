@@ -1,0 +1,55 @@
+/* Tabs — horizontal strip of tab buttons with an underline indicator. */
+.ep-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.ep-tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-5) var(--sp-6);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.ep-tabs__tab:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.ep-tabs__tab--active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.ep-tabs__tab--disabled,
+.ep-tabs__tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ep-tabs__icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ep-tabs__badge {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius-pill);
+  background: var(--bg-highlight);
+  line-height: 1.4;
+}

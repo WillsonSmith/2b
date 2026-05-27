@@ -1,0 +1,10 @@
+/* ContextMenu — Menu rendered at fixed cursor coordinates. */
+.ep-context-menu {
+  position: fixed;
+  z-index: 260;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-raised);
+  animation: ep-popover-rise var(--motion-fast) var(--ease-out);
+}

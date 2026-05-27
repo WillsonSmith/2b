@@ -2,6 +2,7 @@
 @import "./styles/themes.css";
 @import "./styles/tokens.css";
 @import "./styles/primitives/index.css";
+@import "./styles/composites/index.css";
 @import "./styles/layout.css";
 @import "./styles/sidebar.css";
 @import "./styles/editor.css";

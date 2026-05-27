@@ -1,0 +1,6 @@
+/* ConfirmDialog — uses ModalShell; this file just styles the body message. */
+.ep-confirm-dialog__message {
+  font-size: var(--fs-md);
+  color: var(--text);
+  line-height: 1.5;
+}

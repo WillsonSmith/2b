@@ -1,0 +1,65 @@
+/* ModalShell — overlay + framed surface with header/body/footer slots. */
+.ep-modal__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: ep-modal-fade var(--motion-base) var(--ease-out);
+}
+
+.ep-modal {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  width: min(560px, 90vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--elev-raised);
+  animation: ep-modal-rise var(--motion-base) var(--ease-out);
+}
+
+.ep-modal__header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-8) var(--sp-10) 0;
+}
+
+.ep-modal__title {
+  flex: 1;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+}
+
+.ep-modal__close {
+  flex-shrink: 0;
+}
+
+.ep-modal__body {
+  padding: var(--sp-8) var(--sp-10);
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.ep-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-5);
+  padding: 0 var(--sp-10) var(--sp-8);
+}
+
+@keyframes ep-modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ep-modal-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}

@@ -1,0 +1,12 @@
+/* InlineLoading — Spinner + accompanying text. */
+.ep-inline-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.ep-inline-loading__label {
+  white-space: nowrap;
+}

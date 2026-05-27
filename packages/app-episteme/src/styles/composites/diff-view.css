@@ -1,0 +1,53 @@
+/* DiffView — line-by-line additions/removals/context with markers. */
+.ep-diff {
+  font-family: var(--md-font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  overflow: auto;
+  max-height: 60vh;
+}
+
+.ep-diff__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: 1px var(--sp-4);
+  white-space: pre;
+}
+
+.ep-diff__row--add {
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green);
+}
+.ep-diff__row--remove {
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+  color: var(--red);
+}
+.ep-diff__row--context {
+  color: var(--text-muted);
+}
+
+.ep-diff__lineno {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  text-align: right;
+  min-width: 2.5em;
+  user-select: none;
+}
+
+.ep-diff__marker {
+  flex-shrink: 0;
+  width: 1ch;
+  text-align: center;
+  user-select: none;
+  font-weight: var(--fw-semibold);
+}
+
+.ep-diff__text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+}

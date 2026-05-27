@@ -1,0 +1,13 @@
+/* StatusPill — Dot + label, for "ready"/"thinking"/"offline" indicators. */
+.ep-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.ep-status-pill__label {
+  white-space: nowrap;
+}

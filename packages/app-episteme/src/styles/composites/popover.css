@@ -1,0 +1,17 @@
+/* Popover — fixed-positioned floating container anchored to a trigger. */
+.ep-popover {
+  position: fixed;
+  z-index: 250;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-raised);
+  min-width: 160px;
+  max-width: 90vw;
+  animation: ep-popover-rise var(--motion-fast) var(--ease-out);
+}
+
+@keyframes ep-popover-rise {
+  from { opacity: 0; transform-origin: top left; }
+  to   { opacity: 1; }
+}

@@ -1,0 +1,65 @@
+/* Menu — list of action items inside a Popover. */
+.ep-menu {
+  padding: var(--sp-2);
+  min-width: 180px;
+}
+
+.ep-menu__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.ep-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  width: 100%;
+  padding: var(--sp-4) var(--sp-5);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-md);
+  text-align: left;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.ep-menu__item:hover:not(:disabled) {
+  background: var(--bg-highlight);
+}
+.ep-menu__item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.ep-menu__item--danger {
+  color: var(--red);
+}
+.ep-menu__item--disabled,
+.ep-menu__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ep-menu__icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.ep-menu__item--danger .ep-menu__icon {
+  color: var(--red);
+}
+
+.ep-menu__label {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.ep-menu__divider {
+  height: 1px;
+  background: var(--border);
+  margin: var(--sp-2) 0;
+}

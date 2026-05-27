@@ -1,0 +1,7 @@
+/* RadioGroup — layout for a set of Radio primitives. */
+.ep-radio-group {
+  display: flex;
+  gap: var(--sp-5);
+}
+.ep-radio-group--vertical   { flex-direction: column; }
+.ep-radio-group--horizontal { flex-direction: row; flex-wrap: wrap; }

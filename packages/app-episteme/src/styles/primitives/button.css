@@ -94,20 +94,17 @@
   background: color-mix(in srgb, var(--bg-highlight) 60%, var(--bg) 40%);
 }
 
-/* Danger — destructive action */
+/* Danger — destructive action (solid red) */
 .ep-button--danger {
-  background: transparent;
-  color: var(--red);
-  border-color: transparent;
-}
-.ep-button--danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--red) 14%, transparent);
-  color: var(--red);
-}
-.ep-button--danger.ep-button--solid {
   background: var(--red);
   color: #fff;
   border-color: var(--red);
+}
+.ep-button--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 86%, #fff 14%);
+}
+.ep-button--danger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 80%, #000 20%);
 }
 
 /* Link — looks like an anchor */

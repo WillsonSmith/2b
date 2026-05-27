@@ -1,0 +1,18 @@
+/* Toolbar — flex container for IconButtons and Dividers. */
+.ep-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.ep-toolbar--horizontal { flex-direction: row; }
+.ep-toolbar--vertical   { flex-direction: column; }
+
+.ep-toolbar .ep-divider--vertical {
+  height: 16px;
+  min-height: 0;
+  margin: 0 var(--sp-2);
+}
+.ep-toolbar--vertical .ep-divider--horizontal {
+  width: 16px;
+  margin: var(--sp-2) 0;
+}

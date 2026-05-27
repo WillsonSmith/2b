@@ -1,0 +1,43 @@
+/* PanelShell — generic side/bottom panel chrome: header + body + optional resize. */
+.ep-panel-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border-right: 1px solid var(--border);
+  min-height: 0;
+}
+
+.ep-panel-shell__header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-5) var(--sp-6);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  height: var(--header-h);
+}
+
+.ep-panel-shell__title {
+  flex: 1;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-panel-shell__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+.ep-panel-shell__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}

@@ -1,0 +1,7 @@
+/* CheckboxGroup — layout for a set of Checkbox primitives. */
+.ep-checkbox-group {
+  display: flex;
+  gap: var(--sp-5);
+}
+.ep-checkbox-group--vertical   { flex-direction: column; }
+.ep-checkbox-group--horizontal { flex-direction: row; flex-wrap: wrap; }
