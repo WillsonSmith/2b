@@ -221,7 +221,7 @@ export const FileTree = memo(function FileTree() {
       style={collapsed ? undefined : { width, transition: isDragging ? "none" : undefined }}
     >
       <div className="file-tree" style={{ width, minWidth: width }}>
-        {!collapsed && <ResizeHandle edge="right" onMouseDown={handleMouseDown} className="panel-drag-handle panel-drag-handle--right" />}
+        {!collapsed && <ResizeHandle edge="right" onMouseDown={handleMouseDown} />}
         <FileTreeHeader
           onNewFile={() => setIsCreating(true)}
           onRefresh={file.refreshFiles}
