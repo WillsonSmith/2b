@@ -20,6 +20,33 @@ export function isLocalLink(href: string): boolean {
   return true;
 }
 
+/**
+ * Decode a link destination for matching against on-disk file paths. Markdown
+ * parsers percent-encode destinations (a space becomes %20), so reloaded links
+ * arrive encoded while freshly-inserted ones do not. decodeURIComponent on an
+ * already-decoded path is a no-op, so this safely normalizes both. Malformed
+ * percent sequences fall back to the raw string.
+ */
+export function decodeLinkHref(href: string): string {
+  try {
+    return decodeURIComponent(href);
+  } catch {
+    return href;
+  }
+}
+
+/**
+ * Format a link destination for writing into Markdown. Spaces (and other
+ * whitespace) terminate a bare destination, so wrap those in <> per CommonMark;
+ * otherwise escape parens as the default serializer does. The input may be
+ * percent-encoded (post-reload) — decode first so the written form is readable.
+ */
+export function formatLinkDestination(href: string): string {
+  const decoded = decodeLinkHref(href);
+  if (/\s/.test(decoded)) return `<${decoded}>`;
+  return decoded.replace(/[()]/g, "\\$&");
+}
+
 function ldirname(p: string): string {
   const parts = p.replace(/\\/g, "/").split("/");
   parts.pop();
@@ -68,8 +95,9 @@ export function resolveLocalHref(
   const [hrefNoFrag] = href.split("#");
   if (!hrefNoFrag) return null;
 
+  const decoded = decodeLinkHref(hrefNoFrag);
   const dir = ldirname(currentFilePath);
-  const raw = lnormalize(dir === "." ? hrefNoFrag : ljoin(dir, hrefNoFrag));
+  const raw = lnormalize(dir === "." ? decoded : ljoin(dir, decoded));
 
   if (allFiles.includes(raw)) return raw;
   const withMd = raw.endsWith(".md") ? raw : raw + ".md";
@@ -140,15 +168,20 @@ export function rewriteLinksForRename(
   oldTargetPath: string,
   newTargetPath: string,
 ): string {
-  return content.replace(/\[([^\]]*)\]\(([^)]*)\)/g, (match, text: string, href: string) => {
-    if (!isLocalLink(href)) return match;
-    const [hrefNoFrag, frag] = href.split("#") as [string, string | undefined];
+  // Destination is either bare (no whitespace, until `)`) or angle-bracketed
+  // (`<...>`, may contain spaces) per CommonMark.
+  return content.replace(/\[([^\]]*)\]\((<[^>]*>|[^)]*)\)/g, (match, text: string, dest: string) => {
+    const inner = dest.startsWith("<") && dest.endsWith(">") ? dest.slice(1, -1) : dest;
+    if (!isLocalLink(inner)) return match;
+    const [hrefNoFrag, frag] = inner.split("#") as [string, string | undefined];
+    const decoded = decodeLinkHref(hrefNoFrag);
     const dir = ldirname(sourceFilePath);
-    const raw = lnormalize(dir === "." ? hrefNoFrag : ljoin(dir, hrefNoFrag));
+    const raw = lnormalize(dir === "." ? decoded : ljoin(dir, decoded));
     const resolved = raw.endsWith(".md") ? raw : raw + ".md";
     const normalOld = oldTargetPath.endsWith(".md") ? oldTargetPath : oldTargetPath + ".md";
     if (resolved !== normalOld) return match;
-    const newHref = computeRelativeHref(sourceFilePath, newTargetPath);
-    return `[${text}](${newHref}${frag ? "#" + frag : ""})`;
+    // Re-append the fragment before formatting so it lands inside any <> wrapper.
+    const newHref = computeRelativeHref(sourceFilePath, newTargetPath) + (frag ? "#" + frag : "");
+    return `[${text}](${formatLinkDestination(newHref)})`;
   });
 }

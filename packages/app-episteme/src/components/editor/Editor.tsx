@@ -3,6 +3,8 @@ import { useEditor } from "../../state/EditorContext.tsx";
 import { useVoice } from "../../state/VoiceContext.tsx";
 import { useSignalValue } from "../../state/signals.ts";
 import StarterKit from "@tiptap/starter-kit";
+import Link from "@tiptap/extension-link";
+import { defaultMarkdownSerializer } from "prosemirror-markdown";
 import { Markdown } from "tiptap-markdown";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
@@ -18,6 +20,8 @@ import {
   isLocalLink,
   resolveLocalHref,
   computeRelativeHref,
+  formatLinkDestination,
+  decodeLinkHref,
   rankFilesForLink,
 } from "../../features/links.ts";
 import type { LinkSuggestionItem } from "../../features/links.ts";
@@ -49,6 +53,47 @@ import { parseFrontmatter } from "../../features/frontmatter.ts";
 function getMarkdown(ed: any): string {
   return ed.storage.markdown.getMarkdown() as string;
 }
+
+// Link mark that serializes destinations containing spaces as CommonMark
+// angle-bracket links (`[text](<my file.md>)`). tiptap-markdown reads a mark's
+// serializer from `storage.markdown.serialize`; StarterKit's built-in link
+// carries none, so it falls back to the default (which emits a bare space and
+// breaks the link). We replace StarterKit's link with this one.
+const MarkdownLink = Link.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize: {
+          // Reuse the default open so plain-URL autolink (`<url>`) still works.
+          open: defaultMarkdownSerializer.marks.link!.open,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          close(state: any, mark: any) {
+            if (state.inAutolink) {
+              state.inAutolink = undefined;
+              return ">";
+            }
+            const dest = formatLinkDestination(mark.attrs.href ?? "");
+            const title = mark.attrs.title
+              ? ` "${String(mark.attrs.title).replace(/"/g, '\\"')}"`
+              : "";
+            return `](${dest}${title})`;
+          },
+        },
+        parse: {},
+      },
+    };
+  },
+}).configure({
+  openOnClick: false,
+  // extension-link's default isAllowedUri rejects any relative path containing
+  // a "/" (its regex range excludes the slash), which silently drops
+  // cross-directory links like `notes/My Note.md` on load. Allow scheme-less
+  // relative destinations (covers spaces and subdirectories) while still
+  // running the default protocol check on anything that carries a scheme
+  // (so `javascript:` and friends stay blocked).
+  isAllowedUri: (url, ctx) =>
+    /^[a-z][a-z0-9+.-]*:/i.test(url) ? !!ctx.defaultValidate(url) : true,
+});
 
 interface EditorProps {
   content: string;
@@ -293,7 +338,8 @@ export function Editor({
 
   const editor = useTiptap({
     extensions: [
-      StarterKit.configure({ link: { openOnClick: false }, codeBlock: false }),
+      StarterKit.configure({ link: false, codeBlock: false }),
+      MarkdownLink,
       MermaidCodeBlock,
       DiagramPlaceholderExtension(diagramCallbackRef),
       Markdown.configure({ transformPastedText: true }),
@@ -775,7 +821,9 @@ export function Editor({
       if (resolved) {
         onNavigateRef.current(resolved);
       } else {
-        onCreateFileRef.current?.(href.replace(/\.md$/i, "").trim() + ".md");
+        // href arrives percent-encoded for spaced links; decode so the new
+        // file is created as "My Note.md", not "My%20Note.md".
+        onCreateFileRef.current?.(decodeLinkHref(href).replace(/\.md$/i, "").trim() + ".md");
       }
     };
     dom.addEventListener("click", handleClick);

@@ -40,7 +40,7 @@ function createMarked(allRelPaths: string[], currentRelPath: string): Marked {
           href = href.replace(/\.md(#[^)]*)?$/, (_, frag) => `.html${frag ?? ""}`);
         }
         const titleAttr = title ? ` title="${title}"` : "";
-        return `<a href="${href ?? ""}"${titleAttr}>${text}</a>`;
+        return `<a href="${href ? encodeURI(href) : ""}"${titleAttr}>${text}</a>`;
       },
     },
   });

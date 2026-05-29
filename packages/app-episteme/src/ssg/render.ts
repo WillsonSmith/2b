@@ -1,8 +1,8 @@
 import * as path from "path";
 import { CSS, MERMAID_SCRIPT, THEME_INIT_SCRIPT, THEME_TOGGLE_SCRIPT } from "./assets";
 
-// Matches standard markdown links: [text](href)
-const MARKDOWN_LINK_RE = /\[([^\]]*)\]\(([^)]*)\)/g;
+// Matches standard markdown links: [text](href) or [text](<href with spaces>)
+const MARKDOWN_LINK_RE = /\[([^\]]*)\]\((<[^>]*>|[^)]*)\)/g;
 
 export function isLocalHref(href: string): boolean {
   if (!href) return false;
@@ -18,8 +18,12 @@ export function resolveMarkdownLinkInSsg(
 ): string | null {
   const [hrefNoFrag] = href.split("#");
   if (!hrefNoFrag) return null;
+  // Markdown parsers percent-encode destinations (space -> %20); decode before
+  // matching against on-disk paths.
+  let decoded = hrefNoFrag;
+  try { decoded = decodeURIComponent(hrefNoFrag); } catch { /* keep raw */ }
   const dir = path.dirname(currentRelPath);
-  const raw = path.normalize(path.join(dir === "." ? "" : dir, hrefNoFrag));
+  const raw = path.normalize(path.join(dir === "." ? "" : dir, decoded));
   if (allRelPaths.includes(raw)) return raw;
   const withMd = raw.endsWith(".md") ? raw : raw + ".md";
   if (allRelPaths.includes(withMd)) return withMd;
@@ -82,7 +86,8 @@ export function extractEdgesForFile(body: string, allRelPaths: string[], current
   const currentRelPath = currentHtmlRelPath.replace(/\.html$/, ".md");
 
   for (const match of body.matchAll(new RegExp(MARKDOWN_LINK_RE.source, "g"))) {
-    const href = match[2];
+    let href = match[2];
+    if (href && href.startsWith("<") && href.endsWith(">")) href = href.slice(1, -1);
     if (!href || !isLocalHref(href)) continue;
     const resolved = resolveMarkdownLinkInSsg(href, currentRelPath, allRelPaths);
     if (resolved) {
