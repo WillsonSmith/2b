@@ -5,10 +5,9 @@ import { featureModel } from "../../config.ts";
 
 const SYSTEM = `You write a single section of a writing style guide. The user gives a plain-language description of the style they want. Produce one focused section that an AI writing assistant can follow directly.
 
-Output format — exactly this, nothing else:
-TITLE: <a short, human-readable title, 1-4 words>
-<blank line>
-<the section body in raw Markdown>
+Output format — output nothing else:
+- A first line of exactly "TITLE:" followed by a short title (1-4 words).
+- The remaining lines: the section body in raw Markdown.
 
 Rules for the body:
 - Imperative voice. "Use active verbs", never "active verbs should be used".
@@ -57,6 +56,17 @@ function stripWrappingFence(text: string): string {
   return fenced ? fenced[1]!.trim() : text;
 }
 
+/**
+ * Drop leading lines that are a literal echo of a format placeholder. Smaller
+ * models sometimes emit the prompt's structural hints (e.g. "<blank line>")
+ * verbatim instead of acting on them.
+ */
+function stripPlaceholderLines(body: string): string {
+  const lines = body.split("\n");
+  while (lines.length > 0 && /^\s*<[^>]+>\s*$/.test(lines[0]!)) lines.shift();
+  return lines.join("\n").trim();
+}
+
 /** Derive a fallback title from the description's first few words. */
 function fallbackTitle(description: string): string {
   const words = description.trim().split(/\s+/).filter(Boolean).slice(0, 4);
@@ -82,7 +92,7 @@ export function parseTitleAndBody(raw: string, description = ""): GeneratedSecti
 
   if (match) {
     const title = match[1]!.trim() || fallbackTitle(description);
-    const body = lines.slice(i + 1).join("\n").trim();
+    const body = stripPlaceholderLines(lines.slice(i + 1).join("\n").trim());
     return { title, body: body || cleaned };
   }
 

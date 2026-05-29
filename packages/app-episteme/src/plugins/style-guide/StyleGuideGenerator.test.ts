@@ -37,6 +37,13 @@ describe("parseTitleAndBody", () => {
     expect(body).toBe("Be brief.");
   });
 
+  test("strips a leading placeholder line the model echoed verbatim", () => {
+    const raw = "TITLE: Approachability\n<blank line>\n\nWrite in a welcoming way.";
+    const { title, body } = parseTitleAndBody(raw);
+    expect(title).toBe("Approachability");
+    expect(body).toBe("Write in a welcoming way.");
+  });
+
   test("defaults to Untitled with neither title nor description", () => {
     const { title } = parseTitleAndBody("Body only.", "");
     expect(title).toBe("Untitled");

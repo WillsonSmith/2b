@@ -27,12 +27,24 @@ export interface OllamaProviderOptions {
   think?: boolean | "high" | "medium" | "low";
 }
 
+/**
+ * True when an error is Ollama's "model does not support thinking" rejection,
+ * raised when `think` is sent to a model without reasoning support (e.g.
+ * gemma3). Distinct from connection/timeout errors, which must still propagate.
+ */
+export function isThinkingUnsupportedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /does not support thinking/i.test(message);
+}
+
 export class OllamaProvider implements LLMProvider {
   private client: Ollama;
   private endpoint: string;
   private embeddingModel: string;
   private numCtx: number | undefined;
   private think: boolean | "high" | "medium" | "low";
+  /** Model names that rejected `think` — we stop sending it for these. */
+  private readonly thinkingUnsupported = new Set<string>();
 
   constructor(
     private model: string = "gemma3:4b",
@@ -114,6 +126,36 @@ export class OllamaProvider implements LLMProvider {
     }
   }
 
+  /**
+   * Run a chat request with the configured `think` value, transparently
+   * retrying once without it when the model rejects thinking. The result is
+   * cached per model so we don't pay a failed round-trip on every subsequent
+   * call. `run` receives the `think` value to send (or `undefined` to omit it).
+   */
+  private async withThinkFallback<T>(
+    run: (think: boolean | "high" | "medium" | "low" | undefined) => Promise<T>,
+  ): Promise<T> {
+    const wantThink = this.think !== false && !this.thinkingUnsupported.has(this.model);
+    if (!wantThink) {
+      // Either thinking is explicitly disabled (send false) or this model has
+      // already been found not to support it (omit the field entirely).
+      return run(this.think === false ? false : undefined);
+    }
+    try {
+      return await run(this.think);
+    } catch (error) {
+      if (isThinkingUnsupportedError(error)) {
+        this.thinkingUnsupported.add(this.model);
+        logger.warn(
+          "Ollama",
+          `Model "${this.model}" does not support thinking; retrying without it.`,
+        );
+        return run(undefined);
+      }
+      throw error;
+    }
+  }
+
   private async respond(
     messages: OllamaMessage[],
     onToken?: (token: string, isReasoning: boolean) => void,
@@ -122,16 +164,18 @@ export class OllamaProvider implements LLMProvider {
     let reasoningText = "";
     let responseContent = "";
 
-    const stream = await this.client.chat({
-      model: this.model,
-      messages,
-      stream: true,
-      think: this.think,
-      ...(this.numCtx !== undefined
-        ? { options: { num_ctx: this.numCtx } }
-        : {}),
-      ...(abortSignal !== undefined ? { signal: abortSignal } : {}),
-    });
+    const stream = await this.withThinkFallback((think) =>
+      this.client.chat({
+        model: this.model,
+        messages,
+        stream: true,
+        ...(think !== undefined ? { think } : {}),
+        ...(this.numCtx !== undefined
+          ? { options: { num_ctx: this.numCtx } }
+          : {}),
+        ...(abortSignal !== undefined ? { signal: abortSignal } : {}),
+      }),
+    );
 
     for await (const chunk of stream) {
       // Ollama surfaces reasoning in `message.thinking` and the response in
@@ -182,17 +226,19 @@ export class OllamaProvider implements LLMProvider {
         // Stream to keep the connection alive during long tool executions.
         // We must collect silently — tool_calls only appear on the final chunk,
         // so we cannot know whether to emit tokens until the stream is complete.
-        const stream = await this.client.chat({
-          model: this.model,
-          messages: history,
-          tools: ollamaTools,
-          stream: true,
-          think: this.think,
-          ...(this.numCtx !== undefined
-            ? { options: { num_ctx: this.numCtx } }
-            : {}),
-          ...(abortSignal !== undefined ? { signal: abortSignal } : {}),
-        });
+        const stream = await this.withThinkFallback((think) =>
+          this.client.chat({
+            model: this.model,
+            messages: history,
+            tools: ollamaTools,
+            stream: true,
+            ...(think !== undefined ? { think } : {}),
+            ...(this.numCtx !== undefined
+              ? { options: { num_ctx: this.numCtx } }
+              : {}),
+            ...(abortSignal !== undefined ? { signal: abortSignal } : {}),
+          }),
+        );
 
         let roundThinking = "";
         let roundContent = "";

@@ -474,6 +474,49 @@ describe("num_ctx option", () => {
   });
 });
 
+describe("thinking-unsupported fallback", () => {
+  beforeEach(() => {
+    mockStreamChunks = [{ message: { content: "ok" }, done: true }];
+    mockChat.mockClear?.();
+  });
+
+  test("retries without think when the model rejects thinking", async () => {
+    mockChat.mockImplementationOnce(async () => {
+      throw new Error('"gemma3:12b" does not support thinking');
+    });
+    const provider = new OllamaProvider("gemma3:12b");
+    const result = await provider.chat([{ role: "user", content: "hi" }], "");
+
+    expect(result.nonReasoningContent).toBe("ok");
+    expect(mockChat.mock.calls.length).toBe(2);
+    // First attempt sent think; the retry omitted it.
+    expect((mockChat.mock.calls[0]?.[0] as any).think).toBe(true);
+    expect((mockChat.mock.calls[1]?.[0] as any).think).toBeUndefined();
+  });
+
+  test("caches the unsupported model so later calls skip think entirely", async () => {
+    mockChat.mockImplementationOnce(async () => {
+      throw new Error("model does not support thinking");
+    });
+    const provider = new OllamaProvider("gemma3:12b");
+    await provider.chat([], ""); // triggers fallback (2 calls)
+    await provider.chat([], ""); // should skip think on the first try (1 call)
+
+    expect(mockChat.mock.calls.length).toBe(3);
+    expect((mockChat.mock.calls[2]?.[0] as any).think).toBeUndefined();
+  });
+
+  test("non-thinking errors still propagate", async () => {
+    mockChat.mockImplementationOnce(async () => {
+      throw new Error("ECONNREFUSED");
+    });
+    const provider = new OllamaProvider("gemma3:12b");
+    await expect(provider.chat([], "")).rejects.toThrow("ECONNREFUSED");
+    // No retry on unrelated errors.
+    expect(mockChat.mock.calls.length).toBe(1);
+  });
+});
+
 describe("error handling", () => {
   test("connection error propagates as a thrown error", async () => {
     mockChat.mockImplementationOnce(async () => {
