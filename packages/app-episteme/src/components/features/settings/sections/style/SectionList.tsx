@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { DragEvent } from "react";
-import { GripVertical, Plus, Trash2, LibraryBig } from "lucide-react";
+import { GripVertical, Plus, Trash2, LibraryBig, Sparkles } from "lucide-react";
 import { Button } from "../../../../primitives/Button.tsx";
 import { IconButton } from "../../../../primitives/IconButton.tsx";
 import { Checkbox } from "../../../../primitives/Checkbox.tsx";
@@ -18,6 +18,8 @@ interface SectionListProps {
   onReorder: (orderedIds: string[]) => void;
   onAdd: () => void;
   onOpenLibrary: () => void;
+  /** Opens the AI generation modal; omitted/undefined when AI is disabled. */
+  onOpenGenerate?: () => void;
 }
 
 export function SectionList({
@@ -30,6 +32,7 @@ export function SectionList({
   onReorder,
   onAdd,
   onOpenLibrary,
+  onOpenGenerate,
 }: SectionListProps) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
@@ -116,6 +119,16 @@ export function SectionList({
         >
           Import from library
         </Button>
+        {onOpenGenerate && (
+          <Button
+            variant="ghost"
+            size="sm"
+            iconLeft={<Icon icon={Sparkles} size="sm" />}
+            onClick={onOpenGenerate}
+          >
+            Generate with AI
+          </Button>
+        )}
       </div>
     </div>
   );

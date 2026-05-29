@@ -14,6 +14,7 @@
  *   PUT    /api/style-guide/order               { orderedIds }
  *   GET    /api/style-guide/library             { items }
  *   POST   /api/style-guide/library/:slug/import
+ *   POST   /api/style-guide/generate            { description } -> { title, body } (draft)
  *   GET   /api/config
  *   PATCH /api/config         { models }
  */
@@ -269,7 +270,7 @@ export async function startEpistemServer(
   options: StartServerOptions,
 ): Promise<void> {
   const {
-    agent, editorContext, workspace, styleGuide, research,
+    agent, editorContext, workspace, styleGuide, styleGuideGenerator, research,
     citation, diagram, aiFill, contradiction, planning: planningPlugin, workspaceDb,
     permissionManager,
   } = bundle;
@@ -608,6 +609,22 @@ export async function startEpistemServer(
             return json(section, 201);
           } catch (err) {
             return json({ error: (err as Error).message || "Failed to import section" }, 400);
+          }
+        },
+      },
+      "/api/style-guide/generate": {
+        POST: async (req: Request) => {
+          if (!agentStarted) {
+            return json({ error: "Enable AI to generate style sections." }, 400);
+          }
+          try {
+            const body = (await req.json()) as { description?: string };
+            const description = String(body.description ?? "").trim();
+            if (!description) return json({ error: "A description is required." }, 400);
+            const draft = await styleGuideGenerator.generate(description);
+            return json(draft);
+          } catch (err) {
+            return json({ error: (err as Error).message || "Failed to generate section" }, 500);
           }
         },
       },

@@ -152,3 +152,19 @@
 .ep-style-section__library-disclosure {
   flex: 1;
 }
+
+/* Generate modal */
+.ep-style-section__generate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+
+.ep-style-section__generate-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-light);
+}

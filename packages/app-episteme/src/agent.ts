@@ -9,6 +9,7 @@ import { EditorContextPlugin } from "./plugins/EditorContextPlugin.ts";
 import { WorkspacePlugin } from "./plugins/WorkspacePlugin.ts";
 import { ResearchPlugin } from "./plugins/ResearchPlugin.ts";
 import { StyleGuidePlugin } from "./plugins/style-guide/StyleGuidePlugin.ts";
+import { StyleGuideGenerator } from "./plugins/style-guide/StyleGuideGenerator.ts";
 import { DiagramPlugin } from "./plugins/DiagramPlugin.ts";
 import { AIFillPlugin } from "./plugins/AIFillPlugin.ts";
 import { CitationPlugin } from "./plugins/CitationPlugin.ts";
@@ -73,6 +74,8 @@ export interface EpistemeAgentBundle {
   editorContext: EditorContextPlugin;
   workspace: WorkspacePlugin;
   styleGuide: StyleGuidePlugin;
+  /** One-shot generator for style sections (not a registered plugin). */
+  styleGuideGenerator: StyleGuideGenerator;
   research: ResearchPlugin;
   citation: CitationPlugin;
   diagram: DiagramPlugin;
@@ -143,6 +146,7 @@ export function createEpistemAgent(
     workspace,
   );
   const styleGuide = new StyleGuidePlugin(workspaceRoot);
+  const styleGuideGenerator = new StyleGuideGenerator(config);
   const citation = new CitationPlugin(workspaceRoot, config, editorContext);
   const diagram = new DiagramPlugin(config);
   const aiFill = new AIFillPlugin(config);
@@ -180,6 +184,7 @@ export function createEpistemAgent(
     editorContext,
     workspace,
     styleGuide,
+    styleGuideGenerator,
     research,
     citation,
     diagram,

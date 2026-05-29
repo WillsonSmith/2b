@@ -6,6 +6,8 @@ import { Text } from "../../../../primitives/Text.tsx";
 interface StyleEmptyStateProps {
   onCreate: (body: string) => void | Promise<void>;
   onOpenLibrary: () => void;
+  /** Opens the AI generation modal; omitted/undefined when AI is disabled. */
+  onOpenGenerate?: () => void;
 }
 
 /**
@@ -13,7 +15,7 @@ interface StyleEmptyStateProps {
  * creates one "Default" section on save. Structure is opt-in — users who just
  * want one block never have to think about sections.
  */
-export function StyleEmptyState({ onCreate, onOpenLibrary }: StyleEmptyStateProps) {
+export function StyleEmptyState({ onCreate, onOpenLibrary, onOpenGenerate }: StyleEmptyStateProps) {
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -43,6 +45,11 @@ export function StyleEmptyState({ onCreate, onOpenLibrary }: StyleEmptyStateProp
         <Button variant="link" size="sm" onClick={onOpenLibrary}>
           Browse library
         </Button>
+        {onOpenGenerate && (
+          <Button variant="link" size="sm" onClick={onOpenGenerate}>
+            Generate with AI
+          </Button>
+        )}
         <div style={{ flex: 1 }} />
         <Button variant="solid" onClick={handleSave} disabled={saving || !content.trim()}>
           {saving ? "Saving…" : "Save"}

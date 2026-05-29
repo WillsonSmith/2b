@@ -6,6 +6,7 @@ import { SectionList } from "./SectionList.tsx";
 import { SectionEditor } from "./SectionEditor.tsx";
 import { BudgetMeter } from "./BudgetMeter.tsx";
 import { LibraryPicker } from "./LibraryPicker.tsx";
+import { GenerateModal } from "./GenerateModal.tsx";
 import { StyleEmptyState } from "./EmptyState.tsx";
 import { computeBudget } from "./budget.ts";
 import type { StyleGuideResponse, StyleSection as Section } from "./types.ts";
@@ -17,6 +18,8 @@ export function StyleSection() {
   const [loaded, setLoaded] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -34,6 +37,14 @@ export function StyleSection() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // Generation needs a running model; gate its entry points on AI being on.
+  useEffect(() => {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((d: { aiEnabled?: boolean }) => setAiEnabled(d.aiEnabled === true))
+      .catch(() => setAiEnabled(false));
+  }, []);
 
   // Flush any pending debounced saves on unmount.
   useEffect(() => {
@@ -159,7 +170,11 @@ export function StyleSection() {
       {loaded && sections.length > 0 && <BudgetMeter budget={budget} />}
 
       {!loaded ? null : sections.length === 0 ? (
-        <StyleEmptyState onCreate={(body) => createSection(body)} onOpenLibrary={() => setLibraryOpen(true)} />
+        <StyleEmptyState
+          onCreate={(body) => createSection(body)}
+          onOpenLibrary={() => setLibraryOpen(true)}
+          onOpenGenerate={aiEnabled ? () => setGenerateOpen(true) : undefined}
+        />
       ) : (
         <div className="ep-style-section__layout">
           <SectionList
@@ -172,6 +187,7 @@ export function StyleSection() {
             onReorder={handleReorder}
             onAdd={handleAdd}
             onOpenLibrary={() => setLibraryOpen(true)}
+            onOpenGenerate={aiEnabled ? () => setGenerateOpen(true) : undefined}
           />
           {selected ? (
             <SectionEditor section={selected} onChange={(patch) => handleEdit(selected.id, patch)} />
@@ -188,6 +204,11 @@ export function StyleSection() {
       )}
 
       <LibraryPicker open={libraryOpen} onClose={() => setLibraryOpen(false)} onImport={handleImport} />
+      <GenerateModal
+        open={generateOpen}
+        onClose={() => setGenerateOpen(false)}
+        onAdd={(title, body) => createSection(body, title)}
+      />
     </section>
   );
 }
