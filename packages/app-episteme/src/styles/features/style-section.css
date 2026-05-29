@@ -1,0 +1,154 @@
+/* Settings → Style guide section. See features/settings/sections/style/. */
+
+.ep-style-section__meter {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-2) 0 var(--sp-4);
+}
+
+.ep-style-section__meter-track {
+  flex: 1;
+  height: 4px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-active);
+  overflow: hidden;
+}
+
+.ep-style-section__meter-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--motion-fast) var(--ease-out);
+}
+
+.ep-style-section__meter-fill--over {
+  background: var(--red);
+}
+
+/* Two-column layout */
+.ep-style-section__layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  gap: var(--sp-4);
+  align-items: start;
+}
+
+.ep-style-section__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  border-right: 1px solid var(--border-light);
+  padding-right: var(--sp-3);
+}
+
+.ep-style-section__list-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ep-style-section__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+
+.ep-style-section__row:hover {
+  background: var(--hover-tint);
+}
+
+.ep-style-section__row--selected {
+  background: var(--bg-active);
+}
+
+.ep-style-section__row--dragover {
+  border-color: var(--accent);
+}
+
+.ep-style-section__drag {
+  display: inline-flex;
+  color: var(--text-dim);
+  cursor: grab;
+}
+
+.ep-style-section__row-title {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.ep-style-section__row-delete {
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.ep-style-section__row:hover .ep-style-section__row-delete,
+.ep-style-section__row:focus-within .ep-style-section__row-delete {
+  opacity: 1;
+}
+
+.ep-style-section__list-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin-top: var(--sp-2);
+}
+
+/* Editor column */
+.ep-style-section__editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.ep-style-section__editor--empty {
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+}
+
+/* Empty-state fast path */
+.ep-style-section__empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.ep-style-section__empty-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* Library picker */
+.ep-style-section__library {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.ep-style-section__library-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+
+.ep-style-section__library-disclosure {
+  flex: 1;
+}

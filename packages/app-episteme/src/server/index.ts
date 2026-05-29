@@ -7,8 +7,13 @@
  *   GET   /api/health
  *   GET   /api/metrics        rolling-window agent tick metrics (last 50 ticks),
  *                              registered tool inventory, and never-called list
- *   GET   /api/style-guide
- *   PATCH /api/style-guide    body: raw Markdown text
+ *   GET    /api/style-guide                     { sections, budget }
+ *   POST   /api/style-guide/sections            { title, body } -> StyleSection
+ *   PATCH  /api/style-guide/sections/:id        { title?, body?, enabled? }
+ *   DELETE /api/style-guide/sections/:id
+ *   PUT    /api/style-guide/order               { orderedIds }
+ *   GET    /api/style-guide/library             { items }
+ *   POST   /api/style-guide/library/:slug/import
  *   GET   /api/config
  *   PATCH /api/config         { models }
  */
@@ -25,6 +30,7 @@ import { TickMetricsAggregator } from "@2b/framework/core/TickMetricsAggregator.
 import { PlanningController } from "../planning/PlanningController.ts";
 import { AutocompleteRunner } from "../features/autocomplete.ts";
 import { assertNever, type ClientMsg, type ServerMsg } from "../protocol.ts";
+import { LIBRARY } from "../plugins/style-guide/library/index.ts";
 import index from "../index.html";
 import type { WsContext } from "./context.ts";
 import { handleFile } from "./handlers/file.ts";
@@ -101,7 +107,6 @@ const KEYWORD_TRIGGERS: ReadonlyArray<{ plugin: string; keywords: readonly strin
   { plugin: "Diagram", keywords: ["diagram", "chart", "flowchart"] },
   { plugin: "Citation", keywords: ["citation", "cite ", "bibtex", "reference list"] },
   { plugin: "Contradiction", keywords: ["contradict", "conflict", "inconsist"] },
-  { plugin: "StyleGuide", keywords: ["style guide", "tone of voice"] },
 ];
 
 function autoActivateForText(text: string, ctx: WsContext): void {
@@ -459,6 +464,12 @@ export async function startEpistemServer(
     agentStarted = true;
   }
 
+  // StyleGuide is always-on and the Settings UI reads it even while AI is
+  // disabled, so initialize it eagerly here (runs migration + loads sections)
+  // rather than waiting for agent.start(). Idempotent with the onInit that
+  // agent.start() will later fire.
+  await styleGuide.onInit();
+
   if (options.aiEnabled) {
     await startAgent();
   }
@@ -526,15 +537,77 @@ export async function startEpistemServer(
         },
       },
       "/api/style-guide": {
-        GET: () => json({ content: styleGuide.currentContent }),
+        GET: () => json({ sections: styleGuide.listSections(), budget: styleGuide.getBudget() }),
+      },
+      "/api/style-guide/sections": {
+        POST: async (req: Request) => {
+          try {
+            const body = (await req.json()) as { title?: string; body?: string };
+            const section = await styleGuide.createSection({
+              title: String(body.title ?? ""),
+              body: String(body.body ?? ""),
+            });
+            return json(section, 201);
+          } catch {
+            return json({ error: "Failed to create section" }, 500);
+          }
+        },
+      },
+      "/api/style-guide/sections/:id": {
         PATCH: async (req: Request) => {
           try {
-            const content = await req.text();
-            await styleGuide.save(content);
-            bundle.activatePlugin("StyleGuide");
-            return json({ success: true });
+            const id = (req as Request & { params: { id: string } }).params.id;
+            const body = (await req.json()) as {
+              title?: string;
+              body?: string;
+              enabled?: boolean;
+            };
+            const patch: { title?: string; body?: string; enabled?: boolean } = {};
+            if (typeof body.title === "string") patch.title = body.title;
+            if (typeof body.body === "string") patch.body = body.body;
+            if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
+            const section = await styleGuide.updateSection(id, patch);
+            return json(section);
+          } catch (err) {
+            return json({ error: (err as Error).message || "Failed to update section" }, 400);
+          }
+        },
+        DELETE: async (req: Request) => {
+          try {
+            const id = (req as Request & { params: { id: string } }).params.id;
+            await styleGuide.deleteSection(id);
+            return new Response(null, { status: 204 });
           } catch {
-            return json({ error: "Failed to save style guide" }, 500);
+            return json({ error: "Failed to delete section" }, 500);
+          }
+        },
+      },
+      "/api/style-guide/order": {
+        PUT: async (req: Request) => {
+          try {
+            const body = (await req.json()) as { orderedIds?: unknown };
+            if (!Array.isArray(body.orderedIds) || !body.orderedIds.every((x) => typeof x === "string")) {
+              return json({ error: "Body must contain { orderedIds: string[] }." }, 400);
+            }
+            await styleGuide.reorder(body.orderedIds as string[]);
+            return json({ ok: true });
+          } catch {
+            return json({ error: "Failed to reorder sections" }, 500);
+          }
+        },
+      },
+      "/api/style-guide/library": {
+        GET: () =>
+          json({ items: LIBRARY.map(({ slug, title, preview }) => ({ slug, title, preview })) }),
+      },
+      "/api/style-guide/library/:slug/import": {
+        POST: async (req: Request) => {
+          try {
+            const slug = (req as Request & { params: { slug: string } }).params.slug;
+            const section = await styleGuide.importFromLibrary(slug);
+            return json(section, 201);
+          } catch (err) {
+            return json({ error: (err as Error).message || "Failed to import section" }, 400);
           }
         },
       },

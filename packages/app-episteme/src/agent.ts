@@ -8,7 +8,7 @@ import type { BaseAgent } from "@2b/framework/core/BaseAgent.ts";
 import { EditorContextPlugin } from "./plugins/EditorContextPlugin.ts";
 import { WorkspacePlugin } from "./plugins/WorkspacePlugin.ts";
 import { ResearchPlugin } from "./plugins/ResearchPlugin.ts";
-import { StyleGuidePlugin } from "./plugins/StyleGuidePlugin.ts";
+import { StyleGuidePlugin } from "./plugins/style-guide/StyleGuidePlugin.ts";
 import { DiagramPlugin } from "./plugins/DiagramPlugin.ts";
 import { AIFillPlugin } from "./plugins/AIFillPlugin.ts";
 import { CitationPlugin } from "./plugins/CitationPlugin.ts";
@@ -62,7 +62,6 @@ Read the injected context — the active document, workspace files, active plan,
 /** Names of mode-gated plugins, in registration order. */
 export const MODE_GATED_PLUGIN_NAMES = [
   "Citation",
-  "StyleGuide",
   "Diagram",
   "Contradiction",
 ] as const;
@@ -164,11 +163,13 @@ export function createEpistemAgent(
   agent.registerPlugin(workspace);
   agent.registerPlugin(research);
   agent.registerPlugin(planning);
+  // StyleGuide is always active: no tool surface, no gate — the agent just
+  // consumes its assembled system-prompt fragment.
+  agent.registerPlugin(styleGuide);
 
   // Mode-gated plugins — always registered (so onInit fires during agent.start())
   // but their tool surface and system-prompt fragments are suppressed unless
   // their name is in `activePlugins`.
-  agent.registerPlugin(new ModeGated(styleGuide, activePlugins));
   agent.registerPlugin(new ModeGated(citation, activePlugins));
   agent.registerPlugin(new ModeGated(diagram, activePlugins));
   agent.registerPlugin(aiFill); // zero tools, no fragment — no need to gate
