@@ -4,6 +4,7 @@ export interface ModelConfig {
   default: string;
   autocomplete?: string;
   research?: string;
+  styleGuide?: string;
   export?: string;
   embedding?: string;
 }

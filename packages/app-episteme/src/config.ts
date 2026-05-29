@@ -9,6 +9,8 @@ export interface EpistemModelConfig {
   autocomplete?: string;
   /** Powerful model for deep research synthesis and gap detection. */
   research?: string;
+  /** Model for generating style-guide sections from a description. */
+  styleGuide?: string;
   /** Model for multi-format export rendering. */
   export?: string;
   /**

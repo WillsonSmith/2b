@@ -32,6 +32,7 @@ export const FEATURE_LABELS: ReadonlyArray<{ key: keyof ModelConfig; label: stri
   { key: "default", label: "Default", desc: "General chat and structural tasks" },
   { key: "autocomplete", label: "Autocomplete", desc: "Inline ghost-text suggestions" },
   { key: "research", label: "Research", desc: "Gap detection and deep research synthesis" },
+  { key: "styleGuide", label: "Style guide", desc: "Generating style-guide sections from a description" },
   {
     key: "embedding",
     label: "Embedding",

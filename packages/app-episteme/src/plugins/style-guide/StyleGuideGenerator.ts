@@ -36,7 +36,7 @@ export class StyleGuideGenerator {
 
   private getAgent(): HeadlessAgent {
     if (!this.agent) {
-      const llm = createProvider(featureModel(this.config, "default"));
+      const llm = createProvider(featureModel(this.config, "styleGuide"));
       this.agent = new HeadlessAgent(llm, [], SYSTEM, { agentName: "StyleGuideGen" });
     }
     return this.agent;
