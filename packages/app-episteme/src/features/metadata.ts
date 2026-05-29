@@ -1,25 +1,29 @@
+import { z } from "zod";
 import { HeadlessAgent } from "@2b/framework/core/HeadlessAgent.ts";
 import { createProvider } from "@2b/framework/providers/llm/createProvider.ts";
 import type { EpistemeConfig } from "../config.ts";
 import { featureModel } from "../config.ts";
 
-const SYSTEM = `You are a document metadata generator. Given a document title and its opening content, return a JSON object with exactly these keys:
-- title: the document title (string)
-- tags: array of 3-6 relevant topic tags (lowercase, hyphenated strings)
-- date: today's ISO date as a string (YYYY-MM-DD)
-- summary: one sentence describing the document's purpose (string)
+const SYSTEM = `You are a document metadata generator. Given a document title and its opening content, produce its metadata:
+- title: the document title
+- tags: 3-6 relevant topic tags, lowercase and hyphenated
+- date: today's ISO date (YYYY-MM-DD)
+- summary: one sentence describing the document's purpose`;
 
-Return ONLY the raw JSON object — no markdown, no code fences, no explanation.
+/**
+ * Shape the metadata generator must return. Passed to `askStructured` so the
+ * model is constrained to this object (no fence-stripping or field guards) and
+ * the parsed result is runtime-validated. `tags` requires at least one entry;
+ * the prompt asks for 3-6.
+ */
+export const frontmatterSchema = z.object({
+  title: z.string(),
+  tags: z.array(z.string()).min(1),
+  date: z.string(),
+  summary: z.string(),
+});
 
-Example output:
-{"title":"Research on Cognitive Biases","tags":["psychology","cognitive-biases","decision-making"],"date":"2024-01-15","summary":"An exploration of common cognitive biases and their effects on decision-making."}`;
-
-interface FrontmatterData {
-  title: string;
-  tags: string[];
-  date: string;
-  summary: string;
-}
+export type FrontmatterData = z.infer<typeof frontmatterSchema>;
 
 export async function generateFrontmatter(
   title: string,
@@ -29,24 +33,19 @@ export async function generateFrontmatter(
   const today = new Date().toISOString().split("T")[0];
   const llm = createProvider(featureModel(config, "default"));
   const agent = new HeadlessAgent(llm, [], SYSTEM, { agentName: "MetadataGenerator" });
-  const raw = await agent.ask(
+
+  // askStructured constrains the model to frontmatterSchema and validates the
+  // result, so the fields below are guaranteed present and correctly typed.
+  const data = await agent.askStructured<FrontmatterData>(
     `Title: ${title}\nToday's date: ${today}\n\nDocument preview:\n${preview.slice(0, 500)}`,
+    frontmatterSchema,
   );
 
-  // Extract JSON — strip any accidental fences or surrounding text
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Model did not return a JSON object");
-  const data: FrontmatterData = JSON.parse(jsonMatch[0]);
-
-  if (!data.title || !Array.isArray(data.tags) || !data.date || !data.summary) {
-    throw new Error("Model returned incomplete frontmatter fields");
-  }
-
   return [
-    `title: ${JSON.stringify(String(data.title))}`,
-    `tags: [${data.tags.map((t) => JSON.stringify(String(t))).join(", ")}]`,
-    `date: ${JSON.stringify(String(data.date))}`,
-    `summary: ${JSON.stringify(String(data.summary))}`,
+    `title: ${JSON.stringify(data.title)}`,
+    `tags: [${data.tags.map((t) => JSON.stringify(t)).join(", ")}]`,
+    `date: ${JSON.stringify(data.date)}`,
+    `summary: ${JSON.stringify(data.summary)}`,
   ].join("\n");
 }
 

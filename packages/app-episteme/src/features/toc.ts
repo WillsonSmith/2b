@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { HeadlessAgent } from "@2b/framework/core/HeadlessAgent.ts";
 import { createProvider } from "@2b/framework/providers/llm/createProvider.ts";
 import type { EpistemeConfig } from "../config.ts";
@@ -20,11 +21,29 @@ export interface DocSection {
 
 const SYSTEM = `You are a document outliner. Given a list of document headings and their following text, generate a one-sentence description for each section.
 
-Return a JSON array where each element has:
-- "heading": the exact heading text
-- "description": a single sentence (max 15 words) describing what the section covers
+Return a "sections" list with one entry per input section, in the same order. Each entry has the exact heading text and a single sentence (max 15 words) describing what the section covers.`;
 
-Return ONLY the JSON array, no prose, no code fences.`;
+/**
+ * Shape of one TOC entry the model returns. Entries are aligned to the input
+ * sections by index, so the model must return one element per section in order
+ * (enforced at the mapping site, not here).
+ */
+export const tocItemSchema = z.object({
+  heading: z.string(),
+  description: z.string(),
+});
+
+/**
+ * The structured response. The array is wrapped in an object because local
+ * models reliably populate an object-rooted schema but tend to return `[]` for
+ * a top-level array under Ollama's `format`.
+ */
+export const tocResponseSchema = z.object({
+  sections: z.array(tocItemSchema),
+});
+
+export type TocItem = z.infer<typeof tocItemSchema>;
+export type TocResponse = z.infer<typeof tocResponseSchema>;
 
 export async function generateNarrativeToc(
   sections: DocSection[],
@@ -41,23 +60,21 @@ export async function generateNarrativeToc(
   }));
 
   try {
-    const raw = await agent.ask(
+    // Entries are aligned to `sections` by index; the model returns one item
+    // per section in order. On any parse/validation failure, fall back to
+    // description-less entries.
+    const { sections: items } = await agent.askStructured<TocResponse>(
       `Generate descriptions for these ${sections.length} sections:\n\n${JSON.stringify(input, null, 2)}`,
+      tocResponseSchema,
     );
-    const cleaned = raw.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "").trim();
-    const parsed: unknown = JSON.parse(cleaned);
-    if (!Array.isArray(parsed)) return fallbackEntries(sections);
 
-    return sections.map((s, i) => {
-      const item = parsed[i] as { heading?: string; description?: string } | undefined;
-      return {
-        level: s.level,
-        text: s.heading,
-        description: item?.description?.trim() ?? "",
-        id: slugify(s.heading),
-        contentHash: sectionHash(s.heading, s.content),
-      };
-    });
+    return sections.map((s, i) => ({
+      level: s.level,
+      text: s.heading,
+      description: items[i]?.description?.trim() ?? "",
+      id: slugify(s.heading),
+      contentHash: sectionHash(s.heading, s.content),
+    }));
   } catch {
     return fallbackEntries(sections);
   }

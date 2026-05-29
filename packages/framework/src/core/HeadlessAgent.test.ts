@@ -1,7 +1,9 @@
 import { test, expect, describe, mock } from "bun:test";
+import { z } from "zod";
 import { HeadlessAgent } from "./HeadlessAgent";
 import type { AgentPlugin, ToolDefinition } from "./Plugin";
-import type { LLMProvider } from "../providers/llm/LLMProvider";
+import type { ChatResponse, LLMProvider } from "../providers/llm/LLMProvider";
+import { StructuredOutputError } from "../providers/llm/structuredOutput";
 import { AutoApprovePermissionManager, AutoDenyPermissionManager } from "./PermissionManager";
 
 // Minimal LLMProvider stub
@@ -316,5 +318,49 @@ describe("HeadlessAgent consecutive tool call circuit breaker", () => {
 
     expect(result).toBe("result"); // not an error — fresh counter
     expect(executeTool).toHaveBeenCalledTimes(5 + 1); // 5 from first ask + 1 from second
+  });
+});
+
+describe("HeadlessAgent.askStructured()", () => {
+  /** LLMProvider stub returning a controllable ChatResponse. */
+  function makeStructuredLLM(response: Partial<ChatResponse>): LLMProvider {
+    return {
+      chat: mock(async () => ({
+        response: "",
+        nonReasoningContent: "",
+        reasoningText: "",
+        ...response,
+      })),
+      getEmbedding: mock(async () => []),
+    } as unknown as LLMProvider;
+  }
+
+  const schema = z.object({ title: z.string(), count: z.number() });
+
+  test("forwards the schema to chat() as the third argument", async () => {
+    const llm = makeStructuredLLM({ parsed: { title: "T", count: 1 } });
+    const agent = new HeadlessAgent(llm, [], "base");
+    await agent.askStructured("task", schema);
+    expect((llm.chat as ReturnType<typeof mock>).mock.calls[0]![2]).toBe(schema);
+  });
+
+  test("returns the provider-parsed value when present", async () => {
+    const llm = makeStructuredLLM({ parsed: { title: "T", count: 2 } });
+    const agent = new HeadlessAgent(llm, [], "base");
+    const result = await agent.askStructured<z.infer<typeof schema>>("task", schema);
+    expect(result).toEqual({ title: "T", count: 2 });
+  });
+
+  test("falls back to parsing nonReasoningContent when the provider omits `parsed`", async () => {
+    const llm = makeStructuredLLM({ nonReasoningContent: '{"title":"X","count":3}' });
+    const agent = new HeadlessAgent(llm, [], "base");
+    const result = await agent.askStructured<z.infer<typeof schema>>("task", schema);
+    expect(result).toEqual({ title: "X", count: 3 });
+  });
+
+  test("throws StructuredOutputError when the fallback text fails validation", async () => {
+    const llm = makeStructuredLLM({ nonReasoningContent: '{"title":"X","count":"nope"}' });
+    const agent = new HeadlessAgent(llm, [], "base");
+    await expect(agent.askStructured("task", schema)).rejects.toThrow(StructuredOutputError);
   });
 });

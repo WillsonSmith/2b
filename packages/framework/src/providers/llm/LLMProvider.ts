@@ -1,5 +1,6 @@
 import type { Message } from "../../core/types.ts";
 import type { ToolDefinition } from "../../core/Plugin.ts";
+import type { StructuredSchema } from "./structuredOutput.ts";
 
 /** The response returned by a single LLM `chat` call. */
 export interface ChatResponse {
@@ -18,6 +19,13 @@ export interface ChatResponse {
   nonReasoningContent: string;
   /** Raw reasoning / chain-of-thought text emitted by the model, if any. */
   reasoningText: string;
+  /**
+   * The parsed structured output, present only when a `schema` was supplied to
+   * `chat()` and the provider both honored it and parsed the result. Validated
+   * against the schema when the schema is a Zod schema. Callers that requested
+   * structured output should prefer this over re-parsing `nonReasoningContent`.
+   */
+  parsed?: unknown;
 }
 
 /**
@@ -31,9 +39,10 @@ export interface LLMProvider {
    * @param messages - Ordered conversation history.
    * @param systemPrompt - Optional system-level instruction prepended to the
    *   conversation.
-   * @param schema - Optional structured-output schema passed to the provider.
-   *   The concrete type is provider-specific; callers that do not need
-   *   structured output should pass `undefined`.
+   * @param schema - Optional structured-output schema. A Zod schema or a raw
+   *   JSON Schema object; providers constrain the model to this shape and
+   *   populate `ChatResponse.parsed`. Callers that do not need structured
+   *   output should pass `undefined`.
    * @param tools - Tool definitions the model may call during this turn.
    * @param onToken - Optional streaming callback invoked for each token as it
    *   is produced. `isReasoning` is `true` while the model is in its
@@ -42,7 +51,7 @@ export interface LLMProvider {
   chat(
     messages: Message[],
     systemPrompt?: string,
-    schema?: unknown,
+    schema?: StructuredSchema,
     tools?: ToolDefinition[],
     onToken?: (token: string, isReasoning: boolean) => void,
     abortSignal?: AbortSignal,

@@ -14,6 +14,7 @@
 import type { LLMProvider, ChatResponse } from "./LLMProvider.ts";
 import type { ToolDefinition } from "../../core/Plugin.ts";
 import type { Message } from "../../core/types.ts";
+import type { StructuredSchema } from "./structuredOutput.ts";
 import { getModelCapabilities } from "./modelCapabilities.ts";
 
 type ProviderWithModelControl = LLMProvider & {
@@ -38,9 +39,10 @@ export class ModelCapabilityProvider implements LLMProvider {
   async chat(
     messages: Message[],
     systemPrompt?: string,
-    schema?: unknown,
+    schema?: StructuredSchema,
     tools?: ToolDefinition[],
     onToken?: (token: string, isReasoning: boolean) => void,
+    abortSignal?: AbortSignal,
   ): Promise<ChatResponse> {
     const { systemPromptPrefix } = getModelCapabilities(this.model);
     // Build the effective system prompt: prefix takes precedence over a missing
@@ -52,7 +54,7 @@ export class ModelCapabilityProvider implements LLMProvider {
           ? systemPromptPrefix
           : systemPrompt;
 
-    return this.inner.chat(messages, effectivePrompt, schema, tools, onToken);
+    return this.inner.chat(messages, effectivePrompt, schema, tools, onToken, abortSignal);
   }
 
   getEmbedding(text: string): Promise<number[]> {

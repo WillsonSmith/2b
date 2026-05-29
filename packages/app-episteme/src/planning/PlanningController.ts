@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { HeadlessAgent } from "@2b/framework/core/HeadlessAgent.ts";
 import type { LLMProvider } from "@2b/framework/providers/llm/LLMProvider.ts";
 import type { CortexAgent } from "@2b/framework/core/CortexAgent.ts";
@@ -14,18 +15,7 @@ import type {
 } from "./types.ts";
 
 const STRUCTURING_SYSTEM = `You are a planning assistant for Episteme, a Markdown research and writing tool.
-Given a user's goal, produce a structured JSON plan with ordered steps.
-
-Return ONLY valid JSON in this exact format, with no other text:
-{
-  "steps": [
-    {
-      "type": "research" | "outline" | "draft" | "edit" | "cite" | "analyze" | "organize",
-      "title": "short step title",
-      "instruction": "detailed instruction for this step"
-    }
-  ]
-}
+Given a user's goal, produce a plan as ordered steps. Each step has a type, a short title, and a detailed, self-contained instruction.
 
 Step types:
 - research: Find information, search sources, gather context from the workspace
@@ -44,18 +34,50 @@ Guidelines:
 const SUMMARIZE_SYSTEM = `You are a concise summarizer for a multi-step research and writing plan. Write 2-3 sentences capturing what was concretely accomplished. Prioritize: specific file paths created or modified, document titles or section headings produced, key decisions made, concrete numbers or named entities discovered, and any explicit outputs a later step should build on. Return only the summary, no preamble or labels.`;
 
 const STEP_GENERATOR_SYSTEM = `You are a planning assistant for Episteme, a Markdown research and writing tool.
-Given a plan goal, its existing steps, and a short description of a new step to add, generate a well-formed step object.
-
-Return ONLY valid JSON in this exact format, with no other text:
-{
-  "type": "research" | "outline" | "draft" | "edit" | "cite" | "analyze" | "organize",
-  "title": "short step title",
-  "instruction": "detailed, self-contained instruction for this step"
-}
-
+Given a plan goal, its existing steps, and a short description of a new step to add, generate a well-formed step with a type, a short title, and a detailed instruction.
+Valid types: research, outline, draft, edit, cite, analyze, organize.
 The instruction must be actionable and consistent with the surrounding steps in the plan.`;
 
-const VALID_STEP_TYPES = new Set<string>(["research", "outline", "draft", "edit", "cite", "analyze", "organize"]);
+/**
+ * Step types as a tuple kept exhaustively in lockstep with
+ * `EpistemePlanStepType`. The `Record<EpistemePlanStepType, true>` forces every
+ * union member to be listed (missing one is a compile error) and rejects any
+ * value that isn't a valid step type. `STEP_TYPES` then feeds `z.enum`, so the
+ * schema's `type` field is exactly `EpistemePlanStepType`.
+ */
+const STEP_TYPE_TABLE: Record<EpistemePlanStepType, true> = {
+  research: true,
+  outline: true,
+  draft: true,
+  edit: true,
+  cite: true,
+  analyze: true,
+  organize: true,
+};
+
+const STEP_TYPES = Object.keys(STEP_TYPE_TABLE) as [
+  EpistemePlanStepType,
+  ...EpistemePlanStepType[],
+];
+
+/**
+ * One plan step as the structurer/step-generator must return it. Used with
+ * `askStructured`: the enum replaces the `VALID_STEP_TYPES` coercion, and the
+ * model can no longer emit an unknown `type`.
+ */
+export const planStepSchema = z.object({
+  type: z.enum(STEP_TYPES),
+  title: z.string(),
+  instruction: z.string(),
+});
+
+/**
+ * Full structured-plan response. `.min(1)` enforces "at least one step" at
+ * parse time, replacing the manual `steps.length === 0` check.
+ */
+export const planSchema = z.object({
+  steps: z.array(planStepSchema).min(1),
+});
 
 const PRIOR_CONTEXT_RECENT_STEPS = 2;
 const PRIOR_CONTEXT_EXCERPT_CHARS = 800;
@@ -134,43 +156,30 @@ export class PlanningController {
     }
     prompt += "\n\nCreate a step-by-step plan.";
 
-    let raw: string;
+    // askStructured constrains the model to planSchema and validates the result:
+    // the enum guarantees a valid `type`, and `.min(1)` rejects an empty plan —
+    // so invalid JSON, a bad step type, and a step-less plan all surface here as
+    // a thrown error. Reset to idle and rethrow on any of them.
+    let parsed: z.infer<typeof planSchema>;
     try {
-      raw = await this.structurer.ask(prompt);
+      parsed = await this.structurer.askStructured(prompt, planSchema);
     } catch (err) {
       logger.error("PlanningController", `structuring failed: ${err}`);
       this.broadcast({ type: "state_change", state: "idle" });
       throw err;
     }
 
-    // Extract JSON — model may wrap it in markdown fences
-    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const jsonStr = fenceMatch ? fenceMatch[1] : raw;
-    let parsed: { steps?: Array<{ type?: string; title?: string; instruction?: string }> };
-    try {
-      parsed = JSON.parse(jsonStr ?? raw);
-    } catch {
-      logger.error("PlanningController", `invalid JSON from structurer: ${raw.slice(0, 300)}`);
-      this.broadcast({ type: "state_change", state: "idle" });
-      throw new Error("Plan structuring returned invalid JSON.");
-    }
-
     const planId = randomUUID();
     const now = Date.now();
-    const steps: EpistemePlanStep[] = (parsed.steps ?? []).map((s, i) => ({
+    const steps: EpistemePlanStep[] = parsed.steps.map((s, i) => ({
       id: randomUUID(),
       planId,
       index: i,
-      type: (VALID_STEP_TYPES.has(s.type ?? "") ? s.type : "research") as EpistemePlanStepType,
-      title: String(s.title ?? `Step ${i + 1}`),
-      instruction: String(s.instruction ?? ""),
+      type: s.type,
+      title: s.title,
+      instruction: s.instruction,
       state: "pending",
     }));
-
-    if (steps.length === 0) {
-      this.broadcast({ type: "state_change", state: "idle" });
-      throw new Error("Structuring produced no steps.");
-    }
 
     const plan: EpistemePlan = {
       id: planId,
@@ -297,22 +306,12 @@ export class PlanningController {
 
     const prompt = `Plan goal: ${plan.goal}\n\nExisting steps:\n${stepList}\n\nDescription for new step: ${description}${positionContext}\n\nGenerate a step object.`;
 
-    let raw: string;
+    let parsed: z.infer<typeof planStepSchema>;
     try {
-      raw = await this.stepGenerator.ask(prompt);
+      parsed = await this.stepGenerator.askStructured(prompt, planStepSchema);
     } catch (err) {
       logger.error("PlanningController", `addStep generation failed: ${err}`);
       throw err;
-    }
-
-    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const jsonStr = fenceMatch ? fenceMatch[1] : raw;
-    let parsed: { type?: string; title?: string; instruction?: string };
-    try {
-      parsed = JSON.parse(jsonStr ?? raw);
-    } catch {
-      logger.error("PlanningController", `addStep: invalid JSON: ${raw.slice(0, 200)}`);
-      throw new Error("Step generation returned invalid JSON.");
     }
 
     // Determine insertion index
@@ -330,9 +329,9 @@ export class PlanningController {
       id: randomUUID(),
       planId,
       index: insertIndex,
-      type: (VALID_STEP_TYPES.has(parsed.type ?? "") ? parsed.type : "research") as EpistemePlanStepType,
-      title: String(parsed.title ?? description.slice(0, 60)),
-      instruction: String(parsed.instruction ?? description),
+      type: parsed.type,
+      title: parsed.title,
+      instruction: parsed.instruction,
       state: "pending",
     };
 

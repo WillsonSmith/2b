@@ -17,7 +17,8 @@
  * and for static sub-agents registered via SubAgentPlugin. Changes here affect
  * all spawned sub-agents.
  */
-import type { LLMProvider } from "../providers/llm/LLMProvider.ts";
+import type { ChatResponse, LLMProvider } from "../providers/llm/LLMProvider.ts";
+import { type StructuredSchema, parseStructured } from "../providers/llm/structuredOutput.ts";
 import type { AgentPlugin, ToolDefinition } from "./Plugin.ts";
 import type { Message } from "./types.ts";
 import { AutoDenyPermissionManager, type PermissionManager } from "./PermissionManager.ts";
@@ -74,7 +75,30 @@ export class HeadlessAgent {
     this.currentAbortController?.abort();
   }
 
+  /**
+   * Run the task and return the model's clean (non-reasoning) text response.
+   */
   async ask(task: string): Promise<string> {
+    return (await this.run(task)).nonReasoningContent;
+  }
+
+  /**
+   * Run the task constraining the model to `schema` and return the parsed,
+   * validated result. `schema` is a Zod schema (recommended — gives the return
+   * type and runtime validation) or a raw JSON Schema object.
+   *
+   * @throws {StructuredOutputError} if the model output can't be parsed as JSON
+   *   or fails Zod validation. Callers should keep their own fallback.
+   */
+  async askStructured<T>(task: string, schema: StructuredSchema): Promise<T> {
+    const response = await this.run(task, schema);
+    // Prefer the provider-parsed value; fall back to parsing the text ourselves
+    // for providers that honor `format` but don't populate `parsed`.
+    if (response.parsed !== undefined) return response.parsed as T;
+    return parseStructured<T>(response.nonReasoningContent, schema);
+  }
+
+  private async run(task: string, schema?: StructuredSchema): Promise<ChatResponse> {
     const agentName = this.options.agentName ?? "HeadlessAgent";
     // Fix #2: resolve once per ask() rather than allocating inside each tool
     // implementation closure, which would create a new instance per tool call.
@@ -166,8 +190,7 @@ export class HeadlessAgent {
 
     this.currentAbortController = new AbortController();
     try {
-      const { nonReasoningContent } = await this.llm.chat(messages, systemPrompt, undefined, tools, this.onToken, this.currentAbortController.signal);
-      return nonReasoningContent;
+      return await this.llm.chat(messages, systemPrompt, schema, tools, this.onToken, this.currentAbortController.signal);
     } finally {
       this.currentAbortController = null;
     }

@@ -1,51 +1,32 @@
 import { test, expect, describe } from "bun:test";
-import { parseTitleAndBody } from "./StyleGuideGenerator.ts";
+import { fallbackTitle, finalizeSection } from "./StyleGuideGenerator.ts";
 
-describe("parseTitleAndBody", () => {
-  test("splits a well-formed TITLE + body", () => {
-    const raw = "TITLE: Concise Voice\n\n- Use short sentences.\n- Cut filler.";
-    const { title, body } = parseTitleAndBody(raw);
-    expect(title).toBe("Concise Voice");
-    expect(body).toBe("- Use short sentences.\n- Cut filler.");
+describe("fallbackTitle", () => {
+  test("title-cases the first few words of the description", () => {
+    expect(fallbackTitle("punchy journalistic tone for blogs")).toBe("Punchy journalistic tone for");
   });
 
-  test("is case-insensitive on the TITLE label and tolerates leading blank lines", () => {
-    const raw = "\n\ntitle:   British English\n\nUse -our spellings.";
-    const { title, body } = parseTitleAndBody(raw);
-    expect(title).toBe("British English");
-    expect(body).toBe("Use -our spellings.");
+  test("returns Untitled for an empty description", () => {
+    expect(fallbackTitle("")).toBe("Untitled");
+    expect(fallbackTitle("   ")).toBe("Untitled");
+  });
+});
+
+describe("finalizeSection", () => {
+  test("trims the body and keeps a present title", () => {
+    const result = finalizeSection({ title: "Concise Voice", body: "\n- Use short sentences.\n" });
+    expect(result.title).toBe("Concise Voice");
+    expect(result.body).toBe("- Use short sentences.");
   });
 
-  test("strips a wrapping markdown fence", () => {
-    const raw = "```markdown\nTITLE: Coder Voice\n\nFormat code as `inline`.\n```";
-    const { title, body } = parseTitleAndBody(raw);
-    expect(title).toBe("Coder Voice");
-    expect(body).toBe("Format code as `inline`.");
+  test("substitutes a description-derived title when the model returns a blank one", () => {
+    const result = finalizeSection({ title: "   ", body: "Be brief." }, "terse");
+    expect(result.title).toBe("Terse");
+    expect(result.body).toBe("Be brief.");
   });
 
-  test("falls back to a derived title when TITLE is absent", () => {
-    const raw = "- Use active voice.\n- Prefer short sentences.";
-    const { title, body } = parseTitleAndBody(raw, "punchy journalistic tone for blogs");
-    expect(title).toBe("Punchy journalistic tone for");
-    expect(body).toBe("- Use active voice.\n- Prefer short sentences.");
-  });
-
-  test("uses the description fallback when TITLE value is empty", () => {
-    const raw = "TITLE:\n\nBe brief.";
-    const { title, body } = parseTitleAndBody(raw, "terse");
-    expect(title).toBe("Terse");
-    expect(body).toBe("Be brief.");
-  });
-
-  test("strips a leading placeholder line the model echoed verbatim", () => {
-    const raw = "TITLE: Approachability\n<blank line>\n\nWrite in a welcoming way.";
-    const { title, body } = parseTitleAndBody(raw);
-    expect(title).toBe("Approachability");
-    expect(body).toBe("Write in a welcoming way.");
-  });
-
-  test("defaults to Untitled with neither title nor description", () => {
-    const { title } = parseTitleAndBody("Body only.", "");
-    expect(title).toBe("Untitled");
+  test("falls back to Untitled when both title and description are empty", () => {
+    const result = finalizeSection({ title: "", body: "Body only." }, "");
+    expect(result.title).toBe("Untitled");
   });
 });

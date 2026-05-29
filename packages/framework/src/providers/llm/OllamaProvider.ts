@@ -6,6 +6,7 @@ import {
 import type { LLMProvider, ChatResponse } from "./LLMProvider.ts";
 import type { ToolDefinition } from "../../core/Plugin.ts";
 import type { Message } from "../../core/types.ts";
+import { type StructuredSchema, toJsonSchema, parseStructured } from "./structuredOutput.ts";
 import { logger } from "../../logger.ts";
 
 export interface OllamaProviderOptions {
@@ -80,14 +81,14 @@ export class OllamaProvider implements LLMProvider {
   async chat(
     messages: Message[],
     systemPrompt: string = "",
-    _schema?: unknown,
+    schema?: StructuredSchema,
     tools?: ToolDefinition[],
     onToken?: (token: string, isReasoning: boolean) => void,
     abortSignal?: AbortSignal,
   ): Promise<ChatResponse> {
     logger.info(
       "Ollama",
-      `chat() model=${this.model} tools=${tools?.length ?? 0} messages=${messages.length}`,
+      `chat() model=${this.model} tools=${tools?.length ?? 0} messages=${messages.length} structured=${schema !== undefined}`,
     );
 
     try {
@@ -116,10 +117,11 @@ export class OllamaProvider implements LLMProvider {
           tools,
           onToken,
           abortSignal,
+          schema,
         );
       }
 
-      return await this.respond(ollamaMessages, onToken, abortSignal);
+      return await this.respond(ollamaMessages, onToken, abortSignal, schema);
     } catch (error) {
       logger.error("Ollama", "Error communicating with Ollama server:", error);
       throw error;
@@ -160,15 +162,22 @@ export class OllamaProvider implements LLMProvider {
     messages: OllamaMessage[],
     onToken?: (token: string, isReasoning: boolean) => void,
     abortSignal?: AbortSignal,
+    schema?: StructuredSchema,
   ): Promise<ChatResponse> {
     let reasoningText = "";
     let responseContent = "";
+
+    // When a schema is supplied, Ollama's `format` constrains `message.content`
+    // to JSON matching the schema. Streaming still fires per-token, but the
+    // accumulated content is the JSON object — parsed into `parsed` below.
+    const format = schema !== undefined ? toJsonSchema(schema) : undefined;
 
     const stream = await this.withThinkFallback((think) =>
       this.client.chat({
         model: this.model,
         messages,
         stream: true,
+        ...(format !== undefined ? { format } : {}),
         ...(think !== undefined ? { think } : {}),
         ...(this.numCtx !== undefined
           ? { options: { num_ctx: this.numCtx } }
@@ -194,6 +203,9 @@ export class OllamaProvider implements LLMProvider {
       response: responseContent || reasoningText,
       nonReasoningContent: responseContent,
       reasoningText,
+      ...(schema !== undefined
+        ? { parsed: parseStructured(responseContent, schema) }
+        : {}),
     };
   }
 
@@ -203,10 +215,18 @@ export class OllamaProvider implements LLMProvider {
     tools: ToolDefinition[],
     onToken?: (token: string, isReasoning: boolean) => void,
     abortSignal?: AbortSignal,
+    schema?: StructuredSchema,
   ): Promise<ChatResponse> {
     const MAX_ROUNDS = 100;
     const toolMap = new Map(tools.map((t) => [t.name, t]));
     const history = [...messages];
+
+    // Structured output combined with tools is best-effort: `format` is sent on
+    // every round, so tool-call rounds emit `tool_calls` (no content) while the
+    // final answer round emits schema-conforming JSON content (parsed below).
+    // Small local models may not reliably combine the two — the dependable path
+    // is structured output without tools (see respond()).
+    const format = schema !== undefined ? toJsonSchema(schema) : undefined;
 
     // Mirror abort state in a local flag via event listener.
     // In Bun's runtime, abortSignal.aborted may not reflect synchronously across
@@ -232,6 +252,7 @@ export class OllamaProvider implements LLMProvider {
             messages: history,
             tools: ollamaTools,
             stream: true,
+            ...(format !== undefined ? { format } : {}),
             ...(think !== undefined ? { think } : {}),
             ...(this.numCtx !== undefined
               ? { options: { num_ctx: this.numCtx } }
@@ -269,6 +290,9 @@ export class OllamaProvider implements LLMProvider {
             response: roundContent || roundThinking,
             nonReasoningContent: roundContent,
             reasoningText: roundThinking,
+            ...(schema !== undefined
+              ? { parsed: parseStructured(roundContent, schema) }
+              : {}),
           };
         }
 

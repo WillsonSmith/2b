@@ -1,4 +1,6 @@
 import { test, expect, describe, mock, beforeEach } from "bun:test";
+import { z } from "zod";
+import { StructuredOutputError } from "./structuredOutput.ts";
 
 // ---------------------------------------------------------------------------
 // Module mock — must be declared before the import under test
@@ -471,6 +473,78 @@ describe("num_ctx option", () => {
     await provider.chat([{ role: "user", content: "hi" }], "");
     const opts = (mockChat.mock.calls[0]?.[0] as any).options;
     expect(opts).toBeUndefined();
+  });
+});
+
+describe("structured output", () => {
+  beforeEach(() => {
+    mockChat.mockClear?.();
+  });
+
+  test("format is omitted when no schema is given", async () => {
+    mockStreamChunks = [{ message: { content: "ok" }, done: true }];
+    const provider = makeProvider();
+    await provider.chat([{ role: "user", content: "hi" }], "");
+    expect((mockChat.mock.calls[0]?.[0] as any).format).toBeUndefined();
+  });
+
+  test("a Zod schema is sent as JSON Schema in `format` and the result is parsed and validated", async () => {
+    mockStreamChunks = [{ message: { content: '{"title":"T","count":3}' }, done: true }];
+    const schema = z.object({ title: z.string(), count: z.number() });
+    const provider = makeProvider();
+    const result = await provider.chat([{ role: "user", content: "hi" }], "", schema);
+
+    const sentFormat = (mockChat.mock.calls[0]?.[0] as any).format;
+    expect(sentFormat?.type).toBe("object");
+    expect(sentFormat?.properties?.title?.type).toBe("string");
+    expect(result.parsed).toEqual({ title: "T", count: 3 });
+    expect(result.nonReasoningContent).toBe('{"title":"T","count":3}');
+  });
+
+  test("a raw JSON Schema object is passed through unchanged as `format`", async () => {
+    mockStreamChunks = [{ message: { content: '{"x":1}' }, done: true }];
+    const rawSchema = { type: "object", properties: { x: { type: "number" } } };
+    const provider = makeProvider();
+    const result = await provider.chat([], "", rawSchema);
+    expect((mockChat.mock.calls[0]?.[0] as any).format).toEqual(rawSchema);
+    expect(result.parsed).toEqual({ x: 1 });
+  });
+
+  test("content that is not valid JSON throws StructuredOutputError", async () => {
+    mockStreamChunks = [{ message: { content: "not json" }, done: true }];
+    const provider = makeProvider();
+    await expect(
+      provider.chat([], "", z.object({ a: z.string() })),
+    ).rejects.toThrow(StructuredOutputError);
+  });
+
+  test("JSON that violates the schema throws StructuredOutputError", async () => {
+    mockStreamChunks = [{ message: { content: '{"a":123}' }, done: true }];
+    const provider = makeProvider();
+    await expect(
+      provider.chat([], "", z.object({ a: z.string() })),
+    ).rejects.toThrow(StructuredOutputError);
+  });
+
+  test("structured output through the tools path parses the final round", async () => {
+    const schema = z.object({ answer: z.string() });
+    const tools = [
+      { name: "noop", description: "x", parameters: { type: "object", properties: {} }, implementation: async () => "ok" },
+    ];
+    mockChat
+      .mockImplementationOnce(async () => streamOf({
+        role: "assistant",
+        content: "",
+        tool_calls: [{ function: { name: "noop", arguments: {} } }],
+      }))
+      .mockImplementationOnce(async () => streamOf({ role: "assistant", content: '{"answer":"42"}' }));
+
+    const provider = makeProvider();
+    const result = await provider.chat([], "", schema, tools as any);
+
+    // `format` is sent on every round, including tool-call rounds.
+    expect((mockChat.mock.calls[0]?.[0] as any).format?.type).toBe("object");
+    expect(result.parsed).toEqual({ answer: "42" });
   });
 });
 

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { AgentPlugin, ToolDefinition } from "@2b/framework/core/Plugin.ts";
 import type { BaseAgent } from "@2b/framework/core/BaseAgent.ts";
 import type { CortexMemoryPlugin } from "@2b/framework/plugins/CortexMemoryPlugin.ts";
@@ -19,13 +20,31 @@ A contradiction is when two statements assert directly opposing facts — not ju
 
 Given a numbered list of statements, identify pairs that DEFINITIVELY contradict each other.
 
-Respond with a JSON array:
-[
-  { "indexA": 0, "indexB": 2, "summary": "One sentence describing the contradiction" }
-]
+Return a "pairs" list. For each contradicting pair, give the two statement indices (indexA and indexB, matching the [N] numbers in the list) and a one-sentence summary of the contradiction. If no pairs contradict, return an empty pairs list.`;
 
-If no pairs contradict, return: []
-Return ONLY valid JSON. No preamble or markdown fences.`;
+/**
+ * One contradicting pair the scanner returns. `indexA`/`indexB` reference the
+ * numbered statements in the prompt; bounds against the current batch are still
+ * checked at the call site since the model can return out-of-range indices that
+ * the schema can't catch.
+ */
+export const contradictionPairSchema = z.object({
+  indexA: z.number().int(),
+  indexB: z.number().int(),
+  summary: z.string(),
+});
+
+/**
+ * The structured scan response. The array is wrapped in an object because local
+ * models reliably populate an object-rooted schema but tend to return `[]` for
+ * a top-level array under Ollama's `format`.
+ */
+export const contradictionScanSchema = z.object({
+  pairs: z.array(contradictionPairSchema),
+});
+
+export type ContradictionPair = z.infer<typeof contradictionPairSchema>;
+export type ContradictionScan = z.infer<typeof contradictionScanSchema>;
 
 export interface ContradictionRecord {
   id: string;
@@ -155,11 +174,13 @@ export class ContradictionPlugin implements AgentPlugin {
         .map((m, idx) => `[${idx}] ${m.text.replace(/\n+/g, " ").slice(0, 300)}`)
         .join("\n\n");
 
-      let pairs: Array<{ indexA: number; indexB: number; summary: string }> = [];
+      let pairs: ContradictionPair[] = [];
       try {
-        const raw = await this.getScannerAgent().ask(`Analyze for definite contradictions:\n\n${prompt}`);
-        const jsonMatch = raw.match(/\[[\s\S]*\]/);
-        if (jsonMatch) pairs = JSON.parse(jsonMatch[0]);
+        const scan = await this.getScannerAgent().askStructured<ContradictionScan>(
+          `Analyze for definite contradictions:\n\n${prompt}`,
+          contradictionScanSchema,
+        );
+        pairs = scan.pairs;
       } catch (err) {
         logger.warn(TAG, `Batch ${i} parse error: ${err}`);
         continue;
