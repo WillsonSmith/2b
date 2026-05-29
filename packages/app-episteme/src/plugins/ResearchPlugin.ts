@@ -357,7 +357,7 @@ export class ResearchPlugin implements AgentPlugin {
   async detectGaps(topic: string): Promise<string> {
     const rows = this.workspaceDb.listWorkspaceFiles().slice(0, 20);
     if (rows.length === 0) {
-      return "# Knowledge Gap Report\n\nNo indexed workspace files found. Run `index_workspace` first.";
+      return "# Knowledge Gap Report\n\nNo indexed workspace files found. The index builds automatically on startup; re-index from the command palette if files are missing.";
     }
 
     const context = rows

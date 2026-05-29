@@ -95,9 +95,13 @@ export async function handleResearch(
     }
 
     case "reindex_request": {
-      ctx.workspace.index(undefined, { force: true }).then(() => {
+      ctx.workspace.index(undefined, { force: true }).then((result) => {
         const { pagination, ...data } = ctx.workspace.buildKnowledgeGraph();
         send(ws, { type: "graph_data", data, pagination });
+        send(ws, {
+          type: "speak",
+          text: `Workspace re-indexed — ${result.total} file(s).`,
+        });
       }).catch(() => {
         send(ws, { type: "error", message: "Re-index failed." });
       });

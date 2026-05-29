@@ -27,6 +27,14 @@ export interface GraphData {
   links: GraphLink[];
 }
 
+export interface IndexResult {
+  indexed: number;
+  skipped: number;
+  deleted: number;
+  total: number;
+  message: string;
+}
+
 /**
  * Provides workspace-level file access and indexing to the agent.
  *
@@ -97,7 +105,6 @@ export class WorkspacePlugin implements AgentPlugin {
   }
 
   async executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    if (name === "index_workspace") return this.index();
     if (name === "search_workspace") return this.searchWorkspace(String(args.query ?? ""), Number(args.limit ?? 8));
     if (name === "get_workspace_section") return this.getSection(String(args.path ?? ""), String(args.heading ?? ""));
     if (name === "list_workspace_files") return this.listFiles();
@@ -116,7 +123,7 @@ export class WorkspacePlugin implements AgentPlugin {
   async index(
     onProgress?: (indexed: number, total: number) => void,
     options?: { force?: boolean },
-  ): Promise<unknown> {
+  ): Promise<IndexResult> {
     const force = options?.force ?? false;
     const BATCH_SIZE = 16;
     const glob = new Bun.Glob("**/*.md");
@@ -226,7 +233,7 @@ export class WorkspacePlugin implements AgentPlugin {
       return {
         results: [],
         message:
-          "No results. Workspace is not indexed yet — run index_workspace first for full search.",
+          "No results. The workspace index is empty — it builds automatically on startup and when the user re-indexes from the command palette.",
       };
     }
     return {
@@ -291,7 +298,7 @@ export class WorkspacePlugin implements AgentPlugin {
   private factCheck(claim: string): unknown {
     if (!claim.trim()) return { matches: [], message: "Empty claim." };
     if (this.workspaceDb.listWorkspaceFiles().length === 0) {
-      return { matches: [], message: "Workspace not indexed. Run index_workspace first." };
+      return { matches: [], message: "Workspace index is empty — it builds automatically on startup." };
     }
     const hits = this.workspaceDb.searchWorkspaceFiles(claim, 6);
     return {
@@ -304,7 +311,7 @@ export class WorkspacePlugin implements AgentPlugin {
   private listFiles(): unknown {
     const rows = this.workspaceDb.listWorkspaceFiles();
     if (rows.length === 0) {
-      return { files: [], message: "Workspace not indexed. Run index_workspace first." };
+      return { files: [], message: "Workspace index is empty — it builds automatically on startup." };
     }
     const files = rows.map((r) => ({
       path: r.relPath,

@@ -34,7 +34,7 @@ export function useResearch(
 
   const handleReindex = useCallback(() => {
     if (!wsRef.current || agentState === "disconnected") return;
-    wsRef.current.send(JSON.stringify({ type: "send", text: "Please run the index_workspace tool to re-index all workspace files." }));
+    wsRef.current.send(JSON.stringify({ type: "reindex_request" }));
   }, [agentState, wsRef]);
 
   useEffect(() => {
