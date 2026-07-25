@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../../primitives/Button.tsx";
+import { Checkbox } from "../../../primitives/Checkbox.tsx";
 import { Input } from "../../../primitives/Input.tsx";
 import { Text } from "../../../primitives/Text.tsx";
 import { SettingsRow } from "../SettingsRow.tsx";
@@ -24,6 +25,7 @@ export function ModelsSection({
   const [aiEnabled, setAiEnabled] = useState(true);
   const [initialAiEnabled, setInitialAiEnabled] = useState(true);
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState("");
+  const [ollamaOverrideEnabled, setOllamaOverrideEnabled] = useState(false);
   const [initialOllamaBaseUrl, setInitialOllamaBaseUrl] = useState("");
   const [urlChangedNotice, setUrlChangedNotice] = useState(false);
   const [restartRequiredNotice, setRestartRequiredNotice] = useState(false);
@@ -44,6 +46,7 @@ export function ModelsSection({
         if (data.features?.autosave !== undefined) setAutosaveEnabled(data.features.autosave);
         const url = data.ollamaBaseUrl ?? "";
         setOllamaBaseUrl(url);
+        setOllamaOverrideEnabled(url.trim() !== "");
         setInitialOllamaBaseUrl(url);
         const enabled = data.aiEnabled !== false;
         setAiEnabled(enabled);
@@ -70,6 +73,7 @@ export function ModelsSection({
     }
     setValidationError(null);
     setStatus("saving");
+    const effectiveOllamaBaseUrl = ollamaOverrideEnabled ? ollamaBaseUrl : "";
     try {
       const res = await fetch("/api/config", {
         method: "PATCH",
@@ -77,7 +81,7 @@ export function ModelsSection({
         body: JSON.stringify({
           models: modelConfig,
           features: { autocomplete: autocompleteEnabled, autosave: autosaveEnabled },
-          ollamaBaseUrl,
+          ollamaBaseUrl: effectiveOllamaBaseUrl,
           aiEnabled,
         }),
       });
@@ -85,7 +89,7 @@ export function ModelsSection({
         const data = (await res.json().catch(() => ({}))) as { restartRequired?: boolean };
         onAutocompleteEnabledChange?.(autocompleteEnabled);
         onAutosaveEnabledChange?.(autosaveEnabled);
-        if (ollamaBaseUrl !== initialOllamaBaseUrl) {
+        if (effectiveOllamaBaseUrl !== initialOllamaBaseUrl) {
           fetch("/api/models")
             .then((r) => r.json())
             .then((d: { models?: string[] }) => setModels(d.models ?? []))
@@ -95,7 +99,7 @@ export function ModelsSection({
             .then((d: { models?: string[] }) => setEmbeddingModels(d.models ?? []))
             .catch(() => {});
           setUrlChangedNotice(true);
-          setInitialOllamaBaseUrl(ollamaBaseUrl);
+          setInitialOllamaBaseUrl(effectiveOllamaBaseUrl);
         }
         if (data.restartRequired || aiEnabled !== initialAiEnabled) {
           setRestartRequiredNotice(true);
@@ -108,7 +112,7 @@ export function ModelsSection({
     } catch {
       setStatus("error");
     }
-  }, [modelConfig, autocompleteEnabled, autosaveEnabled, ollamaBaseUrl, initialOllamaBaseUrl, aiEnabled, initialAiEnabled, onAutocompleteEnabledChange, onAutosaveEnabledChange]);
+  }, [modelConfig, autocompleteEnabled, autosaveEnabled, ollamaBaseUrl, ollamaOverrideEnabled, initialOllamaBaseUrl, aiEnabled, initialAiEnabled, onAutocompleteEnabledChange, onAutosaveEnabledChange]);
 
   return (
     <section className="settings-section">
@@ -156,19 +160,31 @@ export function ModelsSection({
       />
       <SettingsRow
         name="Ollama base URL"
-        description="Point Episteme at a different Ollama-compatible host. Leave blank for http://127.0.0.1:11434."
+        description="Point Episteme at a different Ollama-compatible host. When unchecked, Episteme uses the default http://127.0.0.1:11434."
         style={{ marginBottom: 8 }}
         control={
-          <Input
-            className="model-config-input"
-            value={ollamaBaseUrl}
-            placeholder="http://127.0.0.1:11434"
-            onChange={(e) => {
-              setOllamaBaseUrl(e.target.value);
-              setStatus("idle");
-              setUrlChangedNotice(false);
-            }}
-          />
+          <div className="model-config-url-control">
+            <Checkbox
+              checked={ollamaOverrideEnabled}
+              label="Use override"
+              onChange={(v) => {
+                setOllamaOverrideEnabled(v);
+                setStatus("idle");
+                setUrlChangedNotice(false);
+              }}
+            />
+            <Input
+              className="model-config-input"
+              value={ollamaBaseUrl}
+              placeholder="http://127.0.0.1:11434"
+              disabled={!ollamaOverrideEnabled}
+              onChange={(e) => {
+                setOllamaBaseUrl(e.target.value);
+                setStatus("idle");
+                setUrlChangedNotice(false);
+              }}
+            />
+          </div>
         }
       />
       <datalist id="ollama-models">
