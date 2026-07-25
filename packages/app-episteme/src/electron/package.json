@@ -10,9 +10,8 @@
     "build:mac": "tsc && electron-builder --mac"
   },
   "devDependencies": {
-    "@types/electron": "^1.6.10",
     "electron": "^43.0.0",
-    "electron-builder": "^24.13.3",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.5.0"
   },
   "build": {
