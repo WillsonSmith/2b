@@ -95,6 +95,14 @@ const MarkdownLink = Link.extend({
     /^[a-z][a-z0-9+.-]*:/i.test(url) ? !!ctx.defaultValidate(url) : true,
 });
 
+// Per-keystroke work (full-document markdown serialization, link resolution,
+// count emission) is debounced so typing in a large document stays responsive.
+// Each of these walks or re-renders the whole doc/app; running them on every
+// keypress is what made large files sluggish.
+const UPDATE_DEBOUNCE_MS = 300;
+const LINK_REFRESH_DEBOUNCE_MS = 400;
+const COUNTS_DEBOUNCE_MS = 300;
+
 interface EditorProps {
   content: string;
   onUpdate: (markdown: string) => void;
@@ -289,6 +297,18 @@ export function Editor({
   );
   const frontmatterRef = useRef(frontmatter);
   frontmatterRef.current = frontmatter;
+
+  // Debounced markdown propagation. `onUpdate` is a fresh closure each render
+  // (App passes an inline arrow), so we read it through a ref. `lastEmittedRef`
+  // records the content we last pushed up so the `content` effect can skip the
+  // round-trip when our own update bounces back. `emitRef` lets the tiptap
+  // config (created once) and the flush-on-unmount effect call the latest emit.
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+  const lastEmittedRef = useRef<string | null>(null);
+  const updateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const emitRef = useRef<() => void>(() => {});
+
   const editorMode = editorModeProp;
   const prevEditorMode = useRef(editorModeProp);
   const [rawContent, setRawContent] = useState("");
@@ -364,15 +384,53 @@ export function Editor({
       StyleCheckExtension(styleCheckRef),
     ],
     content: parseFrontmatter(content).body.trimStart(),
-    onUpdate({ editor }) {
-      const body = getMarkdown(editor);
-      const fm = frontmatterRef.current;
-      onUpdate(fm != null ? `---\n${fm}\n---\n\n${body.trimStart()}` : body);
+    onUpdate() {
+      // Defer the (expensive, whole-document) serialize + parent re-render until
+      // the user pauses. The actual work lives in `emitRef.current`.
+      if (updateTimerRef.current) clearTimeout(updateTimerRef.current);
+      updateTimerRef.current = setTimeout(() => {
+        updateTimerRef.current = null;
+        emitRef.current();
+      }, UPDATE_DEBOUNCE_MS);
     },
     editorProps: {
       attributes: { class: "tiptap" },
     },
   });
+
+  // Serialize the document and push it to the parent. Called from the debounced
+  // tiptap update, and synchronously on unmount so a pending edit is never lost
+  // (autosave reads the parent signal right after the user stops typing).
+  const emitMarkdown = useCallback(() => {
+    if (!editor) return;
+    const body = getMarkdown(editor);
+    const fm = frontmatterRef.current;
+    const full = fm != null ? `---\n${fm}\n---\n\n${body.trimStart()}` : body;
+    lastEmittedRef.current = full;
+    onUpdateRef.current(full);
+  }, [editor]);
+  emitRef.current = emitMarkdown;
+
+  const flushPendingUpdate = useCallback(() => {
+    if (updateTimerRef.current) {
+      clearTimeout(updateTimerRef.current);
+      updateTimerRef.current = null;
+      emitRef.current();
+    }
+  }, []);
+
+  // Flush on unmount and on blur so the parent (and autosave, which reads the
+  // parent signal) never misses the last edits — e.g. when the user clicks
+  // another file in the tree, which blurs the editor before the switch.
+  useEffect(() => {
+    return () => flushPendingUpdate();
+  }, [flushPendingUpdate]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.on("blur", flushPendingUpdate);
+    return () => { editor.off("blur", flushPendingUpdate); };
+  }, [editor, flushPendingUpdate]);
 
   useEffect(() => {
     ghostRef.current = ghostText;
@@ -384,6 +442,18 @@ export function Editor({
 
   useEffect(() => {
     if (!editor) return;
+    // Our own debounced emit bounced back as the `content` prop: the editor
+    // already holds this body and the frontmatter is in sync, so skip the
+    // redundant re-serialize + setContent + link rescan (and avoid clobbering
+    // any keystrokes typed since the emit fired).
+    if (content === lastEmittedRef.current) return;
+    // External replacement (file switch, agent edit, external file change):
+    // drop any pending self-emit for the doc we're about to overwrite so it
+    // can't bounce stale content into the newly-loaded file.
+    if (updateTimerRef.current) {
+      clearTimeout(updateTimerRef.current);
+      updateTimerRef.current = null;
+    }
     const { yaml, body } = parseFrontmatter(content);
     frontmatterRef.current = yaml;
     setFrontmatter(yaml);
@@ -478,7 +548,9 @@ export function Editor({
     if (!editor || !metadataResult) return;
     setFrontmatter(metadataResult);
     const body = getMarkdown(editor);
-    onUpdate(`---\n${metadataResult}\n---\n\n${body.trimStart()}`);
+    const full = `---\n${metadataResult}\n---\n\n${body.trimStart()}`;
+    lastEmittedRef.current = full;
+    onUpdate(full);
     onMetadataApplied?.();
   }, [metadataResult]);
 
@@ -487,11 +559,12 @@ export function Editor({
       setFrontmatter(newYaml);
       if (!editor) return;
       const body = getMarkdown(editor);
-      onUpdate(
+      const full =
         newYaml != null
           ? `---\n${newYaml}\n---\n\n${body.trimStart()}`
-          : body,
-      );
+          : body;
+      lastEmittedRef.current = full;
+      onUpdate(full);
     },
     [editor, onUpdate],
   );
@@ -521,9 +594,19 @@ export function Editor({
       localLinksRef.current = resolveMarkdownLinks(editor.state.doc, filesRef.current, currentFileRef.current);
       editor.view.dispatch(editor.state.tr.setMeta("markdown-link-refresh", true));
     };
-    refresh();
-    editor.on("update", refresh);
-    return () => { editor.off("update", refresh); };
+    refresh(); // immediate on mount / files / current-file change
+    // resolveMarkdownLinks walks the whole doc and dispatches a transaction —
+    // too heavy to run on every keystroke, so debounce the per-edit refresh.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onDocUpdate = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(refresh, LINK_REFRESH_DEBOUNCE_MS);
+    };
+    editor.on("update", onDocUpdate);
+    return () => {
+      editor.off("update", onDocUpdate);
+      if (timer) clearTimeout(timer);
+    };
   }, [editor, workspaceFiles, currentFilePath]);
 
   useEffect(() => {
@@ -882,9 +965,19 @@ export function Editor({
         editor.storage.characterCount?.characters() ?? 0,
       );
     };
-    emit();
-    editor.on("update", emit);
-    return () => { editor.off("update", emit); };
+    emit(); // immediate on mount
+    // Counts feed a signal that re-renders App; debounce so each keystroke
+    // doesn't trigger a full app re-render.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onDocUpdate = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(emit, COUNTS_DEBOUNCE_MS);
+    };
+    editor.on("update", onDocUpdate);
+    return () => {
+      editor.off("update", onDocUpdate);
+      if (timer) clearTimeout(timer);
+    };
   }, [editor]);
 
   useEffect(() => {

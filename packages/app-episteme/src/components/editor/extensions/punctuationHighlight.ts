@@ -1,7 +1,8 @@
 import { Extension } from "@tiptap/react";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { Plugin as ProseMirrorPlugin, PluginKey } from "@tiptap/pm/state";
+import { PluginKey } from "@tiptap/pm/state";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { createDebouncedDecorationPlugin } from "./debouncedDecorations.ts";
 
 const punctKey = new PluginKey<DecorationSet>("punctuation-highlight");
 const PUNCT_REGEX = /[.,;:!?—–"'()[\]{}]/g;
@@ -24,23 +25,10 @@ function buildDecorations(doc: ProseMirrorNode, enabled: boolean): DecorationSet
 }
 
 export function buildPunctuationHighlightPlugin(getEnabled: () => boolean) {
-  return new ProseMirrorPlugin({
+  return createDebouncedDecorationPlugin({
     key: punctKey,
-    state: {
-      init: (_, { doc }) => buildDecorations(doc, getEnabled()),
-      apply(tr, old, _oldState, newState) {
-        if (tr.getMeta("punctuation-highlight-refresh")) {
-          return buildDecorations(newState.doc, getEnabled());
-        }
-        if (tr.docChanged) {
-          return buildDecorations(newState.doc, getEnabled());
-        }
-        return old;
-      },
-    },
-    props: {
-      decorations: (state) => punctKey.getState(state) ?? DecorationSet.empty,
-    },
+    refreshMeta: "punctuation-highlight-refresh",
+    build: (state) => buildDecorations(state.doc, getEnabled()),
   });
 }
 

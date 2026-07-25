@@ -1,8 +1,9 @@
 import { Extension } from "@tiptap/react";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { Plugin as ProseMirrorPlugin, PluginKey } from "@tiptap/pm/state";
+import { PluginKey } from "@tiptap/pm/state";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import nlp from "compromise";
+import { createDebouncedDecorationPlugin } from "./debouncedDecorations.ts";
 
 export interface PosHighlightOptions {
   enabled: boolean;
@@ -78,23 +79,10 @@ function buildDecorations(doc: ProseMirrorNode, options: PosHighlightOptions): D
 }
 
 export function buildPosHighlightPlugin(getOptions: () => PosHighlightOptions) {
-  return new ProseMirrorPlugin({
+  return createDebouncedDecorationPlugin({
     key: posKey,
-    state: {
-      init: (_, { doc }) => buildDecorations(doc, getOptions()),
-      apply(tr, old, _oldState, newState) {
-        if (tr.getMeta("pos-highlight-refresh")) {
-          return buildDecorations(newState.doc, getOptions());
-        }
-        if (tr.docChanged) {
-          return buildDecorations(newState.doc, getOptions());
-        }
-        return old;
-      },
-    },
-    props: {
-      decorations: (state) => posKey.getState(state) ?? DecorationSet.empty,
-    },
+    refreshMeta: "pos-highlight-refresh",
+    build: (state) => buildDecorations(state.doc, getOptions()),
   });
 }
 

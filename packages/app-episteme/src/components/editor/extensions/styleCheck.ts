@@ -1,8 +1,9 @@
 import { Extension } from "@tiptap/react";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { Plugin as ProseMirrorPlugin, PluginKey } from "@tiptap/pm/state";
+import { PluginKey } from "@tiptap/pm/state";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { scanText, type StyleCategory, type StyleIssue } from "../../../features/style-rules.ts";
+import { createDebouncedDecorationPlugin } from "./debouncedDecorations.ts";
 
 export interface StyleCheckOptions {
   enabled: boolean;
@@ -82,23 +83,10 @@ function buildDecorations(doc: ProseMirrorNode, options: StyleCheckOptions): Dec
 }
 
 export function buildStyleCheckPlugin(getOptions: () => StyleCheckOptions) {
-  return new ProseMirrorPlugin({
+  return createDebouncedDecorationPlugin({
     key: styleKey,
-    state: {
-      init: (_, { doc }) => buildDecorations(doc, getOptions()),
-      apply(tr, old, _oldState, newState) {
-        if (tr.getMeta("style-check-refresh")) {
-          return buildDecorations(newState.doc, getOptions());
-        }
-        if (tr.docChanged) {
-          return buildDecorations(newState.doc, getOptions());
-        }
-        return old;
-      },
-    },
-    props: {
-      decorations: (state) => styleKey.getState(state) ?? DecorationSet.empty,
-    },
+    refreshMeta: "style-check-refresh",
+    build: (state) => buildDecorations(state.doc, getOptions()),
   });
 }
 
