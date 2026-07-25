@@ -45,3 +45,6 @@ aurelius/
 aurelius-plan.md
 
 .episteme
+
+# Claude Code per-developer local settings (permissions, overrides)
+.claude/settings.local.json
